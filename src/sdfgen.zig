@@ -271,7 +271,7 @@ fn virtio(sdf: *SystemDescription) !void {
     const uart_driver_image = ProgramImage.create("uart_driver.elf");
     var uart_driver = Pd.create(sdf, "uart_driver", uart_driver_image);
     uart_driver.priority = 100;
-    sdf.addProtectionDomain(&uart_driver);
+    sdf.addProtectionDomain(uart_driver);
 
     const uart_mr = Mr.create(sdf, "uart", Uart.size(board), Uart.paddr(board), .small);
     sdf.addMemoryRegion(uart_mr);
@@ -284,19 +284,19 @@ fn virtio(sdf: *SystemDescription) !void {
     const serial_mux_rx_image = ProgramImage.create("serial_mux_rx.elf");
     var serial_mux_rx = Pd.create(sdf, "serial_mux_rx", serial_mux_rx_image);
     serial_mux_rx.priority = 98;
-    sdf.addProtectionDomain(&serial_mux_rx);
+    sdf.addProtectionDomain(serial_mux_rx);
 
     // 3. Create MUX TX
     const serial_mux_tx_image = ProgramImage.create("serial_mux_tx.elf");
     var serial_mux_tx = Pd.create(sdf, "serial_mux_tx", serial_mux_tx_image);
     serial_mux_tx.priority = 99;
-    sdf.addProtectionDomain(&serial_mux_tx);
+    sdf.addProtectionDomain(serial_mux_tx);
 
     // 4. Create native serial device
     const serial_tester_image = ProgramImage.create("serial_tester.elf");
     var serial_tester = Pd.create(sdf, "serial_tester", serial_tester_image);
     serial_tester.priority = 97;
-    sdf.addProtectionDomain(&serial_tester);
+    sdf.addProtectionDomain(serial_tester);
 
     // 5. Connect UART driver and MUX RX
     const rx_free = Mr.create(sdf, "rx_free_driver", SDDF_BUF_SIZE, null, .large);
@@ -317,7 +317,7 @@ fn virtio(sdf: *SystemDescription) !void {
     uart_driver.addMap(rx_used_map);
     uart_driver.addMap(rx_data_map);
 
-    const uart_mux_rx_channel = Channel.create(&uart_driver, &serial_mux_rx);
+    const uart_mux_rx_channel = Channel.create(uart_driver, serial_mux_rx);
     sdf.addChannel(uart_mux_rx_channel);
 
     // 6. Connect UART driver and MUX TX
@@ -339,7 +339,7 @@ fn virtio(sdf: *SystemDescription) !void {
     uart_driver.addMap(tx_used_map);
     uart_driver.addMap(tx_data_map);
 
-    const uart_mux_tx_ch = Channel.create(&uart_driver, &serial_mux_tx);
+    const uart_mux_tx_ch = Channel.create(uart_driver, serial_mux_tx);
     sdf.addChannel(uart_mux_tx_ch);
 
     // 7. Connect MUX RX and serial tester
@@ -360,7 +360,7 @@ fn virtio(sdf: *SystemDescription) !void {
     serial_tester.addMap(rx_used_serial_tester_map);
     serial_tester.addMap(rx_data_serial_tester_map);
 
-    const serial_mux_rx_tester_ch = Channel.create(&serial_mux_rx, &serial_tester);
+    const serial_mux_rx_tester_ch = Channel.create(serial_mux_rx, serial_tester);
     sdf.addChannel(serial_mux_rx_tester_ch);
 
     // 8. Connect MUX TX and serial tester
@@ -395,9 +395,9 @@ fn virtio(sdf: *SystemDescription) !void {
     // Then we add the virtual machine to the VMM
     const guest_ram_map_vmm = Map.create(guest_ram, guestRamVaddr(board), .{ .read = true }, true, null);
     vmm.addMap(guest_ram_map_vmm);
-    try vmm.addVirtualMachine(&guest);
+    try vmm.addVirtualMachine(guest);
 
-    sdf.addProtectionDomain(&vmm);
+    sdf.addProtectionDomain(vmm);
 
     // TODO: we have to do this here because otherwise we'll look everything on the stack.. yuck
     // This is something that ultimately needs to be fixed in sdf.zig
@@ -412,8 +412,8 @@ fn virtio(sdf: *SystemDescription) !void {
 /// something wrong with dtb.zig dependency. Need to investigate.
 fn abstractions(allocator: Allocator, sdf: *SystemDescription, blob: *dtb.Node) !void {
     const image = ProgramImage.create("uart_driver.elf");
-    var driver = Pd.create(sdf, "uart_driver", image);
-    sdf.addProtectionDomain(&driver);
+    const driver = Pd.create(sdf, "uart_driver", image);
+    sdf.addProtectionDomain(driver);
 
     var uart_node: ?*dtb.Node = undefined;
     // TODO: We would probably want some helper functionality that just takes
@@ -436,29 +436,29 @@ fn abstractions(allocator: Allocator, sdf: *SystemDescription, blob: *dtb.Node) 
     }
 
     var serial_system = sddf.SerialSystem.init(allocator, sdf, 0x200000);
-    serial_system.setDriver(&driver, uart_node.?);
+    serial_system.setDriver(driver, uart_node.?);
 
     // const clients = [_][]const u8{ "client1", "client2", "client3" };
 
     const mux_rx_image = ProgramImage.create("mux_rx.elf");
-    var mux_rx = Pd.create(sdf, "mux_rx", mux_rx_image);
-    sdf.addProtectionDomain(&mux_rx);
+    const mux_rx = Pd.create(sdf, "mux_rx", mux_rx_image);
+    sdf.addProtectionDomain(mux_rx);
 
     const mux_tx_image = ProgramImage.create("mux_tx.elf");
-    var mux_tx = Pd.create(sdf, "mux_tx", mux_tx_image);
-    sdf.addProtectionDomain(&mux_tx);
+    const mux_tx = Pd.create(sdf, "mux_tx", mux_tx_image);
+    sdf.addProtectionDomain(mux_tx);
 
-    serial_system.setMultiplexors(&mux_rx, &mux_tx);
+    serial_system.setMultiplexors(mux_rx, mux_tx);
 
     const client1_image = ProgramImage.create("client1.elf");
-    var client1_pd = Pd.create(sdf, "client1", client1_image);
-    serial_system.addClient(&client1_pd);
-    sdf.addProtectionDomain(&client1_pd);
+    const client1_pd = Pd.create(sdf, "client1", client1_image);
+    serial_system.addClient(client1_pd.*);
+    sdf.addProtectionDomain(client1_pd);
 
     const client2_image = ProgramImage.create("client2.elf");
-    var client2_pd = Pd.create(sdf, "client2", client2_image);
-    serial_system.addClient(&client2_pd);
-    sdf.addProtectionDomain(&client2_pd);
+    const client2_pd = Pd.create(sdf, "client2", client2_image);
+    serial_system.addClient(client2_pd.*);
+    sdf.addProtectionDomain(client2_pd);
 
     try serial_system.connect();
 
@@ -472,41 +472,44 @@ fn gdb(allocator: Allocator, sdf: *SystemDescription, blob: *dtb.Node) !void {
         .qemu_arm_virt => blob.child(board.uartNode()),
     };
 
-    var uart_driver = Pd.create(sdf, "uart_driver", ProgramImage.create("uart_driver.elf"));
-    sdf.addProtectionDomain(&uart_driver);
+    const uart_driver = Pd.create(sdf, "uart_driver", ProgramImage.create("uart_driver.elf"));
+    std.debug.print("uart driver {*}\n", .{ uart_driver });
+    sdf.addProtectionDomain(uart_driver);
 
     var serial_system = sddf.SerialSystem.init(allocator, sdf, 0x200000);
-    serial_system.setDriver(&uart_driver, uart_node.?);
+    serial_system.setDriver(uart_driver, uart_node.?);
 
-    var debugger = Pd.create(sdf, "debugger", ProgramImage.create("debugger.elf"));
-    sdf.addProtectionDomain(&debugger);
+    const debugger = Pd.create(sdf, "debugger", ProgramImage.create("debugger.elf"));
+    std.debug.print("debugger {*}\n", .{ debugger });
+    sdf.addProtectionDomain(debugger);
 
-    var ping = Pd.create(sdf, "ping", ProgramImage.create("ping.elf"));
-    var pong = Pd.create(sdf, "pong", ProgramImage.create("pong.elf"));
+    const ping = Pd.create(sdf, "ping", ProgramImage.create("ping.elf"));
+    const pong = Pd.create(sdf, "pong", ProgramImage.create("pong.elf"));
 
-    const debug_pds = [_]*Pd{ &ping, &pong };
+    const debug_pds = [_]*Pd{ ping, pong };
     for (debug_pds) |pd| {
         try debugger.addChild(pd);
     }
 
-    sdf.addChannel(Channel.create(&ping, &pong));
+    sdf.addChannel(Channel.create(ping, pong));
 
-    var mux_rx = Pd.create(sdf, "serial_mux_rx", ProgramImage.create("serial_mux_rx.elf"));
-    sdf.addProtectionDomain(&mux_rx);
-    var mux_tx = Pd.create(sdf, "serial_mux_tx", ProgramImage.create("serial_mux_tx.elf"));
-    sdf.addProtectionDomain(&mux_tx);
-    serial_system.setMultiplexors(&mux_rx, &mux_tx);
+    const mux_rx = Pd.create(sdf, "serial_mux_rx", ProgramImage.create("serial_mux_rx.elf"));
+    sdf.addProtectionDomain(mux_rx);
+    const mux_tx = Pd.create(sdf, "serial_mux_tx", ProgramImage.create("serial_mux_tx.elf"));
+    sdf.addProtectionDomain(mux_tx);
+    serial_system.setMultiplexors(mux_rx, mux_tx);
 
-    serial_system.addClient(&debugger);
+    std.debug.print("debugger name: {s}\n", .{ debugger.name });
+    // serial_system.addClient(debugger.*);
 
     try serial_system.connect();
     const xml = try sdf.toXml();
     std.debug.print("{s}", .{xml});
 
-    const mux_rx_header = try sdf.exportCHeader(&mux_rx);
+    const mux_rx_header = try sdf.exportCHeader(mux_rx);
     std.debug.print("{s}\n", .{ mux_rx_header });
 
-    const debugger_header = try sdf.exportCHeader(&debugger);
+    const debugger_header = try sdf.exportCHeader(debugger);
     std.debug.print("DEBUGGER HEADER:\n{s}\n", .{ debugger_header });
 }
 
@@ -516,8 +519,8 @@ fn virtio_blk(allocator: Allocator, sdf: *SystemDescription, blob: *dtb.Node) !v
     // two clients which as VMMs
     // block driver VM
     const image = ProgramImage.create("uart_driver.elf");
-    var driver = Pd.create(sdf, "uart_driver", image);
-    sdf.addProtectionDomain(&driver);
+    const driver = Pd.create(sdf, "uart_driver", image);
+    sdf.addProtectionDomain(driver);
 
     var uart_node: ?*dtb.Node = undefined;
     // TODO: We would probably want some helper functionality that just takes
@@ -540,36 +543,36 @@ fn virtio_blk(allocator: Allocator, sdf: *SystemDescription, blob: *dtb.Node) !v
     }
 
     const client1_vmm_image = ProgramImage.create("client_vmm_1.elf");
-    var client1_vmm = Pd.create(sdf, "client_vmm_1", client1_vmm_image);
-    var client1_vm = Vm.create(sdf, "client_vm_1");
+    const client1_vmm = Pd.create(sdf, "client_vmm_1", client1_vmm_image);
+    const client1_vm = Vm.create(sdf, "client_vm_1");
     const client2_vmm_image = ProgramImage.create("client_vmm_2.elf");
-    var client2_vmm = Pd.create(sdf, "client_vmm_2", client2_vmm_image);
-    var client2_vm = Vm.create(sdf, "client_vm_2");
+    const client2_vmm = Pd.create(sdf, "client_vmm_2", client2_vmm_image);
+    const client2_vm = Vm.create(sdf, "client_vm_2");
 
     const blk_driver_vmm_image = ProgramImage.create("blk_driver_vmm.elf");
-    var blk_driver_vmm = Pd.create(sdf, "blk_driver_vmm", blk_driver_vmm_image);
-    var blk_driver_vm = Vm.create(sdf, "blk_linux");
+    const blk_driver_vmm = Pd.create(sdf, "blk_driver_vmm", blk_driver_vmm_image);
+    const blk_driver_vm = Vm.create(sdf, "blk_linux");
 
     var vm_system = VirtualMachineSystem.init(allocator, sdf);
-    try vm_system.add(&client1_vmm, &client1_vm, blob);
-    try vm_system.add(&client2_vmm, &client2_vm, blob);
-    try vm_system.add(&blk_driver_vmm, &blk_driver_vm, blob);
+    try vm_system.add(client1_vmm, client1_vm, blob);
+    try vm_system.add(client2_vmm, client2_vm, blob);
+    try vm_system.add(blk_driver_vmm, blk_driver_vm, blob);
 
     try vm_system.connect();
 
     // Creating serial sub system
     var serial_system = sddf.SerialSystem.init(allocator, sdf, 0x200000);
-    serial_system.setDriver(&driver, uart_node.?);
+    serial_system.setDriver(driver, uart_node.?);
 
     const mux_rx_image = ProgramImage.create("mux_rx.elf");
-    var mux_rx = Pd.create(sdf, "mux_rx", mux_rx_image);
-    sdf.addProtectionDomain(&mux_rx);
+    const mux_rx = Pd.create(sdf, "mux_rx", mux_rx_image);
+    sdf.addProtectionDomain(mux_rx);
 
     const mux_tx_image = ProgramImage.create("mux_tx.elf");
-    var mux_tx = Pd.create(sdf, "mux_tx", mux_tx_image);
-    sdf.addProtectionDomain(&mux_tx);
+    const mux_tx = Pd.create(sdf, "mux_tx", mux_tx_image);
+    sdf.addProtectionDomain(mux_tx);
 
-    serial_system.setMultiplexors(&mux_rx, &mux_tx);
+    serial_system.setMultiplexors(mux_rx, mux_tx);
 
     try serial_system.connect();
 
@@ -583,31 +586,31 @@ fn kitty(allocator: Allocator, sdf: *SystemDescription, blob: *dtb.Node) !void {
         .qemu_arm_virt => blob.child(board.uartNode()),
     };
 
-    var uart_driver = Pd.create(sdf, "uart_driver", ProgramImage.create("uart_driver.elf"));
-    sdf.addProtectionDomain(&uart_driver);
+    const uart_driver = Pd.create(sdf, "uart_driver", ProgramImage.create("uart_driver.elf"));
+    sdf.addProtectionDomain(uart_driver);
 
     var serial_system = sddf.SerialSystem.init(allocator, sdf, 0x200000);
-    serial_system.setDriver(&uart_driver, uart_node.?);
+    serial_system.setDriver(uart_driver, uart_node.?);
 
-    var mux_rx = Pd.create(sdf, "serial_mux_rx", ProgramImage.create("serial_mux_rx.elf"));
-    sdf.addProtectionDomain(&mux_rx);
-    var mux_tx = Pd.create(sdf, "serial_mux_tx", ProgramImage.create("serial_mux_tx.elf"));
-    sdf.addProtectionDomain(&mux_tx);
-    serial_system.setMultiplexors(&mux_rx, &mux_tx);
+    const mux_rx = Pd.create(sdf, "serial_mux_rx", ProgramImage.create("serial_mux_rx.elf"));
+    sdf.addProtectionDomain(mux_rx);
+    const mux_tx = Pd.create(sdf, "serial_mux_tx", ProgramImage.create("serial_mux_tx.elf"));
+    sdf.addProtectionDomain(mux_tx);
+    serial_system.setMultiplexors(mux_rx, mux_tx);
 
     const timer_node = switch (board) {
         .odroidc4 => blob.child("soc").?.child("bus@ffd00000").?.child("watchdog@f0d0").?,
         else => @panic("Don't know timer node for platform")
     };
 
-    var timer_client = Pd.create(sdf, "timer_client", ProgramImage.create("timer_client.elf"));
-    sdf.addProtectionDomain(&timer_client);
+    const timer_client = Pd.create(sdf, "timer_client", ProgramImage.create("timer_client.elf"));
+    sdf.addProtectionDomain(timer_client);
 
-    var timer_driver = Pd.create(sdf, "timer_driver", ProgramImage.create("timer_driver.elf"));
-    sdf.addProtectionDomain(&timer_driver);
+    const timer_driver = Pd.create(sdf, "timer_driver", ProgramImage.create("timer_driver.elf"));
+    sdf.addProtectionDomain(timer_driver);
 
-    var timer_system = sddf.TimerSystem.init(allocator, sdf, &timer_driver, timer_node);
-    timer_system.addClient(&timer_client);
+    var timer_system = sddf.TimerSystem.init(allocator, sdf, timer_driver, timer_node);
+    timer_system.addClient(timer_client);
     try timer_system.connect();
 
     // try serial_system.connect();

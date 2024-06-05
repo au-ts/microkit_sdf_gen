@@ -2,3 +2,6 @@
 	path = sddf
 	url = https://github.com/au-ts/sddf.git
 	branch = lionsos
+[submodule "dtb.zig"]
+	path = dtb.zig
+	url = git@github.com:Ivan-Velickovic/dtb.zig

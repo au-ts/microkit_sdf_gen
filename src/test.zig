@@ -30,9 +30,9 @@ test "basic" {
     var sdf = try SystemDescription.create(allocator, .aarch64);
 
     const image = ProgramImage.create("hello.elf");
-    var pd = ProtectionDomain.create(&sdf, "hello", image);
+    const pd = ProtectionDomain.create(&sdf, "hello", image);
 
-    sdf.addProtectionDomain(&pd);
+    sdf.addProtectionDomain(pd);
 
     const expected = try readAll("src/tests/basic.xml");
     const output = try sdf.toXml();
@@ -48,18 +48,18 @@ test "PD + MR + mappings + channel" {
     sdf.addMemoryRegion(mr);
 
     const image = ProgramImage.create("hello.elf");
-    var pd1 = ProtectionDomain.create(&sdf, "hello-1", image);
+    const pd1 = ProtectionDomain.create(&sdf, "hello-1", image);
     try pd1.addInterrupt(Interrupt.create(33, .level, null));
     pd1.addMap(Map.create(mr, 0x400000000, .{ .read = true }, true, null));
     pd1.addMap(Map.create(mr, 0x600000000, .{ .execute = true }, true, null));
     pd1.addMap(Map.create(mr, 0x800000000, .{ .read = true, .execute = true }, true, null));
 
-    var pd2 = ProtectionDomain.create(&sdf, "hello-2", image);
+    const pd2 = ProtectionDomain.create(&sdf, "hello-2", image);
 
-    sdf.addProtectionDomain(&pd1);
-    sdf.addProtectionDomain(&pd2);
+    sdf.addProtectionDomain(pd1);
+    sdf.addProtectionDomain(pd2);
 
-    sdf.addChannel(Channel.create(&pd1, &pd2));
+    sdf.addChannel(Channel.create(pd1, pd2));
 
     const expected = try readAll("src/tests/pd_mr_map_channel.xml");
     const output = try sdf.toXml();

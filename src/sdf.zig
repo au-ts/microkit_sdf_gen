@@ -215,11 +215,12 @@ pub const SystemDescription = struct {
         passive: bool = false,
         maps: ArrayList(Map),
 
-        pub fn create(sdf: *SystemDescription, name: []const u8) VirtualMachine {
-            return VirtualMachine{
-                .name = name,
-                .maps = ArrayList(Map).init(sdf.allocator),
-            };
+        pub fn create(sdf: *SystemDescription, name: []const u8) *VirtualMachine {
+            var vm = sdf.allocator.create(VirtualMachine) catch @panic("Could not allocate VirtualMachine");
+            vm.name = name;
+            vm.maps = ArrayList(Map).init(sdf.allocator);
+
+            return vm;
         }
 
         pub fn addMap(vm: *VirtualMachine, map: Map) void {
@@ -290,8 +291,9 @@ pub const SystemDescription = struct {
             }
         };
 
-        pub fn create(sdf: *SystemDescription, name: []const u8, program_image: ?ProgramImage) ProtectionDomain {
-            return ProtectionDomain{
+        pub fn create(sdf: *SystemDescription, name: []const u8, program_image: ?ProgramImage) *ProtectionDomain {
+            const pd = sdf.allocator.create(ProtectionDomain) catch @panic("Could not allocate ProtectionDomain");
+            pd.* = ProtectionDomain{
                 .name = name,
                 .program_image = program_image,
                 .maps = ArrayList(Map).init(sdf.allocator),
@@ -299,6 +301,8 @@ pub const SystemDescription = struct {
                 .irqs = ArrayList(Interrupt).init(sdf.allocator),
                 .vm = null,
             };
+
+            return pd;
         }
 
         pub fn destroy(pd: *ProtectionDomain) void {
@@ -397,15 +401,15 @@ pub const SystemDescription = struct {
     };
 
     pub const Channel = struct {
-        pd1: *ProtectionDomain,
-        pd2: *ProtectionDomain,
+        pd1_name: []const u8,
+        pd2_name: []const u8,
         pd1_end_id: usize,
         pd2_end_id: usize,
 
         pub fn create(pd1: *ProtectionDomain, pd2: *ProtectionDomain) Channel {
             const ch = Channel{
-                .pd1 = pd1,
-                .pd2 = pd2,
+                .pd1_name = pd1.name,
+                .pd2_name = pd2.name,
                 .pd1_end_id = pd1.next_avail_id,
                 .pd2_end_id = pd2.next_avail_id,
             };
@@ -421,7 +425,7 @@ pub const SystemDescription = struct {
             const channel_str =
                 \\{s}<channel>{s}{s}<end pd="{s}" id="{}" />{s}{s}<end pd="{s}" id="{}" />{s}{s}</channel>
             ;
-            const channel_xml = try allocPrint(sdf.allocator, channel_str, .{ separator, "\n", child_separator, ch.pd1.name, ch.pd1_end_id, "\n", child_separator, ch.pd2.name, ch.pd2_end_id, "\n", separator });
+            const channel_xml = try allocPrint(sdf.allocator, channel_str, .{ separator, "\n", child_separator, ch.pd1_name, ch.pd1_end_id, "\n", child_separator, ch.pd2_name, ch.pd2_end_id, "\n", separator });
             defer sdf.allocator.free(channel_xml);
 
             _ = try writer.write(channel_xml);
@@ -474,7 +478,10 @@ pub const SystemDescription = struct {
     }
 
     pub fn destroy(sdf: *SystemDescription) void {
-        for (sdf.pds.items) |pd| pd.destroy();
+        for (sdf.pds.items) |pd| {
+            pd.destroy();
+            sdf.allocator.destroy(pd);
+        }
         sdf.pds.deinit();
         for (sdf.mrs.items) |mr| mr.destroy(sdf);
         sdf.mrs.deinit();
@@ -491,7 +498,11 @@ pub const SystemDescription = struct {
     }
 
     pub fn addProtectionDomain(sdf: *SystemDescription, pd: *ProtectionDomain) void {
-        sdf.pds.append(pd) catch @panic("Could not add ProtectionDomain to SystemDescription");
+        sdf.pds.append(pd) catch |e| {
+            std.debug.print("{}\n", .{ e });
+            std.debug.print("pointer {*}\n", .{ pd });
+            @panic("Could not add ProtectionDomain to SystemDescription");
+        };
     }
 
     pub fn toXml(sdf: *SystemDescription) ![:0]const u8 {
@@ -522,10 +533,10 @@ pub const SystemDescription = struct {
     pub fn exportCHeader(sdf: *SystemDescription, pd: *ProtectionDomain) ![]const u8 {
         var header = try allocPrint(sdf.allocator, "", .{});
         for (sdf.channels.items) |ch| {
-            if (ch.pd1 != pd and ch.pd2 != pd) continue;
+            if (!std.mem.eql(u8, ch.pd1_name, pd.name) and !std.mem.eql(u8, ch.pd2_name, pd.name)) continue;
 
-            const ch_id = if (ch.pd1 == pd) ch.pd1_end_id else ch.pd2_end_id;
-            const ch_pd_name = if (ch.pd1 == pd) ch.pd2.name else ch.pd1.name;
+            const ch_id = if (std.mem.eql(u8, ch.pd1_name, pd.name)) ch.pd1_end_id else ch.pd2_end_id;
+            const ch_pd_name = if (std.mem.eql(u8, ch.pd1_name, pd.name)) ch.pd2_name else ch.pd1_name;
             header = try allocPrint(sdf.allocator, "{s}#define {s}_CH {}\n", .{ header, ch_pd_name, ch_id });
         }
         // for (pd.irqs.items) |irq| {

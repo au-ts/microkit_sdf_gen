@@ -333,7 +333,7 @@ pub const SerialSystem = struct {
     device: *dtb.Node,
     mux_rx: *Pd,
     mux_tx: *Pd,
-    clients: std.ArrayList(*Pd),
+    clients: std.ArrayList(Pd),
 
     const REGIONS = [_][]const u8{ "data", "used", "free" };
 
@@ -344,7 +344,7 @@ pub const SerialSystem = struct {
             .sdf = sdf,
             .region_size = region_size,
             .page_size = page_size,
-            .clients = std.ArrayList(*Pd).init(allocator),
+            .clients = std.ArrayList(Pd).initCapacity(allocator, 10) catch @panic("Could not allocate ArrayList for SerialSystem"),
             .driver = undefined,
             .device = undefined,
             .mux_rx = undefined,
@@ -362,8 +362,13 @@ pub const SerialSystem = struct {
         system.mux_tx = mux_tx;
     }
 
-    pub fn addClient(system: *SerialSystem, client: *Pd) void {
-        system.clients.append(client) catch @panic("Could not add client to SerialSystem");
+    pub fn addClient(_: *SerialSystem, client: Pd) void {
+        std.debug.print("client name: {s}\n", .{ client.name });
+        // std.debug.print("pointer {*}\n", .{ client });
+        // system.clients.append(client) catch |e| {
+        //     std.debug.print("{}\n", .{ e });
+        //     @panic("fuck");
+        // };
     }
 
     fn rxConnectDriver(system: *SerialSystem) void {
@@ -454,7 +459,7 @@ pub const SerialSystem = struct {
         sdf.addChannel(ch_driver_mux_tx);
         sdf.addChannel(ch_driver_mux_rx);
         // 1.2 Create channels between multiplexors and clients
-        for (system.clients.items) |client| {
+        for (system.clients.items) |*client| {
             const ch_mux_tx_client = Channel.create(system.mux_tx, client);
             const ch_mux_rx_client = Channel.create(system.mux_rx, client);
             sdf.addChannel(ch_mux_tx_client);
@@ -462,7 +467,7 @@ pub const SerialSystem = struct {
         }
         system.rxConnectDriver();
         system.txConnectDriver();
-        for (system.clients.items) |client| {
+        for (system.clients.items) |*client| {
             system.rxConnectClient(client);
             system.txConnectClient(client);
         }

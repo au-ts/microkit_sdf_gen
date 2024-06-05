@@ -8,7 +8,7 @@ pub fn build(b: *std.Build) !void {
 
     const lib = b.addStaticLibrary(.{
         .name = "microkit_sdf_gen",
-        .root_source_file = .{ .path = "src/sdf.zig" },
+        .root_source_file = b.path("src/sdf.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -16,7 +16,7 @@ pub fn build(b: *std.Build) !void {
     const sdfgen_step = b.step("sdfgen", "Utility for testing and developing examples of SDF auto-generation");
     const sdfgen = b.addExecutable(.{
         .name = "sdfgen",
-        .root_source_file = .{ .path = "src/sdfgen.zig" },
+        .root_source_file = b.path("src/sdfgen.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -37,7 +37,7 @@ pub fn build(b: *std.Build) !void {
     b.installArtifact(lib);
 
     const main_tests = b.addTest(.{
-        .root_source_file = .{ .path = "src/test.zig" },
+        .root_source_file = b.path("src/test.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -46,17 +46,17 @@ pub fn build(b: *std.Build) !void {
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_main_tests.step);
 
-    const modsdf = b.addModule("sdf", .{ .root_source_file = .{ .path = "src/sdf.zig" } });
+    const modsdf = b.addModule("sdf", .{ .root_source_file = b.path("src/sdf.zig") } );
 
     const pysdfgen_bin = b.option([]const u8, "pysdfgen-emit", "Name of pysdfgen library") orelse "pysdfgen.so";
     const pysdfgen = b.addSharedLibrary(.{
         .name = "pysdfgen",
-        .root_source_file = .{ .path = "python/sdfgen_module.zig" },
+        .root_source_file = b.path("python/sdfgen_module.zig"),
         .target = target,
         .optimize = optimize,
     });
     pysdfgen.linker_allow_shlib_undefined = true;
-    pysdfgen.addIncludePath(.{ .path = "/usr/include/python3.10" });
+    pysdfgen.addIncludePath(.{ .cwd_relative = "/usr/include/python3.10" });
     pysdfgen.root_module.addImport("sdf", modsdf);
     pysdfgen.linkLibC();
     // TODO: should probably check if the library exists first...
@@ -69,7 +69,7 @@ pub fn build(b: *std.Build) !void {
 
     const libsdfgen = b.addStaticLibrary(.{
         .name = "sdfgen",
-        .root_source_file = .{ .path = "src/c/c.zig" },
+        .root_source_file = b.path("src/c/c.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -78,12 +78,12 @@ pub fn build(b: *std.Build) !void {
     const c_example_step = b.step("c", "Example of using libsdfgen with C");
     const c_example = b.addExecutable(.{
         .name = "c_example",
-        .root_source_file = .{ .path = "c/example.c" },
+        .root_source_file = b.path("c/example.c"),
         .target = target,
         .optimize = optimize,
     });
     c_example.linkLibrary(libsdfgen);
-    c_example.addIncludePath(.{ .path = "src/c" });
+    c_example.addIncludePath(b.path("src/c"));
     const c_example_cmd = b.addRunArtifact(c_example);
 
     c_example_step.dependOn(&c_example_cmd.step);
