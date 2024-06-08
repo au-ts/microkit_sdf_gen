@@ -77,7 +77,7 @@ pub const VirtualMachineSystem = struct {
             } else {
                 return error.VmmMissingVm;
             }
-            sdf.addProtectionDomain(vmm);
+            sdf.addProtectionDomain(vmm.*);
         }
     }
 };

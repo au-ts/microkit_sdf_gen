@@ -17,7 +17,7 @@ pub const SystemDescription = struct {
     /// There are some architecture specific options
     arch: Arch,
     /// Protection Domains that should be exported
-    pds: ArrayList(*ProtectionDomain),
+    pds: ArrayList(ProtectionDomain),
     /// Memory Regions that should be exported
     mrs: ArrayList(MemoryRegion),
     /// Channels that should be exported
@@ -271,7 +271,7 @@ pub const SystemDescription = struct {
         pp: bool = false,
         /// Child nodes
         maps: ArrayList(Map),
-        child_pds: ArrayList(*ProtectionDomain),
+        child_pds: ArrayList(ProtectionDomain),
         irqs: ArrayList(Interrupt),
         vm: ?*VirtualMachine,
         /// Internal counter of the next available ID
@@ -297,7 +297,7 @@ pub const SystemDescription = struct {
                 .name = name,
                 .program_image = program_image,
                 .maps = ArrayList(Map).init(sdf.allocator),
-                .child_pds = ArrayList(*ProtectionDomain).init(sdf.allocator),
+                .child_pds = ArrayList(ProtectionDomain).init(sdf.allocator),
                 .irqs = ArrayList(Interrupt).init(sdf.allocator),
                 .vm = null,
             };
@@ -329,7 +329,7 @@ pub const SystemDescription = struct {
             try pd.irqs.append(interrupt);
         }
 
-        pub fn addChild(pd: *ProtectionDomain, child: *ProtectionDomain) !void {
+        pub fn addChild(pd: *ProtectionDomain, child: ProtectionDomain) !void {
             try pd.child_pds.append(child);
         }
 
@@ -379,7 +379,7 @@ pub const SystemDescription = struct {
                 try map.toXml(sdf, writer, child_separator);
             }
             // Add child PDs
-            for (pd.child_pds.items) |child_pd| {
+            for (pd.child_pds.items) |*child_pd| {
                 try child_pd.toXml(sdf, writer, child_separator, pd.next_avail_id);
                 pd.next_avail_id += 1;
             }
@@ -471,7 +471,7 @@ pub const SystemDescription = struct {
             .xml_data = xml_data,
             .xml = xml_data.writer(),
             .arch = arch,
-            .pds = ArrayList(*ProtectionDomain).init(allocator),
+            .pds = ArrayList(ProtectionDomain).init(allocator),
             .mrs = ArrayList(MemoryRegion).init(allocator),
             .channels = ArrayList(Channel).init(allocator),
         };
@@ -497,10 +497,9 @@ pub const SystemDescription = struct {
         sdf.mrs.append(mr) catch @panic("Could not add MemoryRegion to SystemDescription");
     }
 
-    pub fn addProtectionDomain(sdf: *SystemDescription, pd: *ProtectionDomain) void {
+    pub fn addProtectionDomain(sdf: *SystemDescription, pd: ProtectionDomain) void {
         sdf.pds.append(pd) catch |e| {
             std.debug.print("{}\n", .{ e });
-            std.debug.print("pointer {*}\n", .{ pd });
             @panic("Could not add ProtectionDomain to SystemDescription");
         };
     }
@@ -514,7 +513,7 @@ pub const SystemDescription = struct {
         for (sdf.mrs.items) |mr| {
             try mr.toXml(sdf, writer, separator, sdf.arch);
         }
-        for (sdf.pds.items) |pd| {
+        for (sdf.pds.items) |*pd| {
             try pd.toXml(sdf, writer, separator, null);
         }
         for (sdf.channels.items) |ch| {
