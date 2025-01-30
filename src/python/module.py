@@ -183,12 +183,23 @@ libsdfgen.sdfgen_sddf_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_
 libsdfgen.sdfgen_sddf_net_destroy.restype = None
 libsdfgen.sdfgen_sddf_net_destroy.argtypes = [c_void_p]
 
+libsdfgen.sdfgen_sddf_net_add_client.restype = c_bool
+libsdfgen.sdfgen_sddf_net_add_client.argtypes = [
+    c_void_p,
+    c_void_p,
+    c_char_p,
+    c_bool,
+    c_bool
+]
+
 libsdfgen.sdfgen_sddf_net_add_client_with_copier.restype = c_bool
 libsdfgen.sdfgen_sddf_net_add_client_with_copier.argtypes = [
     c_void_p,
     c_void_p,
     c_void_p,
-    c_char_p
+    c_char_p,
+    c_bool,
+    c_bool
 ]
 
 libsdfgen.sdfgen_sddf_net_connect.restype = c_bool
@@ -843,12 +854,51 @@ class Sddf:
                 sdf._obj, device_obj, driver._obj, virt_tx._obj, virt_rx._obj
             )
 
+        def add_client(
+            self,
+            client: SystemDescription.ProtectionDomain,
+            *,
+            mac_addr: Optional[str] = None,
+            rx: bool=True,
+            tx: bool=True,
+        ) -> None:
+            """
+            Add a client connected to a copier component for RX traffic.
+
+            :param copier: must be unique to this client, cannot be used with any other client.
+            :param mac_addr: must be unique to the Network system.
+            """
+            if mac_addr is not None and len(mac_addr) != 17:
+                raise Exception(f"invalid MAC address length for client '{client.name}', {mac_addr}")
+
+            c_mac_addr = c_char_p(0)
+            if mac_addr is not None:
+                c_mac_addr = c_char_p(mac_addr.encode("utf-8"))
+            ret = libsdfgen.sdfgen_sddf_net_add_client(
+                self._obj, client._obj, c_mac_addr, rx, tx
+            )
+            if ret == SddfStatus.OK:
+                return
+            elif ret == SddfStatus.DUPLICATE_CLIENT:
+                raise Exception(f"duplicate client given '{client}'")
+            elif ret == SddfStatus.INVALID_CLIENT:
+                raise Exception(f"invalid client given '{client}'")
+            elif ret == SddfStatus.NET_DUPLICATE_COPIER:
+                raise Exception(f"duplicate copier given '{copier}'")
+            elif ret == SddfStatus.NET_DUPLICATE_MAC_ADDR:
+                raise Exception(f"duplicate MAC address given '{mac_addr}'")
+            else:
+                raise Exception(f"internal error: {ret}")
+
+
         def add_client_with_copier(
             self,
             client: SystemDescription.ProtectionDomain,
             copier: SystemDescription.ProtectionDomain,
             *,
-            mac_addr: Optional[str] = None
+            mac_addr: Optional[str] = None,
+            rx: bool=True,
+            tx: bool=True,
         ) -> None:
             """
             Add a client connected to a copier component for RX traffic.
@@ -865,7 +915,7 @@ class Sddf:
             if mac_addr is not None:
                 c_mac_addr = c_char_p(mac_addr.encode("utf-8"))
             ret = libsdfgen.sdfgen_sddf_net_add_client_with_copier(
-                self._obj, client._obj, copier._obj, c_mac_addr
+                self._obj, client._obj, copier._obj, c_mac_addr, rx, tx
             )
             if ret == SddfStatus.OK:
                 return

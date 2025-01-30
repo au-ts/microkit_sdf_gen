@@ -120,7 +120,8 @@ bool sdfgen_sddf_blk_serialise_config(void *system, char *output_dir);
 
 void *sdfgen_sddf_net(void *sdf, void *device, void *driver, void *virt_rx, void *virt_tx);
 void sdfgen_sddf_net_destroy(void *system);
-sdfgen_sddf_status_t sdfgen_sddf_net_add_client_with_copier(void *system, void *client, void *copier, uint8_t mac_addr[6]);
+sdfgen_sddf_status_t sdfgen_sddf_net_add_client(void *system, void *client, uint8_t mac_addr[6], bool rx, bool tx);
+sdfgen_sddf_status_t sdfgen_sddf_net_add_client_with_copier(void *system, void *client, void *copier, uint8_t mac_addr[6], bool rx, bool tx);
 bool sdfgen_sddf_net_connect(void *system);
 bool sdfgen_sddf_net_serialise_config(void *system, char *output_dir);
 

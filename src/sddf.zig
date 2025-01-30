@@ -1056,6 +1056,8 @@ pub const Net = struct {
         DuplicateCopier,
         DuplicateMacAddr,
         InvalidMacAddr,
+        OutOfMemory,
+        InvalidOptions,
     };
 
     pub const Options = struct {
@@ -1063,15 +1065,23 @@ pub const Net = struct {
     };
 
     pub const ClientOptions = struct {
+        rx: bool = true,
+        tx: bool = true,
         rx_buffers: usize = 512,
         tx_buffers: usize = 512,
         mac_addr: ?[]const u8 = null,
     };
 
     pub const ClientInfo = struct {
+        rx: bool = true,
+        tx: bool = true,
+        // @kwinter: What should we default this value to?
+        rx_copier: bool = false,
         rx_buffers: usize = 512,
         tx_buffers: usize = 512,
         mac_addr: ?[6]u8 = null,
+        // Store a reference to the copier in the client info.
+        copier: ?*Pd = null,
     };
 
     allocator: Allocator,
@@ -1081,14 +1091,14 @@ pub const Net = struct {
     driver: *Pd,
     virt_rx: *Pd,
     virt_tx: *Pd,
-    copiers: std.ArrayList(*Pd),
+    copiers: std.AutoHashMap(usize, *Pd),
     clients: std.ArrayList(*Pd),
 
     device_res: ConfigResources.Device,
     driver_config: ConfigResources.Net.Driver,
     virt_rx_config: ConfigResources.Net.VirtRx,
     virt_tx_config: ConfigResources.Net.VirtTx,
-    copy_configs: std.ArrayList(ConfigResources.Net.Copy),
+    copy_configs: std.AutoHashMap(usize, ConfigResources.Net.Copy),
     client_configs: std.ArrayList(ConfigResources.Net.Client),
 
     connected: bool = false,
@@ -1102,7 +1112,7 @@ pub const Net = struct {
             .allocator = allocator,
             .sdf = sdf,
             .clients = std.ArrayList(*Pd).init(allocator),
-            .copiers = std.ArrayList(*Pd).init(allocator),
+            .copiers = std.AutoHashMap(usize, *Pd).init(allocator),
             .driver = driver,
             .device = device,
             .device_res = std.mem.zeroInit(ConfigResources.Device, .{}),
@@ -1112,7 +1122,7 @@ pub const Net = struct {
             .driver_config = std.mem.zeroInit(ConfigResources.Net.Driver, .{}),
             .virt_rx_config = std.mem.zeroInit(ConfigResources.Net.VirtRx, .{}),
             .virt_tx_config = std.mem.zeroInit(ConfigResources.Net.VirtTx, .{}),
-            .copy_configs = std.ArrayList(ConfigResources.Net.Copy).init(allocator),
+            .copy_configs = std.AutoHashMap(usize, ConfigResources.Net.Copy).init(allocator),
             .client_configs = std.ArrayList(ConfigResources.Net.Client).init(allocator),
 
             .client_info = std.ArrayList(ClientInfo).init(allocator),
@@ -1137,7 +1147,11 @@ pub const Net = struct {
         return mac_arr;
     }
 
-    pub fn addClientWithCopier(system: *Net, client: *Pd, copier: *Pd, options: ClientOptions) Error!void {
+    pub fn addClient(system: *Net, client: *Pd, options: ClientOptions) Error!void {
+        // Check that at least rx or tx is set in ClientOptions
+        if (!options.rx and !options.tx) {
+            return Error.InvalidOptions;
+        }
         const client_idx = system.clients.items.len;
 
         // Check that the MAC address isn't present already
@@ -1156,27 +1170,78 @@ pub const Net = struct {
                 return Error.DuplicateClient;
             }
         }
-        // Check that the copier does not already exist
-        for (system.copiers.items) |existing_copier| {
+
+        system.clients.append(client) catch @panic("Could not add client to Net");
+        system.client_configs.append(std.mem.zeroInit(ConfigResources.Net.Client, .{})) catch @panic("Could not add client to Net");
+
+        system.client_info.append(std.mem.zeroInit(ClientInfo, .{})) catch @panic("Could not add client to Net");
+        if (options.mac_addr) |mac_addr| {
+            system.client_info.items[client_idx].mac_addr = parseMacAddr(mac_addr) catch return Error.InvalidMacAddr;
+        }
+        if (options.rx) {
+            system.client_info.items[client_idx].rx_buffers = options.rx_buffers;
+        }
+        if (options.tx) {
+            system.client_info.items[client_idx].tx_buffers = options.tx_buffers;
+        }
+        system.client_info.items[client_idx].rx = options.rx;
+        system.client_info.items[client_idx].tx = options.tx;
+        system.client_info.items[client_idx].rx_copier = false;
+    }
+
+    pub fn addClientWithCopier(system: *Net, client: *Pd, copier: *Pd, options: ClientOptions) Error!void {
+        // Check that at least rx or tx is set in ClientOptions
+        if (!options.rx and !options.tx) {
+            return Error.InvalidOptions;
+        }
+
+        const client_idx = system.clients.items.len;
+
+        // Check that the MAC address isn't present already
+        if (options.mac_addr) |a| {
+            for (0..client_idx) |i| {
+                if (system.client_info.items[i].mac_addr) |b| {
+                    if (std.mem.eql(u8, a, &b)) {
+                        return Error.DuplicateMacAddr;
+                    }
+                }
+            }
+        }
+        // Check that the client does not already exist
+        for (system.clients.items) |existing_client| {
+            if (std.mem.eql(u8, existing_client.name, client.name)) {
+                return Error.DuplicateClient;
+            }
+        }
+        var it = system.copiers.valueIterator();
+        while (it.next()) |value_ptr| {
+            const existing_copier = value_ptr.*;
             if (std.mem.eql(u8, existing_copier.name, copier.name)) {
                 return Error.DuplicateCopier;
             }
         }
 
         system.clients.append(client) catch @panic("Could not add client with copier to Net");
-        system.copiers.append(copier) catch @panic("Could not add client with copier to Net");
-        system.client_configs.append(std.mem.zeroInit(ConfigResources.Net.Client, .{})) catch @panic("Could not add client with copier to Net");
-        system.copy_configs.append(std.mem.zeroInit(ConfigResources.Net.Copy, .{})) catch @panic("Could not add client with copier to Net");
-
         system.client_info.append(std.mem.zeroInit(ClientInfo, .{})) catch @panic("Could not add client with copier to Net");
+
+        if (options.rx) {
+            try system.copiers.put(client_idx, copier);
+            system.client_configs.append(std.mem.zeroInit(ConfigResources.Net.Client, .{})) catch @panic("Could not add client with copier to Net");
+            try system.copy_configs.put(client_idx, std.mem.zeroInit(ConfigResources.Net.Copy, .{}));
+            system.client_info.items[client_idx].rx_buffers = options.rx_buffers;
+        }
+
         if (options.mac_addr) |mac_addr| {
             system.client_info.items[client_idx].mac_addr = parseMacAddr(mac_addr) catch {
                 std.log.err("invalid MAC address given for client '{s}': '{s}'", .{ client.name, mac_addr });
                 return Error.InvalidMacAddr;
             };
         }
-        system.client_info.items[client_idx].rx_buffers = options.rx_buffers;
-        system.client_info.items[client_idx].tx_buffers = options.tx_buffers;
+        if (options.tx) {
+            system.client_info.items[client_idx].tx_buffers = options.tx_buffers;
+        }
+        system.client_info.items[client_idx].rx = options.rx;
+        system.client_info.items[client_idx].tx = options.tx;
     }
 
     fn createConnection(system: *Net, server: *Pd, client: *Pd, server_conn: *ConfigResources.Net.Connection, client_conn: *ConfigResources.Net.Connection, num_buffers: u64) void {
@@ -1247,19 +1312,36 @@ pub const Net = struct {
     }
 
     fn clientRxConnect(system: *Net, rx_dma: Mr, client_idx: usize) void {
-        const client_info = system.client_info.items[client_idx];
+        // const client_info = system.client_info.items[client_idx];
         const client = system.clients.items[client_idx];
-        const copier = system.copiers.items[client_idx];
         var client_config = &system.client_configs.items[client_idx];
-        var copier_config = &system.copy_configs.items[client_idx];
         var virt_client_config = &system.virt_rx_config.clients[client_idx];
 
-        system.createConnection(system.virt_rx, copier, &virt_client_config.conn, &copier_config.virt_rx, system.rx_buffers);
-        system.createConnection(copier, client, &copier_config.client, &client_config.rx, client_info.rx_buffers);
+        // @kwinter: remove client_info.rx_buffers for the case of no copier. Just map the
+        // DMA buffers in directly.
 
-        const rx_dma_copier_map = Map.create(rx_dma, copier.getMapVaddr(&rx_dma), .rw, .{});
-        copier.addMap(rx_dma_copier_map);
-        copier_config.device_data = .createFromMap(rx_dma_copier_map);
+        system.createConnection(system.virt_rx, client, &virt_client_config.conn, &client_config.rx, system.rx_buffers);
+
+        const rx_dma_map = Map.create(rx_dma, client.getMapVaddr(&rx_dma), .rw, .{});
+        client.addMap(rx_dma_map);
+        client_config.rx_data = ConfigResources.Region.createFromMap(rx_dma_map);
+    }
+
+    fn clientRxConnectWithCopier(system: *Net, rx_dma: Mr, client_idx: usize) void {
+        const client_info = system.client_info.items[client_idx];
+        const client = system.clients.items[client_idx];
+        const copier = system.copiers.getPtr(client_idx).?;
+
+        // @kwinter: Not sure if this is the best solution.
+        var client_config = &system.client_configs.items[client_idx];
+        var virt_client_config = &system.virt_rx_config.clients[client_idx];
+        var copier_config = system.copy_configs.getPtr(client_idx).?;
+        system.createConnection(system.virt_rx, copier.*, &virt_client_config.conn, &copier_config.virt_rx, system.rx_buffers);
+        system.createConnection(copier.*, client, &copier_config.client, &client_config.rx, client_info.rx_buffers);
+
+        const rx_dma_copier_map = Map.create(rx_dma, copier.*.getMapVaddr(&rx_dma), .rw, .{});
+        copier.*.addMap(rx_dma_copier_map);
+        copier_config.device_data = ConfigResources.Region.createFromMap(rx_dma_copier_map);
 
         const client_data_mr_size = system.sdf.arch.roundUpToPage(system.rx_buffers * BUFFER_SIZE);
         const client_data_mr_name = fmt(system.allocator, "{s}/net/rx/data/client/{s}", .{ system.device.name, client.name });
@@ -1270,9 +1352,9 @@ pub const Net = struct {
         client.addMap(client_data_client_map);
         client_config.rx_data = .createFromMap(client_data_client_map);
 
-        const client_data_copier_map = Map.create(client_data_mr, copier.getMapVaddr(&client_data_mr), .rw, .{});
-        copier.addMap(client_data_copier_map);
-        copier_config.client_data = .createFromMap(client_data_copier_map);
+        const client_data_copier_map = Map.create(client_data_mr, copier.*.getMapVaddr(&client_data_mr), .rw, .{});
+        copier.*.addMap(client_data_copier_map);
+        copier_config.client_data = ConfigResources.Region.createFromMap(client_data_copier_map);
     }
 
     fn clientTxConnect(system: *Net, client_id: usize) void {
@@ -1340,10 +1422,18 @@ pub const Net = struct {
         system.virt_rx_config.num_clients = @intCast(system.clients.items.len);
         for (system.clients.items, 0..) |_, i| {
             // TODO: we have an assumption that all copiers are RX copiers
-            system.clientRxConnect(rx_dma_mr, i);
-            system.clientTxConnect(i);
+            if (system.client_info.items[i].rx == true) {
+                if (system.client_info.items[i].rx_copier == true) {
+                    system.clientRxConnectWithCopier(rx_dma_mr, i);
+                } else {
+                    system.clientRxConnect(rx_dma_mr, i);
+                }
+                system.virt_rx_config.clients[i].mac_addr = system.client_info.items[i].mac_addr.?;
+            }
+            if (system.client_info.items[i].tx == true) {
+                system.clientTxConnect(i);
+            }
 
-            system.virt_rx_config.clients[i].mac_addr = system.client_info.items[i].mac_addr.?;
             system.client_configs.items[i].mac_addr = system.client_info.items[i].mac_addr.?;
         }
 
@@ -1355,23 +1445,83 @@ pub const Net = struct {
 
         const allocator = system.allocator;
 
-        const device_res_data_name = fmt(allocator, "{s}_device_resources", .{system.driver.name});
-        try data.serialize(allocator, system.device_res, prefix, device_res_data_name);
-        try data.serialize(allocator, system.driver_config, prefix, "net_driver");
-        try data.serialize(allocator, system.virt_rx_config, prefix, "net_virt_rx");
-        try data.serialize(allocator, system.virt_tx_config, prefix, "net_virt_tx");
+        // const device_res_data_name = fmt(allocator, "{s}_device_resources.data", .{system.driver.name});
+        // try data.serialize(system.device_res, try fs.path.join(allocator, &.{ prefix, device_res_data_name }));
+        // const driver_data_name = fmt(allocator, "net_{s}.data", .{system.driver.name});
+        // try data.serialize(system.driver_config, try fs.path.join(allocator, &.{ prefix, driver_data_name}));
+        // const virt_rx_data_name = fmt(allocator, "net_{s}.data", .{system.virt_rx.name});
+        // try data.serialize(system.virt_rx_config, try fs.path.join(allocator, &.{ prefix, virt_rx_data_name}));
+        // const virt_tx_data_name = fmt(allocator, "net_{s}.data", .{system.virt_tx.name});
+        // try data.serialize(system.virt_tx_config, try fs.path.join(allocator, &.{ prefix, virt_tx_data_name}));
+        const device_res_data_name = fmt(allocator, "{s}_device_resources.data", .{system.driver.name});
+        try data.serialize(system.device_res, try fs.path.join(allocator, &.{ prefix, device_res_data_name }));
+        try data.serialize(system.driver_config, try fs.path.join(allocator, &.{ prefix, "net_driver.data" }));
+        try data.serialize(system.virt_rx_config, try fs.path.join(allocator, &.{ prefix, "net_virt_rx.data" }));
+        try data.serialize(system.virt_tx_config, try fs.path.join(allocator, &.{ prefix, "net_virt_tx.data" }));
 
-        for (system.copiers.items, 0..) |copier, i| {
-            const data_name = fmt(allocator, "net_copy_{s}", .{copier.name});
-            try data.serialize(allocator, system.copy_configs.items[i], prefix, data_name);
+        // for (system.client_info.items) |client_info| {
+        //     if (client_info.copier) |copier| {
+        //         const data_name = fmt(allocator, "net_copy_{s}.data", .{copier.name});
+        //         try data.serialize(client_info.copy_config, try fs.path.join(allocator, &.{ prefix, data_name }));
+        //         const json_name = fmt(allocator, "net_copy_{s}.json", .{copier.name});
+        //         try data.jsonify(client_info.copy_config, try fs.path.join(allocator, &.{ prefix, json_name }));
+        //     }
+        // }
+
+        var it = system.copiers.iterator();
+        while (it.next()) |kv| {
+            // We have the copier value, get the copier_config value
+            const copier = kv.value_ptr.*;
+            const copy_config = system.copy_configs.get(kv.key_ptr.*);
+            if (copy_config) |config| {
+                const data_name = fmt(allocator, "net_copy_{s}.data", .{copier.name});
+                try data.serialize(config, try fs.path.join(allocator, &.{ prefix, data_name }));
+                const json_name = fmt(allocator, "net_copy_{s}.json", .{copier.name});
+                try data.jsonify(config, try fs.path.join(allocator, &.{ prefix, json_name }));
+            }
         }
 
         for (system.clients.items, 0..) |client, i| {
-            const data_name = fmt(allocator, "net_client_{s}", .{client.name});
-            try data.serialize(allocator, system.client_configs.items[i], prefix, data_name);
+            const data_name = fmt(allocator, "net_client_{s}.data", .{client.name});
+            try data.serialize(system.client_configs.items[i], try fs.path.join(allocator, &.{ prefix, data_name }));
+            const json_name = fmt(allocator, "net_client_{s}.json", .{client.name});
+            try data.jsonify(system.client_configs.items[i], try fs.path.join(allocator, &.{ prefix, json_name }));
         }
 
-        system.serialised = true;
+        if (data.emit_json) {
+            const device_res_json_name = fmt(allocator, "{s}_device_resources.json", .{system.driver.name});
+            // try data.jsonify(system.device_res, try fs.path.join(allocator, &.{ prefix, device_res_json_name }));
+            // try data.jsonify(system.driver_config, try fs.path.join(allocator, &.{ prefix, driver_data_name}));
+            // try data.jsonify(system.virt_rx_config, try fs.path.join(allocator, &.{ prefix, virt_rx_data_name}));
+            // try data.jsonify(system.virt_tx_config, try fs.path.join(allocator, &.{ prefix, virt_tx_data_name}));
+            try data.jsonify(system.device_res, try fs.path.join(allocator, &.{ prefix, device_res_json_name }));
+            try data.jsonify(system.driver_config, try fs.path.join(allocator, &.{ prefix, "net_driver.json" }));
+            try data.jsonify(system.virt_rx_config, try fs.path.join(allocator, &.{ prefix, "net_virt_rx.json" }));
+            try data.jsonify(system.virt_tx_config, try fs.path.join(allocator, &.{ prefix, "net_virt_tx.json" }));
+
+            // for (system.client_info.items) |client_info| {
+            //     if (client_info.copier) |copier| {
+            //         const json_name = fmt(allocator, "net_copy_{s}.json", .{copier.name});
+            //         try data.jsonify(client_info.copy_config, try fs.path.join(allocator, &.{ prefix, json_name }));
+            //     }
+            // }
+
+            it = system.copiers.iterator();
+            while (it.next()) |kv| {
+                // We have the copier value, get the copier_config value
+                const copier = kv.value_ptr.*;
+                const copy_config = system.copy_configs.get(kv.key_ptr.*);
+                if (copy_config) |config| {
+                    const json_name = fmt(allocator, "net_copy_{s}.json", .{copier.name});
+                    try data.jsonify(config, try fs.path.join(allocator, &.{ prefix, json_name }));
+                }
+            }
+
+            for (system.clients.items, 0..) |client, i| {
+                const json_name = fmt(allocator, "net_client_{s}.json", .{client.name});
+                try data.jsonify(system.client_configs.items[i], try fs.path.join(allocator, &.{ prefix, json_name }));
+            }
+        }
     }
 };
 
