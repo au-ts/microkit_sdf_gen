@@ -1457,28 +1457,11 @@ pub const Net = struct {
 
         const allocator = system.allocator;
 
-        // const device_res_data_name = fmt(allocator, "{s}_device_resources.data", .{system.driver.name});
-        // try data.serialize(system.device_res, try fs.path.join(allocator, &.{ prefix, device_res_data_name }));
-        // const driver_data_name = fmt(allocator, "net_{s}.data", .{system.driver.name});
-        // try data.serialize(system.driver_config, try fs.path.join(allocator, &.{ prefix, driver_data_name}));
-        // const virt_rx_data_name = fmt(allocator, "net_{s}.data", .{system.virt_rx.name});
-        // try data.serialize(system.virt_rx_config, try fs.path.join(allocator, &.{ prefix, virt_rx_data_name}));
-        // const virt_tx_data_name = fmt(allocator, "net_{s}.data", .{system.virt_tx.name});
-        // try data.serialize(system.virt_tx_config, try fs.path.join(allocator, &.{ prefix, virt_tx_data_name}));
         const device_res_data_name = fmt(allocator, "{s}_device_resources.data", .{system.driver.name});
         try data.serialize(system.device_res, try fs.path.join(allocator, &.{ prefix, device_res_data_name }));
         try data.serialize(system.driver_config, try fs.path.join(allocator, &.{ prefix, "net_driver.data" }));
         try data.serialize(system.virt_rx_config, try fs.path.join(allocator, &.{ prefix, "net_virt_rx.data" }));
         try data.serialize(system.virt_tx_config, try fs.path.join(allocator, &.{ prefix, "net_virt_tx.data" }));
-
-        // for (system.client_info.items) |client_info| {
-        //     if (client_info.copier) |copier| {
-        //         const data_name = fmt(allocator, "net_copy_{s}.data", .{copier.name});
-        //         try data.serialize(client_info.copy_config, try fs.path.join(allocator, &.{ prefix, data_name }));
-        //         const json_name = fmt(allocator, "net_copy_{s}.json", .{copier.name});
-        //         try data.jsonify(client_info.copy_config, try fs.path.join(allocator, &.{ prefix, json_name }));
-        //     }
-        // }
 
         for (system.copiers.items, 0..) |maybe_copier, i| {
             if (maybe_copier) |copier| {
@@ -1499,21 +1482,10 @@ pub const Net = struct {
 
         if (data.emit_json) {
             const device_res_json_name = fmt(allocator, "{s}_device_resources.json", .{system.driver.name});
-            // try data.jsonify(system.device_res, try fs.path.join(allocator, &.{ prefix, device_res_json_name }));
-            // try data.jsonify(system.driver_config, try fs.path.join(allocator, &.{ prefix, driver_data_name}));
-            // try data.jsonify(system.virt_rx_config, try fs.path.join(allocator, &.{ prefix, virt_rx_data_name}));
-            // try data.jsonify(system.virt_tx_config, try fs.path.join(allocator, &.{ prefix, virt_tx_data_name}));
             try data.jsonify(system.device_res, try fs.path.join(allocator, &.{ prefix, device_res_json_name }));
             try data.jsonify(system.driver_config, try fs.path.join(allocator, &.{ prefix, "net_driver.json" }));
             try data.jsonify(system.virt_rx_config, try fs.path.join(allocator, &.{ prefix, "net_virt_rx.json" }));
             try data.jsonify(system.virt_tx_config, try fs.path.join(allocator, &.{ prefix, "net_virt_tx.json" }));
-
-            // for (system.client_info.items) |client_info| {
-            //     if (client_info.copier) |copier| {
-            //         const json_name = fmt(allocator, "net_copy_{s}.json", .{copier.name});
-            //         try data.jsonify(client_info.copy_config, try fs.path.join(allocator, &.{ prefix, json_name }));
-            //     }
-            // }
 
             for (system.copiers.items, 0..) |maybe_copier, i| {
                 if (maybe_copier) |copier| {
