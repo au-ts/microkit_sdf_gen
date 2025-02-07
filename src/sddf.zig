@@ -1457,15 +1457,28 @@ pub const Net = struct {
 
         const allocator = system.allocator;
 
+        // const device_res_data_name = fmt(allocator, "{s}_device_resources.data", .{system.driver.name});
+        // try data.serialize(system.device_res, try fs.path.join(allocator, &.{ prefix, device_res_data_name }));
+        // try data.serialize(system.driver_config, try fs.path.join(allocator, &.{ prefix, "net_driver.data" }));
+        // try data.serialize(system.virt_rx_config, try fs.path.join(allocator, &.{ prefix, "net_virt_rx.data" }));
+        // try data.serialize(system.virt_tx_config, try fs.path.join(allocator, &.{ prefix, "net_virt_tx.data" }));
+
         const device_res_data_name = fmt(allocator, "{s}_device_resources.data", .{system.driver.name});
         try data.serialize(system.device_res, try fs.path.join(allocator, &.{ prefix, device_res_data_name }));
-        try data.serialize(system.driver_config, try fs.path.join(allocator, &.{ prefix, "net_driver.data" }));
-        try data.serialize(system.virt_rx_config, try fs.path.join(allocator, &.{ prefix, "net_virt_rx.data" }));
-        try data.serialize(system.virt_tx_config, try fs.path.join(allocator, &.{ prefix, "net_virt_tx.data" }));
+        const driver_data_name = fmt(allocator, "net_{s}.data", .{system.driver.name});
+        try data.serialize(system.driver_config, try fs.path.join(allocator, &.{ prefix, driver_data_name }));
+        const virt_rx_data_name = fmt(allocator, "net_{s}.data", .{system.virt_rx.name});
+        try data.serialize(system.virt_rx_config, try fs.path.join(allocator, &.{ prefix, virt_rx_data_name }));
+        const virt_tx_data_name = fmt(allocator, "net_{s}.data", .{system.virt_tx.name});
+        try data.serialize(system.virt_tx_config, try fs.path.join(allocator, &.{ prefix, virt_tx_data_name }));
 
         for (system.copiers.items, 0..) |maybe_copier, i| {
             if (maybe_copier) |copier| {
                 const config = system.copy_configs.items[i].?;
+                // const data_name = fmt(allocator, "net_copy_{s}.data", .{copier.name});
+                // try data.serialize(config, try fs.path.join(allocator, &.{ prefix, data_name }));
+                // const json_name = fmt(allocator, "net_copy_{s}.json", .{copier.name});
+                // try data.jsonify(config, try fs.path.join(allocator, &.{ prefix, json_name }));
                 const data_name = fmt(allocator, "net_copy_{s}.data", .{copier.name});
                 try data.serialize(config, try fs.path.join(allocator, &.{ prefix, data_name }));
                 const json_name = fmt(allocator, "net_copy_{s}.json", .{copier.name});
@@ -1483,13 +1496,22 @@ pub const Net = struct {
         if (data.emit_json) {
             const device_res_json_name = fmt(allocator, "{s}_device_resources.json", .{system.driver.name});
             try data.jsonify(system.device_res, try fs.path.join(allocator, &.{ prefix, device_res_json_name }));
-            try data.jsonify(system.driver_config, try fs.path.join(allocator, &.{ prefix, "net_driver.json" }));
-            try data.jsonify(system.virt_rx_config, try fs.path.join(allocator, &.{ prefix, "net_virt_rx.json" }));
-            try data.jsonify(system.virt_tx_config, try fs.path.join(allocator, &.{ prefix, "net_virt_tx.json" }));
+            const driver_json_name = fmt(allocator, "net_{s}.json", .{system.driver.name});
+            try data.jsonify(system.driver_config, try fs.path.join(allocator, &.{ prefix, driver_json_name }));
+            const virt_rx_json_name = fmt(allocator, "net_{s}.json", .{system.virt_rx.name});
+            try data.jsonify(system.virt_rx_config, try fs.path.join(allocator, &.{ prefix, virt_rx_json_name }));
+            const virt_tx_json_name = fmt(allocator, "net_{s}.json", .{system.virt_tx.name});
+            try data.jsonify(system.virt_tx_config, try fs.path.join(allocator, &.{ prefix, virt_tx_json_name }));
+            // try data.jsonify(system.device_res, try fs.path.join(allocator, &.{ prefix, device_res_json_name }));
+            // try data.jsonify(system.driver_config, try fs.path.join(allocator, &.{ prefix, "net_driver.json" }));
+            // try data.jsonify(system.virt_rx_config, try fs.path.join(allocator, &.{ prefix, "net_virt_rx.json" }));
+            // try data.jsonify(system.virt_tx_config, try fs.path.join(allocator, &.{ prefix, "net_virt_tx.json" }));
 
             for (system.copiers.items, 0..) |maybe_copier, i| {
                 if (maybe_copier) |copier| {
                     const config = system.copy_configs.items[i].?;
+                    // const json_name = fmt(allocator, "net_copy_{s}.json", .{copier.name});
+                    // try data.jsonify(config, try fs.path.join(allocator, &.{ prefix, json_name }));
                     const json_name = fmt(allocator, "net_copy_{s}.json", .{copier.name});
                     try data.jsonify(config, try fs.path.join(allocator, &.{ prefix, json_name }));
                 }
@@ -1757,6 +1779,49 @@ pub const Lwip = struct {
         try data.serialize(lib.allocator, lib.config, prefix, config_data);
     }
 };
+
+// pub const Firewall = struct {
+//     const BUFFER_SIZE = 2048;
+
+//     pub const Error = SystemError || error{
+//         InvalidClient,
+//         DuplicateCopier,
+//         DuplicateMacAddr,
+//         InvalidMacAddr,
+//         OutOfMemory,
+//         InvalidOptions,
+//     };
+
+//     // Any info structs that we need here.
+
+//     pub const FilterOptions = struct {
+//         rx: bool = true,
+//         tx: bool = true,
+//         rx_buffers: usize = 512,
+//         tx_buffers: usize = 512,
+//     };
+
+//     pub const FilterInfo = struct {
+//         rx: bool = true,
+//         tx: bool = true,
+//         // @kwinter: What should we default this value to?
+//         rx_buffers: usize = 512,
+//         tx_buffers: usize = 512,
+//     };
+
+//     driver1: *Pd,
+//     driver2: *Pd,
+//     virtTx1: *Pd,
+//     virtRx1: *Pd,
+//     virtTx2: *Pd,
+//     virtRx2: *Pd,
+//     router1: *Pd,
+//     router2: *Pd,
+//     externalArp1: *Pd,
+//     externalArp2: *Pd,
+//     internalArp1: *Pd,
+//     internalArp2: *Pd,
+// };
 
 /// Assumes probe() has been called
 fn findDriver(compatibles: []const []const u8, class: Config.Driver.Class) ?Config.Driver {
