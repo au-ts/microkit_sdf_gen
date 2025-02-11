@@ -947,3 +947,25 @@ export fn sdfgen_sddf_lwip_serialise_config(c_lib: *align(8) anyopaque, output_d
 
     return true;
 }
+
+export fn sdfgen_lionsos_firewall(c_sdf: *align(8) anyopaque, c_net1: *align(8) anyopaque, c_net2: *align(8) anyopaque, c_router: *align(8) anyopaque, c_arp_responder: *align(8) anyopaque, c_arp_requester: *align(8) anyopaque) *anyopaque {
+    const sdf: *SystemDescription = @ptrCast(c_sdf);
+    const firewall = allocator.create(lionsos.Firewall) catch @panic("OOM");
+    firewall.* = lionsos.Firewall.init(allocator, sdf, @ptrCast(c_net1), @ptrCast(c_net2), @ptrCast(c_router), @ptrCast(c_arp_responder), @ptrCast(c_arp_requester));
+
+    return firewall;
+}
+
+export fn sdfgen_lionsos_firewall_connect(system: *align(8) anyopaque) bool {
+    const firewall: *lionsos.Firewall = @ptrCast(system);
+    firewall.connect() catch @panic("TODO");
+
+    return true;
+}
+
+export fn sdfgen_lionsos_firewall_serialise_config(system: *align(8) anyopaque, output_dir: [*c]u8) bool {
+    const firewall: *lionsos.Firewall = @ptrCast(system);
+    firewall.serialiseConfig(std.mem.span(output_dir)) catch return false;
+
+    return true;
+}

@@ -380,6 +380,29 @@ pub const Resources = struct {
         export_path: [MaxExportPathLen]u8,
     };
 
+    pub const Firewall = extern struct {
+        const MAGIC: [8]u8 = LIONS_MAGIC_START ++ .{0x3};
+
+        pub const ArpRouterConnection = extern struct {
+            arp_queue: Region,
+            arp_cache: Region,
+            id: u8,
+        };
+
+        pub const ArpRequester = extern struct {
+            magic: [8]u8 = MAGIC,
+            router: ArpRouterConnection,
+        };
+
+        // @kwinter: Note that this is teh same as the ARP structure,
+        // this is just while the router is a simple PoC. Once we
+        // have the filtering components in, this struct will change.
+        pub const Router = extern struct {
+            magic: [8]u8 = MAGIC,
+            arp_requester: ArpRouterConnection,
+        };
+    };
+
     pub const Lib = struct {
         pub const SddfLwip = extern struct {
             const MAGIC: [5]u8 = MAGIC_START ++ .{0x8};

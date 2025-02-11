@@ -380,3 +380,102 @@ pub const FileSystem = struct {
         }
     };
 };
+
+pub const Firewall = struct {
+    // @kwinter: Add in proper error checking here.
+    allocator: Allocator,
+    sdf: *SystemDescription,
+    network1: *Net,
+    network2: *Net,
+    router: *Pd,
+    arp_requester: *Pd,
+    arp_responder: *Pd,
+
+    router_config: ConfigResources.Firewall.Router,
+    arp_requester_config: ConfigResources.Firewall.ArpRequester,
+
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, net1: *Net, net2: *Net, router: *Pd, arp_responder: *Pd, arp_requester: *Pd) Firewall {
+        return .{
+            .allocator = allocator,
+            .sdf = sdf,
+            .network1 = net1,
+            .network2 = net2,
+            .router = router,
+            .arp_responder = arp_responder,
+            .arp_requester = arp_requester,
+
+            .router_config = std.mem.zeroInit(ConfigResources.Firewall.Router, .{}),
+            .arp_requester_config = std.mem.zeroInit(ConfigResources.Firewall.ArpRequester, .{}),
+        };
+    }
+
+    pub fn connect(firewall: *Firewall) !void {
+        const allocator = firewall.allocator;
+        var options: sddf.Net.ClientOptions = .{};
+        // @kwinter: Letting the MAC address be automatically selected.
+        options.rx = true;
+        options.tx = true;
+
+        // Connect the ARP responder to tx and rx of network 1
+        try firewall.network1.addClient(firewall.arp_responder, options);
+        // Connect the ARP requester to tx and rx of network 2
+        try firewall.network2.addClient(firewall.arp_requester, options);
+        // Connect the router to the rx of network 1 and tx of network 2
+        options.tx = false;
+        try firewall.network1.addClient(firewall.router, options);
+        options.rx = false;
+        options.tx = true;
+        try firewall.network2.addClient(firewall.router, options);
+
+        // Add memory regions for the arp cache and arp queue.
+
+        // @kwinter: Placeholder MR sizes. Fine tune this so that we're not wasting space.
+        // We will also need a way to differentiate which firewall this belongs to, as we will
+        // have two of these in a system, one for each direction.
+        const arp_queue = Mr.create(allocator, "firewall_arp_queue", 0x10_000, .{});
+        const arp_cache = Mr.create(allocator, "firewall_arp_cache", 0x10_000, .{});
+        firewall.sdf.addMemoryRegion(arp_queue);
+        firewall.sdf.addMemoryRegion(arp_cache);
+
+        const router_arp_queue_map = Map.create(arp_queue, firewall.router.getMapVaddr(&arp_queue), .rw, .{});
+        firewall.router.addMap(router_arp_queue_map);
+        firewall.router_config.arp_requester.arp_queue = .createFromMap(router_arp_queue_map);
+        // @kwinter: This can probably be read only.
+        const router_arp_cache_map = Map.create(arp_cache, firewall.router.getMapVaddr(&arp_cache), .rw, .{});
+        firewall.router.addMap(router_arp_cache_map);
+        firewall.router_config.arp_requester.arp_cache = .createFromMap(router_arp_cache_map);
+
+        const arp_requester_queue_map = Map.create(arp_queue, firewall.arp_requester.getMapVaddr(&arp_queue), .rw, .{});
+        firewall.arp_requester.addMap(arp_requester_queue_map);
+        firewall.arp_requester_config.router.arp_queue = .createFromMap(arp_requester_queue_map);
+        const arp_requester_cache_map = Map.create(arp_cache, firewall.arp_requester.getMapVaddr(&arp_cache), .rw, .{});
+        firewall.arp_requester.addMap(arp_requester_cache_map);
+        firewall.arp_requester_config.router.arp_cache = .createFromMap(arp_requester_cache_map);
+
+        // Create a channel between the router and ARP requester.
+        const channel = Channel.create(firewall.router, firewall.arp_requester, .{}) catch @panic("failed to create connection channel");
+        firewall.sdf.addChannel(channel);
+        firewall.router_config.arp_requester.id = channel.pd_a_id;
+        firewall.arp_requester_config.router.id = channel.pd_b_id;
+    }
+
+    pub fn serialiseConfig(firewall: *Firewall, prefix: []const u8) !void {
+        // if (!firewall.connected) return Error.NotConnected;
+
+        const allocator = firewall.allocator;
+
+        const router_name = fmt(allocator, "router.data", .{});
+        try data.serialize(firewall.router_config, try std.fs.path.join(allocator, &.{ prefix, router_name }));
+
+        const arp_requester_name = fmt(allocator, "arp_requester.data", .{});
+        try data.serialize(firewall.arp_requester_config, try std.fs.path.join(allocator, &.{ prefix, arp_requester_name }));
+
+        if (data.emit_json) {
+            const router_json_name = fmt(allocator, "router.json", .{});
+            try data.jsonify(firewall.router_config, try std.fs.path.join(allocator, &.{ prefix, router_json_name }));
+
+            const arp_requester_json_name = fmt(allocator, "arp_requester.json", .{});
+            try data.jsonify(firewall.arp_requester_config, try std.fs.path.join(allocator, &.{ prefix, arp_requester_json_name }));
+        }
+    }
+};

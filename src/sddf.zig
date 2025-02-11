@@ -1487,9 +1487,9 @@ pub const Net = struct {
         }
 
         for (system.clients.items, 0..) |client, i| {
-            const data_name = fmt(allocator, "net_client_{s}.data", .{client.name});
+            const data_name = fmt(allocator, "net_{s}_client_{s}.data", .{ system.device.name, client.name });
             try data.serialize(system.client_configs.items[i], try fs.path.join(allocator, &.{ prefix, data_name }));
-            const json_name = fmt(allocator, "net_client_{s}.json", .{client.name});
+            const json_name = fmt(allocator, "net_{s}_client_{s}.json", .{ system.device.name, client.name });
             try data.jsonify(system.client_configs.items[i], try fs.path.join(allocator, &.{ prefix, json_name }));
         }
 
@@ -1518,7 +1518,7 @@ pub const Net = struct {
             }
 
             for (system.clients.items, 0..) |client, i| {
-                const json_name = fmt(allocator, "net_client_{s}.json", .{client.name});
+                const json_name = fmt(allocator, "net_{s}_client_{s}.json", .{ system.device.name, client.name });
                 try data.jsonify(system.client_configs.items[i], try fs.path.join(allocator, &.{ prefix, json_name }));
             }
         }
@@ -1779,49 +1779,6 @@ pub const Lwip = struct {
         try data.serialize(lib.allocator, lib.config, prefix, config_data);
     }
 };
-
-// pub const Firewall = struct {
-//     const BUFFER_SIZE = 2048;
-
-//     pub const Error = SystemError || error{
-//         InvalidClient,
-//         DuplicateCopier,
-//         DuplicateMacAddr,
-//         InvalidMacAddr,
-//         OutOfMemory,
-//         InvalidOptions,
-//     };
-
-//     // Any info structs that we need here.
-
-//     pub const FilterOptions = struct {
-//         rx: bool = true,
-//         tx: bool = true,
-//         rx_buffers: usize = 512,
-//         tx_buffers: usize = 512,
-//     };
-
-//     pub const FilterInfo = struct {
-//         rx: bool = true,
-//         tx: bool = true,
-//         // @kwinter: What should we default this value to?
-//         rx_buffers: usize = 512,
-//         tx_buffers: usize = 512,
-//     };
-
-//     driver1: *Pd,
-//     driver2: *Pd,
-//     virtTx1: *Pd,
-//     virtRx1: *Pd,
-//     virtTx2: *Pd,
-//     virtRx2: *Pd,
-//     router1: *Pd,
-//     router2: *Pd,
-//     externalArp1: *Pd,
-//     externalArp2: *Pd,
-//     internalArp1: *Pd,
-//     internalArp2: *Pd,
-// };
 
 /// Assumes probe() has been called
 fn findDriver(compatibles: []const []const u8, class: Config.Driver.Class) ?Config.Driver {
