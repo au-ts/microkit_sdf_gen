@@ -1180,6 +1180,7 @@ pub const Net = struct {
     }
 
     pub fn addClient(system: *Net, client: *Pd, options: ClientOptions) Error!void {
+        log.debug("In net addClient", .{});
         // Check that at least rx or tx is set in ClientOptions
         if (!options.rx and !options.tx) {
             return Error.InvalidOptions;
@@ -1226,8 +1227,6 @@ pub const Net = struct {
     }
 
     pub fn addClientWithCopier(system: *Net, client: *Pd, copier: *Pd, options: ClientOptions) Error!void {
-        log.debug("In addClientWIthCopier", .{});
-
         // Check that at least rx or tx is set in ClientOptions
         if (!options.rx and !options.tx) {
             return Error.InvalidOptions;

@@ -966,23 +966,23 @@ class LionsOs:
                 c_output_dir = c_char_p(output_dir.encode("utf-8"))
                 return libsdfgen.sdfgen_lionsos_fs_nfs_serialise_config(self._obj, c_output_dir)
 
-        class Firewall:
-            _obj: c_void_p
+    class Firewall:
+        _obj: c_void_p
 
-            def __init__(
-                self,
-                sdf: SystemDescription,
-                net1: Sddf.Net,
-                net2: Sddf.Net,
-                router: SystemDescription.ProtectionDomain,
-                arp_responder: SystemDescription.ProtectionDomain,
-                arp_requester: SystemDescription.ProtectionDomain,
-            ):
-                self._obj = libsdfgen.sdfgen_lionsos_firewall(sdf._obj, net1._obj, net2._obj, router._obj, arp_responder._obj, arp_requester._obj)
+        def __init__(
+            self,
+            sdf: SystemDescription,
+            net1: Sddf.Net,
+            net2: Sddf.Net,
+            router: SystemDescription.ProtectionDomain,
+            arp_responder: SystemDescription.ProtectionDomain,
+            arp_requester: SystemDescription.ProtectionDomain,
+        ):
+            self._obj = libsdfgen.sdfgen_lionsos_firewall(sdf._obj, net1._obj, net2._obj, router._obj, arp_responder._obj, arp_requester._obj)
 
-            def connect(self) -> bool:
-                return libsdfgen.sdfgen_lionsos_firewall_connect(self._obj)
+        def connect(self) -> bool:
+            return libsdfgen.sdfgen_lionsos_firewall_connect(self._obj)
 
-            def serailise_config(self, output_dir: str) -> bool:
-                c_output_dir = c_char_p(output_dir.encode("utf-8"))
-                return libsdfgen.sdfgen_lionsos_firewall_serialise_config(self._obj, c_output_dir)
+        def serialise_config(self, output_dir: str) -> bool:
+            c_output_dir = c_char_p(output_dir.encode("utf-8"))
+            return libsdfgen.sdfgen_lionsos_firewall_serialise_config(self._obj, c_output_dir)
