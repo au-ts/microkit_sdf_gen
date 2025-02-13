@@ -736,10 +736,10 @@ export fn sdfgen_lionsos_fs_nfs_serialise_config(system: *align(8) anyopaque, ou
     return true;
 }
 
-export fn sdfgen_lionsos_firewall(c_sdf: *align(8) anyopaque, c_net1: *align(8) anyopaque, c_net2: *align(8) anyopaque, c_router: *align(8) anyopaque, c_arp_responder: *align(8) anyopaque, c_arp_requester: *align(8) anyopaque) *anyopaque {
+export fn sdfgen_lionsos_firewall(c_sdf: *align(8) anyopaque, c_net1: *align(8) anyopaque, c_net2: *align(8) anyopaque, c_router: *align(8) anyopaque, c_arp_responder: *align(8) anyopaque, c_arp_requester: *align(8) anyopaque, ip: u32) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const firewall = allocator.create(lionsos.Firewall) catch @panic("OOM");
-    firewall.* = lionsos.Firewall.init(allocator, sdf, @ptrCast(c_net1), @ptrCast(c_net2), @ptrCast(c_router), @ptrCast(c_arp_responder), @ptrCast(c_arp_requester));
+    firewall.* = lionsos.Firewall.init(allocator, sdf, @ptrCast(c_net1), @ptrCast(c_net2), @ptrCast(c_router), @ptrCast(c_arp_responder), @ptrCast(c_arp_requester), ip);
 
     return firewall;
 }
