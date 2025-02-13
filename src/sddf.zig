@@ -1148,7 +1148,6 @@ pub const Net = struct {
     }
 
     pub fn addClient(system: *Net, client: *Pd, options: ClientOptions) Error!void {
-        log.debug("In net addClient", .{});
         // Check that at least rx or tx is set in ClientOptions
         if (!options.rx and !options.tx) {
             return Error.InvalidOptions;
@@ -1181,9 +1180,11 @@ pub const Net = struct {
         }
         if (options.rx) {
             system.client_info.items[client_idx].rx_buffers = options.rx_buffers;
+            system.virt_rx_config.num_clients += 1;
         }
         if (options.tx) {
             system.client_info.items[client_idx].tx_buffers = options.tx_buffers;
+            system.virt_tx_config.num_clients += 1;
         }
         // We will always regardless append null to these lists to maintain continuity.
         try system.copiers.append(null);
@@ -1195,6 +1196,8 @@ pub const Net = struct {
     }
 
     pub fn addClientWithCopier(system: *Net, client: *Pd, copier: *Pd, options: ClientOptions) Error!void {
+        log.debug("In addClientWIthCopier", .{});
+
         // Check that at least rx or tx is set in ClientOptions
         if (!options.rx and !options.tx) {
             return Error.InvalidOptions;
@@ -1235,6 +1238,7 @@ pub const Net = struct {
             try system.copiers.append(copier);
             try system.copy_configs.append(std.mem.zeroInit(ConfigResources.Net.Copy, .{}));
             system.client_info.items[client_idx].rx_buffers = options.rx_buffers;
+            system.virt_rx_config.num_clients += 1;
         } else {
             try system.copiers.append(null);
             try system.copy_configs.append(null);
@@ -1249,6 +1253,7 @@ pub const Net = struct {
         }
         if (options.tx) {
             system.client_info.items[client_idx].tx_buffers = options.tx_buffers;
+            system.virt_tx_config.num_clients += 1;
         }
         system.client_info.items[client_idx].rx = options.rx;
         system.client_info.items[client_idx].tx = options.tx;
@@ -1429,8 +1434,6 @@ pub const Net = struct {
 
         system.generateMacAddrs();
 
-        system.virt_tx_config.num_clients = @intCast(system.clients.items.len);
-        system.virt_rx_config.num_clients = @intCast(system.clients.items.len);
         for (system.clients.items, 0..) |_, i| {
             // TODO: we have an assumption that all copiers are RX copiers
             if (system.client_info.items[i].rx == true) {

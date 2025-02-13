@@ -390,11 +390,13 @@ pub const Firewall = struct {
     router: *Pd,
     arp_requester: *Pd,
     arp_responder: *Pd,
-
+    ip: u32,
+    // This is the static IP address associated with this firewall.
+    arp_responder_config: ConfigResources.Firewall.ArpResponder,
     router_config: ConfigResources.Firewall.Router,
     arp_requester_config: ConfigResources.Firewall.ArpRequester,
 
-    pub fn init(allocator: Allocator, sdf: *SystemDescription, net1: *Net, net2: *Net, router: *Pd, arp_responder: *Pd, arp_requester: *Pd) Firewall {
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, net1: *Net, net2: *Net, router: *Pd, arp_responder: *Pd, arp_requester: *Pd, ip: u32) Firewall {
         return .{
             .allocator = allocator,
             .sdf = sdf,
@@ -403,9 +405,10 @@ pub const Firewall = struct {
             .router = router,
             .arp_responder = arp_responder,
             .arp_requester = arp_requester,
-
             .router_config = std.mem.zeroInit(ConfigResources.Firewall.Router, .{}),
+            .arp_responder_config = std.mem.zeroInit(ConfigResources.Firewall.ArpResponder, .{}),
             .arp_requester_config = std.mem.zeroInit(ConfigResources.Firewall.ArpRequester, .{}),
+            .ip = ip,
         };
     }
 
@@ -464,8 +467,13 @@ pub const Firewall = struct {
 
         const allocator = firewall.allocator;
 
+        firewall.arp_responder_config.ip = firewall.ip;
+
         const router_name = fmt(allocator, "router.data", .{});
         try data.serialize(firewall.router_config, try std.fs.path.join(allocator, &.{ prefix, router_name }));
+
+        const arp_responder_name = fmt(allocator, "arp_responder.data", .{});
+        try data.serialize(firewall.arp_responder_config, try std.fs.path.join(allocator, &.{ prefix, arp_responder_name }));
 
         const arp_requester_name = fmt(allocator, "arp_requester.data", .{});
         try data.serialize(firewall.arp_requester_config, try std.fs.path.join(allocator, &.{ prefix, arp_requester_name }));
@@ -473,6 +481,9 @@ pub const Firewall = struct {
         if (data.emit_json) {
             const router_json_name = fmt(allocator, "router.json", .{});
             try data.jsonify(firewall.router_config, try std.fs.path.join(allocator, &.{ prefix, router_json_name }));
+
+            const arp_responder_json_name = fmt(allocator, "arp_responder.json", .{});
+            try data.jsonify(firewall.arp_responder_config, try std.fs.path.join(allocator, &.{ prefix, arp_responder_json_name }));
 
             const arp_requester_json_name = fmt(allocator, "arp_requester.json", .{});
             try data.jsonify(firewall.arp_requester_config, try std.fs.path.join(allocator, &.{ prefix, arp_requester_json_name }));

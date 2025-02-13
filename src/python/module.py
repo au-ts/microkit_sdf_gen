@@ -1257,8 +1257,9 @@ class LionsOs:
             router: SystemDescription.ProtectionDomain,
             arp_responder: SystemDescription.ProtectionDomain,
             arp_requester: SystemDescription.ProtectionDomain,
+            ip: c_uint32,
         ):
-            self._obj = libsdfgen.sdfgen_lionsos_firewall(sdf._obj, net1._obj, net2._obj, router._obj, arp_responder._obj, arp_requester._obj)
+            self._obj = libsdfgen.sdfgen_lionsos_firewall(sdf._obj, net1._obj, net2._obj, router._obj, arp_responder._obj, arp_requester._obj, ip)
 
         def connect(self) -> bool:
             return libsdfgen.sdfgen_lionsos_firewall_connect(self._obj)

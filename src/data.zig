@@ -394,6 +394,14 @@ pub const Resources = struct {
             router: ArpRouterConnection,
         };
 
+        pub const ArpResponder = extern struct {
+            magic: [8]u8 = MAGIC,
+            // This IP address is supplied by the user.
+            // It is the static IP address of the network
+            // subsystem that it is attached to.
+            ip: u32,
+        };
+
         // @kwinter: Note that this is teh same as the ARP structure,
         // this is just while the router is a simple PoC. Once we
         // have the filtering components in, this struct will change.
