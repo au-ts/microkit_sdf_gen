@@ -2,7 +2,7 @@ from __future__ import annotations
 import ctypes
 import importlib.util
 from ctypes import (
-    cast, c_void_p, c_char_p, c_uint8, c_uint16, c_uint32, c_uint64, c_bool, POINTER, byref
+    cast, c_void_p, c_char_p, c_uint8, c_uint16, c_uint32, c_uint64, c_bool, POINTER, byref, pointer
 )
 from typing import Optional, List, Tuple
 from enum import IntEnum
@@ -77,6 +77,9 @@ libsdfgen.sdfgen_mr_create.restype = c_void_p
 libsdfgen.sdfgen_mr_create.argtypes = [c_char_p, c_uint64]
 libsdfgen.sdfgen_mr_create_physical.restype = c_void_p
 libsdfgen.sdfgen_mr_create_physical.argtypes = [c_char_p, c_uint64, c_uint64]
+libsdfgen.sdfgen_mr_get_paddr.restype = c_bool;
+libsdfgen.sdfgen_mr_get_paddr.argtypes = [c_void_p, POINTER(c_uint64)]
+
 libsdfgen.sdfgen_mr_destroy.restype = None
 libsdfgen.sdfgen_mr_destroy.argtypes = [c_void_p]
 
@@ -499,6 +502,15 @@ class SystemDescription:
                 self._obj = libsdfgen.sdfgen_mr_create_physical(c_name, size, paddr)
             else:
                 self._obj = libsdfgen.sdfgen_mr_create(c_name, size)
+    
+        @property
+        def paddr(self):
+            paddr = c_uint64(0)
+            has_paddr = libsdfgen.sdfgen_mr_get_paddr(self._obj, pointer(paddr))
+            if has_paddr:
+                return paddr
+            else:
+                return None
 
         def __del__(self):
             libsdfgen.sdfgen_mr_destroy(self._obj)

@@ -279,6 +279,14 @@ export fn sdfgen_mr_create_physical(name: [*c]u8, size: u64, paddr: u64) *anyopa
     return mr;
 }
 
+export fn sdfgen_mr_get_paddr(c_mr: *align(8) anyopaque, paddr: *u64) bool {
+    const mr: *Mr = @ptrCast(c_mr);
+    if (mr.paddr) |paddr_val| {
+        paddr.* = paddr_val;
+    }
+    return mr.paddr != null;
+}
+
 export fn sdfgen_mr_destroy(c_mr: *align(8) anyopaque) void {
     const mr: *Mr = @ptrCast(c_mr);
     allocator.destroy(mr);
