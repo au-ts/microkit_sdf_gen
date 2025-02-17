@@ -1,8 +1,10 @@
 const std = @import("std");
 const mod_sdf = @import("sdf.zig");
+const mod_vmm = @import("vmm.zig");
 const sddf = @import("sddf.zig");
 const data = @import("data.zig");
 const log = @import("log.zig");
+const dtb = @import("dtb.zig");
 const Allocator = std.mem.Allocator;
 
 const SystemDescription = mod_sdf.SystemDescription;
@@ -17,6 +19,8 @@ const Blk = sddf.Blk;
 const Net = sddf.Net;
 const Serial = sddf.Serial;
 const Timer = sddf.Timer;
+
+const VirtualMachineSystem = mod_vmm;
 
 fn fmt(allocator: Allocator, comptime s: []const u8, args: anytype) []u8 {
     return std.fmt.allocPrint(allocator, s, args) catch @panic("OOM");
@@ -74,7 +78,22 @@ pub const FileSystem = struct {
         };
     }
 
-    pub fn connect(system: *FileSystem) void {
+    fn createMapping(fs: *Pd, map: Map) void {
+        if (fs.vm) |vm| {
+            vm.addMap(map);
+        } else {
+            fs.addMap(map);
+        }
+    }
+
+    const ConnectOptions = struct {
+        cached: ?bool = null,
+        command_vaddr: ?u64 = null,
+        completion_vaddr: ?u64 = null,
+        share_vaddr: ?u64 = null,
+    };
+
+    pub fn connect(system: *FileSystem, options: ConnectOptions) void {
         const allocator = system.allocator;
         const fs = system.fs;
         const client = system.client;
@@ -95,28 +114,28 @@ pub const FileSystem = struct {
             }
         };
 
-        const server_command_map = Map.create(fs_command_queue, fs.getMapVaddr(&fs_command_queue), .rw, .{});
-        fs.addMap(server_command_map);
+        const server_command_map = Map.create(fs_command_queue, options.command_vaddr orelse fs.getMapVaddr(&fs_command_queue), .rw, .{ .cached = options.cached });
         system.server_config.client.command_queue = .createFromMap(server_command_map);
+        createMapping(fs, server_command_map);
 
-        const server_completion_map = Map.create(fs_completion_queue, fs.getMapVaddr(&fs_completion_queue), .rw, .{});
+        const server_completion_map = Map.create(fs_completion_queue, options.completion_vaddr orelse fs.getMapVaddr(&fs_completion_queue), .rw, .{ .cached = options.cached });
         system.server_config.client.completion_queue = .createFromMap(server_completion_map);
-        fs.addMap(server_completion_map);
+        createMapping(fs, server_completion_map);
 
-        const server_share_map = Map.create(fs_share, fs.getMapVaddr(&fs_share), .rw, .{});
-        fs.addMap(server_share_map);
+        const server_share_map = Map.create(fs_share, options.share_vaddr orelse fs.getMapVaddr(&fs_share), .rw, .{ .cached = options.cached });
         system.server_config.client.share = .createFromMap(server_share_map);
+        createMapping(fs, server_share_map);
 
-        const client_command_map = Map.create(fs_command_queue, client.getMapVaddr(&fs_command_queue), .rw, .{});
+        const client_command_map = Map.create(fs_command_queue, client.getMapVaddr(&fs_command_queue), .rw, .{ .cached = options.cached });
         system.client.addMap(client_command_map);
         system.client_config.server.command_queue = .createFromMap(client_command_map);
 
-        const client_completion_map = Map.create(fs_completion_queue, client.getMapVaddr(&fs_completion_queue), .rw, .{});
+        const client_completion_map = Map.create(fs_completion_queue, client.getMapVaddr(&fs_completion_queue), .rw, .{ .cached = options.cached });
 
         system.client.addMap(client_completion_map);
         system.client_config.server.completion_queue = .createFromMap(client_completion_map);
 
-        const client_share_map = Map.create(fs_share, client.getMapVaddr(&fs_share), .rw, .{});
+        const client_share_map = Map.create(fs_share, client.getMapVaddr(&fs_share), .rw, .{ .cached = options.cached });
         system.client.addMap(client_share_map);
         system.client_config.server.share = .createFromMap(client_share_map);
 
@@ -192,7 +211,7 @@ pub const FileSystem = struct {
             try nfs.serial.addClient(fs_pd);
             try nfs.timer.addClient(fs_pd);
 
-            nfs.fs.connect();
+            nfs.fs.connect(.{});
         }
 
         pub fn serialiseConfig(nfs: *Nfs, prefix: []const u8) !void {
@@ -206,7 +225,7 @@ pub const FileSystem = struct {
         fs: FileSystem,
         data: ConfigResources.Fs,
         blk: *Blk,
-        blk_partition: u32,
+        partition: u32,
 
         pub const Options = struct {
             partition: u32,
@@ -217,7 +236,7 @@ pub const FileSystem = struct {
                 .allocator = allocator,
                 .fs = try FileSystem.init(allocator, sdf, fs, client, .{}),
                 .blk = blk,
-                .blk_partition = options.partition,
+                .partition = options.partition,
                 .data = std.mem.zeroInit(ConfigResources.Fs, .{}),
             };
         }
@@ -228,9 +247,9 @@ pub const FileSystem = struct {
             const fs_pd = fat.fs.fs;
 
             try fat.blk.addClient(fs_pd, .{
-                .partition = fat.blk_partition,
+                .partition = fat.partition,
             });
-            fat.fs.connect();
+            fat.fs.connect(.{});
             // Special things for FATFS
             const stack1 = Mr.create(allocator, fmt(allocator, "{s}_stack1", .{fs_pd.name}), 0x40_000, .{});
             const stack2 = Mr.create(allocator, fmt(allocator, "{s}_stack2", .{fs_pd.name}), 0x40_000, .{});
@@ -249,6 +268,116 @@ pub const FileSystem = struct {
         pub fn serialiseConfig(fat: *Fat, prefix: []const u8) !void {
             try data.serialize(fat.allocator, fat.data, prefix, "fat_config");
             try fat.fs.serialiseConfig(prefix);
+        }
+    };
+
+    pub const VmFs = struct {
+        fs: FileSystem,
+        data: ConfigResources.Fs,
+        fs_vm_sys: *VirtualMachineSystem,
+        blk: *Blk,
+        virtio_device: *dtb.Node,
+        partition: u32,
+
+        const Error = FileSystem.Error;
+
+        const UIO_SHARED_CONFIG = "vmfs_config";
+        const UIO_CMD = "vmfs_command";
+        const UIO_COMP = "vmfs_completion";
+        const UIO_DATA = "vmfs_data";
+        const UIO_FAULT = "vmfs_fault";
+
+        const NUM_UIO_REGIONS = 5;
+
+        pub const Options = struct {
+            partition: u32,
+        };
+
+        pub fn init(allocator: Allocator, sdf: *SystemDescription, fs_vm_sys: *VirtualMachineSystem, client: *Pd, blk: *Blk, virtio_device: *dtb.Node, options: VmFs.Options) VmFs.Error!VmFs {
+            return .{
+                .fs_vm_sys = fs_vm_sys,
+                .fs = try FileSystem.init(allocator, sdf, fs_vm_sys.vmm, client, .{}),
+                .data = std.mem.zeroInit(ConfigResources.Fs, .{}),
+                .blk = blk,
+                .virtio_device = virtio_device,
+                .partition = options.partition,
+            };
+        }
+
+        pub fn connect(vmfs: *VmFs) !void {
+            if (!vmfs.fs_vm_sys.connected) {
+                log.err("The FS driver VM system must be connected before the FS.", .{});
+                return error.OutOfOrderConnection;
+            }
+            if (vmfs.blk.connected) {
+                log.err("The Block system must be connected after the FS.", .{});
+                return error.OutOfOrderConnection;
+            }
+            if (vmfs.blk.serialised or vmfs.fs_vm_sys.serialised) {
+                log.err("Serialisation must take place after all conections", .{});
+                return error.OutOfOrderSerialisation;
+            }
+
+            if (vmfs.fs_vm_sys.data.num_linux_uio_regions != NUM_UIO_REGIONS) {
+                log.err("The FS driver VM does not have the required 5 UIO regions, got {d}", .{vmfs.fs_vm_sys.data.num_linux_uio_regions});
+                return error.InvalidVMConf;
+            }
+
+            try vmfs.fs_vm_sys.addVirtioMmioBlk(vmfs.virtio_device, vmfs.blk, .{
+                .partition = vmfs.partition,
+            });
+
+            // Figure out where all the FS regions are supposed to go from DTB
+            const compatible = dtb.LinuxUio.compatible;
+            const conf_uio_reg = vmfs.fs_vm_sys.findUio(UIO_SHARED_CONFIG) orelse {
+                log.err("failed to find UIO FS shared config node: expected node with compatible '{s}\\0{s}'", .{compatible, UIO_SHARED_CONFIG});
+                return error.InvalidVMConf;
+            };
+            const cmd_uio_reg = vmfs.fs_vm_sys.findUio(UIO_CMD) orelse {
+                log.err("failed to find UIO FS command node: expected node with compatible '{s}\\0{s}'", .{compatible, UIO_CMD});
+                return error.InvalidVMConf;
+            };
+            const comp_uio_reg = vmfs.fs_vm_sys.findUio(UIO_COMP) orelse {
+                log.err("failed to find UIO FS completion node: expected node with compatible '{s}\\0{s}'", .{compatible, UIO_COMP});
+                return error.InvalidVMConf;
+            };
+            const data_uio_reg = vmfs.fs_vm_sys.findUio(UIO_DATA) orelse {
+                log.err("failed to find UIO FS data node: expected node with compatible '{s}\\0{s}'", .{compatible, UIO_DATA});
+                return error.InvalidVMConf;
+            };
+
+            if (vmfs.fs_vm_sys.findUio(UIO_FAULT) == null) {
+                log.err("failed to find UIO FS fault data node: expected node with compatible '{s}\\0{s}'", .{compatible, UIO_FAULT});
+                return error.InvalidVMConf;
+            }
+
+            const cmd_guest_paddr = cmd_uio_reg.guest_paddr;
+            const comp_guest_paddr = comp_uio_reg.guest_paddr;
+            const data_guest_paddr = data_uio_reg.guest_paddr;
+            vmfs.fs.connect(.{ .cached = false, .command_vaddr = cmd_guest_paddr, .completion_vaddr = comp_guest_paddr, .share_vaddr = data_guest_paddr });
+
+            // Set up the shared configs region between guest and VMM
+            const allocator = vmfs.fs.allocator;
+            const config_share_size = conf_uio_reg.size;
+            const config_share_guest_paddr = conf_uio_reg.guest_paddr;
+            const config_share_region = Mr.create(allocator, fmt(allocator, "fs_{s}_guest_conf_share", .{vmfs.fs_vm_sys.guest.name}), config_share_size, .{});
+            vmfs.fs_vm_sys.sdf.addMemoryRegion(config_share_region);
+
+            // Finally map everything in
+            const guest_config_share_map = Map.create(config_share_region, config_share_guest_paddr, .rw, .{ .cached = false });
+            vmfs.fs_vm_sys.guest.addMap(guest_config_share_map);
+
+            const vmm_config_share_map_vaddr = vmfs.fs_vm_sys.vmm.getMapVaddr(&config_share_region);
+            const vmm_config_share_map = Map.create(config_share_region, vmm_config_share_map_vaddr, .rw, .{ .cached = false });
+            vmfs.fs_vm_sys.vmm.addMap(vmm_config_share_map);
+
+            // Update the UIO book keeping data in the VM system. This is why config serialisation must be deferred until everything is set up.
+            conf_uio_reg.vmm_vaddr = vmm_config_share_map_vaddr;
+        }
+
+        pub fn serialiseConfig(vmfs: *VmFs, prefix: []const u8) !void {
+            try data.serialize(vmfs.fs.allocator, vmfs.data, prefix, "vmfs_config");
+            try vmfs.fs.serialiseConfig(prefix);
         }
     };
 };

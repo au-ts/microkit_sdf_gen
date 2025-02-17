@@ -325,6 +325,7 @@ pub const Timer = struct {
     clients: std.ArrayList(*Pd),
     client_configs: std.ArrayList(ConfigResources.Timer.Client),
     connected: bool = false,
+    serialised: bool = false,
 
     pub const Error = SystemError;
 
@@ -401,6 +402,8 @@ pub const Timer = struct {
             const data_name = fmt(allocator, "timer_client_{s}", .{client.name});
             try data.serialize(allocator, system.client_configs.items[i], prefix, data_name);
         }
+
+        system.serialised = true;
     }
 };
 
@@ -420,6 +423,7 @@ pub const I2c = struct {
     client_configs: std.ArrayList(ConfigResources.I2c.Client),
     num_buffers: u16,
     connected: bool = false,
+    serialised: bool = false,
 
     pub const Error = SystemError;
 
@@ -617,6 +621,8 @@ pub const I2c = struct {
             const name = fmt(allocator, "i2c_client_{s}", .{client.name});
             try data.serialize(allocator, system.client_configs.items[i], prefix, name);
         }
+
+        system.serialised = true;
     }
 };
 
@@ -630,6 +636,7 @@ pub const Blk = struct {
     clients: std.ArrayList(*Pd),
     client_partitions: std.ArrayList(u32),
     connected: bool = false,
+    serialised: bool = false,
     // TODO: make this configurable per component
     queue_mr_size: usize = 2 * 1024 * 1024,
     // TODO: make configurable
@@ -854,6 +861,8 @@ pub const Blk = struct {
             const client_config = fmt(allocator, "blk_client_{s}", .{system.clients.items[i].name});
             try data.serialize(allocator, config, prefix, client_config);
         }
+
+        system.serialised = true;
     }
 };
 
@@ -870,6 +879,7 @@ pub const Serial = struct {
     clients: std.ArrayList(*Pd),
     connected: bool = false,
     enable_color: bool,
+    serialised: bool = false,
 
     driver_config: ConfigResources.Serial.Driver,
     virt_rx_config: ConfigResources.Serial.VirtRx,
@@ -1033,6 +1043,8 @@ pub const Serial = struct {
             const data_name = fmt(allocator, "serial_client_{s}", .{client.name});
             try data.serialize(allocator, system.client_configs.items[i], prefix, data_name);
         }
+
+        system.serialised = true;
     }
 };
 
@@ -1080,6 +1092,7 @@ pub const Net = struct {
     client_configs: std.ArrayList(ConfigResources.Net.Client),
 
     connected: bool = false,
+    serialised: bool = false,
 
     rx_buffers: usize,
     client_info: std.ArrayList(ClientInfo),
@@ -1349,6 +1362,8 @@ pub const Net = struct {
             const data_name = fmt(allocator, "net_client_{s}", .{client.name});
             try data.serialize(allocator, system.client_configs.items[i], prefix, data_name);
         }
+
+        system.serialised = true;
     }
 };
 
@@ -1361,6 +1376,7 @@ pub const Gpu = struct {
     virt: *Pd,
     clients: std.ArrayList(*Pd),
     connected: bool = false,
+    serialised: bool = false,
     config: Gpu.Config,
     // Configurable parameters. Right now we just hard-code
     // these.
@@ -1561,6 +1577,8 @@ pub const Gpu = struct {
             const client_data = fmt(allocator, "gpu_client_{s}", .{system.clients.items[i].name});
             try data.serialize(allocator, config, prefix, client_data);
         }
+
+        system.serialised = true;
     }
 };
 

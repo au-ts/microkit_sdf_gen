@@ -143,3 +143,7 @@ bool sdfgen_lionsos_fs_fat_connect(void *system);
 void *sdfgen_lionsos_fs_nfs(void *sdf, void *fs, void *client, void *net, void *net_copier, uint8_t mac_addr[6], void *serial, void *timer);
 bool sdfgen_lionsos_fs_nfs_connect(void *system);
 bool sdfgen_lionsos_fs_nfs_serialise_config(void *system, char *output_dir);
+
+void *sdfgen_lionsos_fs_vmfs(void *sdf, void *fs_vm_sys, void *client, void *blk, void *virtio_device, uint32_t partition);
+bool sdfgen_lionsos_fs_vmfs_connect(void *system);
+bool sdfgen_lionsos_fs_vmfs_serialise_config(void *system, char *output_dir);
