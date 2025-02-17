@@ -20,7 +20,7 @@ const Net = sddf.Net;
 const Serial = sddf.Serial;
 const Timer = sddf.Timer;
 
-const VirtualMachineSystem = mod_vmm.VirtualMachineSystem;
+const VirtualMachineSystem = mod_vmm;
 
 fn fmt(allocator: Allocator, comptime s: []const u8, args: anytype) []u8 {
     return std.fmt.allocPrint(allocator, s, args) catch @panic("OOM");
@@ -114,19 +114,17 @@ pub const FileSystem = struct {
             }
         };
 
-        const server_command_map = Map.create(fs_command_queue, fs.getMapVaddr(&fs_command_queue), .rw, .{
-            .cached = options.cached,
-        });
-        createMapping(fs, server_command_map);
+        const server_command_map = Map.create(fs_command_queue, options.command_vaddr orelse fs.getMapVaddr(&fs_command_queue), .rw, .{ .cached = options.cached });
         system.server_config.client.command_queue = .createFromMap(server_command_map);
+        createMapping(fs, server_command_map);
 
-        const server_completion_map = Map.create(fs_completion_queue, fs.getMapVaddr(&fs_completion_queue), .rw, .{ .cached = options.cached });
+        const server_completion_map = Map.create(fs_completion_queue, options.completion_vaddr orelse fs.getMapVaddr(&fs_completion_queue), .rw, .{ .cached = options.cached });
         system.server_config.client.completion_queue = .createFromMap(server_completion_map);
         createMapping(fs, server_completion_map);
 
-        const server_share_map = Map.create(fs_share, fs.getMapVaddr(&fs_share), .rw, .{ .cached = options.cached });
-        createMapping(fs, server_share_map);
+        const server_share_map = Map.create(fs_share, options.share_vaddr orelse fs.getMapVaddr(&fs_share), .rw, .{ .cached = options.cached });
         system.server_config.client.share = .createFromMap(server_share_map);
+        createMapping(fs, server_share_map);
 
         const client_command_map = Map.create(fs_command_queue, client.getMapVaddr(&fs_command_queue), .rw, .{ .cached = options.cached });
         system.client.addMap(client_command_map);
@@ -276,7 +274,7 @@ pub const FileSystem = struct {
     pub const VmFs = struct {
         fs: FileSystem,
         data: ConfigResources.Fs,
-        vmm: VirtualMachineSystem,
+        fs_vm_sys: VirtualMachineSystem,
         blk: *Blk,
         virtio_device: *dtb.Node,
         partition: u32,
@@ -287,10 +285,10 @@ pub const FileSystem = struct {
             partition: u32,
         };
 
-        pub fn init(allocator: Allocator, sdf: *SystemDescription, fs: *VirtualMachineSystem, client: *Pd, blk: *Blk, virtio_device: *dtb.Node, options: VmFs.Options) VmFs.Error!VmFs {
+        pub fn init(allocator: Allocator, sdf: *SystemDescription, fs_vm_sys: *VirtualMachineSystem, client: *Pd, blk: *Blk, virtio_device: *dtb.Node, options: VmFs.Options) VmFs.Error!VmFs {
             return .{
-                .vmm = fs,
-                .fs = try FileSystem.init(allocator, sdf, fs.vmm, client, .{}),
+                .fs_vm_sys = fs_vm_sys,
+                .fs = try FileSystem.init(allocator, sdf, fs_vm_sys.vmm, client, .{}),
                 .data = std.mem.zeroInit(ConfigResources.Fs, .{}),
                 .blk = blk,
                 .virtio_device = virtio_device,
@@ -302,9 +300,7 @@ pub const FileSystem = struct {
             vmfs.vmm.addVirtioMmioBlk(vmfs.virtio_device, vmfs.blk, .{
                 .partition = vmfs.partition,
             });
-            vmfs.fs.connect(.{
-                .cached = false,
-            });
+            vmfs.fs.connect(.{ .cached = false, .command_vaddr = 0x20000000, .completion_vaddr = 0x22000000, .share_vaddr = 0x10000000 });
         }
 
         pub fn serialiseConfig(vmfs: *VmFs, prefix: []const u8) !void {
