@@ -857,6 +857,40 @@ export fn sdfgen_lionsos_fs_nfs_serialise_config(system: *align(8) anyopaque, ou
     return true;
 }
 
+export fn sdfgen_lionsos_fs_vmfs(c_sdf: *align(8) anyopaque, c_fs_vm_sys: *align(8) anyopaque, c_client: *align(8) anyopaque, c_blk: *align(8) anyopaque, c_virtio_device: *align(8) anyopaque, partition: u32) ?*anyopaque {
+    const sdf: *SystemDescription = @ptrCast(c_sdf);
+    const fs = allocator.create(lionsos.FileSystem.VmFs) catch @panic("OOM");
+
+    const vmm: *Vmm = @ptrCast(c_fs_vm_sys);
+
+    fs.* = lionsos.FileSystem.VmFs.init(allocator, sdf, vmm, @ptrCast(c_client), @ptrCast(c_blk), @ptrCast(c_virtio_device), .{ .partition = partition }) catch |e| {
+        log.err("failed to create VmFs file system '{s}': {any}", .{ vmm.vmm.name, e });
+        return null;
+    };
+
+    return fs;
+}
+
+export fn sdfgen_lionsos_fs_vmfs_connect(system: *align(8) anyopaque) bool {
+    const vmfs: *lionsos.FileSystem.VmFs = @ptrCast(system);
+    vmfs.connect() catch |e| {
+        log.err("failed to connect VmFs file system '{s}': {any}", .{ vmfs.fs_vm_sys.vmm.name, e });
+        return false;
+    };
+
+    return true;
+}
+
+export fn sdfgen_lionsos_fs_vmfs_serialise_config(system: *align(8) anyopaque, output_dir: [*c]u8) bool {
+    const vmfs: *lionsos.FileSystem.VmFs = @ptrCast(system);
+    vmfs.serialiseConfig(std.mem.span(output_dir)) catch |e| {
+        log.err("failed to serialise VmFs file system '{s}': {any}", .{ vmfs.fs_vm_sys.vmm.name, e });
+        return false;
+    };
+
+    return true;
+}
+
 export fn sdfgen_sddf_lwip(c_sdf: *align(8) anyopaque, c_net: *align(8) anyopaque, c_pd: *align(8) anyopaque) *anyopaque {
     const lib = allocator.create(sddf.Lwip) catch @panic("OOM");
     lib.* = sddf.Lwip.init(allocator, @ptrCast(c_sdf), @ptrCast(c_net), @ptrCast(c_pd));

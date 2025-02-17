@@ -6,6 +6,9 @@
 const std = @import("std");
 const dtb = @import("dtb");
 const mod_sdf = @import("sdf.zig");
+const log = @import("log.zig");
+
+const Allocator = std.mem.Allocator;
 
 const SystemDescription = mod_sdf.SystemDescription;
 const Irq = SystemDescription.Irq;
@@ -155,6 +158,75 @@ pub fn armGicTrigger(trigger: usize) Irq.Trigger {
     };
 }
 
+/// This corresponds to a Linux 'uio' node in the DTB. Currently we
+/// assume each node has a single memory region encoded as `reg` and
+/// optionally 1 IRQ.
+pub const LinuxUio = struct {
+    pub const compatible = [_][]const u8{"generic-uio"};
+
+    node: *dtb.Node,
+    size: u64,
+    guest_paddr: u64,
+    irq: ?u32,
+
+    pub fn create(allocator: Allocator, node: *dtb.Node, arch: SystemDescription.Arch) LinuxUio {
+        const node_compatible = node.prop(.Compatible).?;
+        if (!isCompatible(node_compatible, &compatible)) {
+            @panic("invalid UIO compatible string.");
+        }
+
+        const irq = blk: {
+            const dt_irqs = node.prop(.Interrupts) orelse break :blk null;
+
+            if (dt_irqs.len != 1) {
+                log.err("expected UIO device '{s}' to have one interrupt, instead found {}", .{ node.name, dt_irqs.len });
+                @panic("todo");
+            }
+
+            const parsed_irqs = parseIrqs(allocator, arch, dt_irqs) catch |e| {
+                log.err("failed to parse 'interrupts' property for UIO device '{s}': {any}", .{ node.name, e });
+                @panic("todo");
+            };
+            defer parsed_irqs.deinit();
+            std.debug.assert(parsed_irqs.items.len == 1);
+
+            break :blk parsed_irqs.items[0];
+        };
+
+        const dt_reg = node.prop(.Reg) orelse {
+            log.err("expected UIO device '{s}' to have 'reg' property", .{ node.name });
+            @panic("todo");
+        };
+
+        if (dt_reg.len != 1) {
+            log.err("expected UIO device '{s}' to have one region, instead found {}", .{ node.name, dt_reg.len });
+            @panic("todo");
+        }
+
+        const dt_paddr = dt_reg[0][0];
+        if (dt_paddr % arch.defaultPageSize() != 0) {
+            log.err("Encountered UIO node '{s}' with paddr 0x{x} isn't a multiple of page size", .{ node.name, dt_paddr });
+            @panic("todo");
+        }
+
+        const dt_size = dt_reg[0][1];
+        if (dt_size % arch.defaultPageSize() != 0) {
+            log.err("Encountered UIO node '{s}' with size {x} isn't a multiple of page size", .{ node.name, dt_size });
+            @panic("todo");
+        }
+
+        const paddr: u64 = regPaddr(arch, node, dt_paddr);
+        const size: u64 = @intCast(dt_size);
+
+        return .{
+            .node = node,
+            .guest_paddr = paddr,
+            .size = size,
+            .irq = irq,
+        };
+    }
+};
+
 pub fn findCompatible(d: *dtb.Node, compatibles: []const []const u8) ?*dtb.Node {
     for (d.children) |child| {
         const device_compatibles = child.prop(.Compatible);
@@ -174,6 +246,32 @@ pub fn findCompatible(d: *dtb.Node, compatibles: []const []const u8) ?*dtb.Node 
     }
 
     return null;
+}
+
+pub fn findAllCompatible(allocator: std.mem.Allocator, d: *dtb.Node, compatibles: []const []const u8) !std.ArrayList(*dtb.Node) {
+    var result = std.ArrayList(*dtb.Node).init(allocator);
+    errdefer result.deinit();
+
+    for (d.children) |child| {
+        const device_compatibles = child.prop(.Compatible);
+        if (device_compatibles != null) {
+            for (compatibles) |compatible| {
+                for (device_compatibles.?) |device_compatible| {
+                    if (std.mem.eql(u8, device_compatible, compatible)) {
+                        try result.append(child);
+                        break;
+                    }
+                }
+            }
+        }
+
+        var child_matches = try findAllCompatible(allocator, child, compatibles);
+        defer child_matches.deinit();
+
+        try result.appendSlice(child_matches.items);
+    }
+
+    return result;
 }
 
 // Given an address from a DTB node's 'reg' property, convert it to a
@@ -200,4 +298,34 @@ pub fn regPaddr(arch: SystemDescription.Arch, device: *dtb.Node, paddr: u128) u6
     }
 
     return device_paddr;
+}
+
+/// Device Trees do not encode the software's view of IRQs and their identifiers.
+/// This is a helper to take the value of an 'interrupt' property on a DTB node,
+/// and convert for use in our operating system.
+/// Returns ArrayList containing parsed IRQs, caller owns memory.
+pub fn parseIrqs(allocator: Allocator, arch: SystemDescription.Arch, irqs: [][]u32) !std.ArrayList(u32) {
+    var parsed_irqs = try std.ArrayList(u32).initCapacity(allocator, irqs.len);
+    errdefer parsed_irqs.deinit();
+    if (arch.isArm()) {
+        for (irqs) |irq| {
+            if (irq.len != 3) {
+                return error.InvalidInterruptCells;
+            }
+            const parsed_irq = armGicIrqNumber(irq[1], armGicIrqType(irq[0]));
+            parsed_irqs.appendAssumeCapacity(parsed_irq);
+        }
+
+    } else if (arch.isRiscv()) {
+        for (irqs) |irq| {
+            if (irq.len != 1) {
+                return error.InvalidInterruptCells;
+            }
+            parsed_irqs.appendAssumeCapacity(irq[0]);
+        }
+    } else {
+        @panic("unsupported architecture");
+    }
+
+    return parsed_irqs;
 }

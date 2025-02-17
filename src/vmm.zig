@@ -29,13 +29,24 @@ data: Data,
 /// Whether or not to map guest RAM with 1-1 mappings with physical memory
 one_to_one_ram: bool,
 connected: bool = false,
+serialised: bool = false,
 
 const Options = struct {
     one_to_one_ram: bool = false,
 };
 
+pub const UIO_NAME_LEN = 32;
+pub const LinuxUioRegion = extern struct {
+    name: [UIO_NAME_LEN]u8,
+    guest_paddr: u64,
+    vmm_vaddr: u64,
+    size: u64,
+    irq: u32,
+};
+
 const MAX_IRQS: usize = 32;
 const MAX_VCPUS: usize = 32;
+const MAX_LINUX_UIO_REGIONS: usize = 16;
 const MAX_VIRTIO_MMIO_DEVICES: usize = 32;
 
 const Data = extern struct {
@@ -73,6 +84,8 @@ const Data = extern struct {
     vcpus: [MAX_VCPUS]Vcpu,
     num_virtio_mmio_devices: u8,
     virtio_mmio_devices: [MAX_VIRTIO_MMIO_DEVICES]VirtioMmioDevice,
+    num_linux_uio_regions: u8,
+    linux_uios: [MAX_LINUX_UIO_REGIONS]LinuxUioRegion,
 };
 
 pub fn init(allocator: Allocator, sdf: *SystemDescription, vmm: *Pd, guest: *Vm, guest_dtb: *dtb.Node, guest_dtb_size: u64, options: Options) Self {
@@ -147,6 +160,7 @@ fn addPassthroughDeviceMapping(system: *Self, name: []const u8, device: *dtb.Nod
 }
 
 pub fn addPassthroughDeviceIrq(system: *Self, interrupt: []u32) !void {
+    // TODO: use dtb.parseIrqs
     var irq_id: u8 = undefined;
     var irq_number: u32 = undefined;
     if (system.sdf.arch.isArm()) {
@@ -290,6 +304,69 @@ fn allocateDtbAddress(dtb_size: u64, ram_start: u64, ram_end: u64, initrd_start:
     }
 }
 
+/// This function parses all UIO regions from the DTB on `connect()` and saves the info into
+/// `system.data`. It does NOT map the regions into the guest or VMMs. It is up to the creator
+/// of the VMM system to decide which UIO region to map where.
+fn parseUios(system: *Self) !void {
+    const allocator = system.allocator;
+
+    const uio_nodes = try dtb.findAllCompatible(allocator, system.guest_dtb, &dtb.LinuxUio.compatible);
+    defer uio_nodes.deinit();
+    if (uio_nodes.items.len >= MAX_LINUX_UIO_REGIONS) {
+        log.err("The DTB parser found {d} UIO nodes, but the limit is {d}", .{ uio_nodes.items.len, MAX_LINUX_UIO_REGIONS });
+        return error.InvalidUio;
+    }
+
+    for (uio_nodes.items, 0..) |node, i| {
+        const compatibles: [][]const u8 = node.prop(.Compatible).?;
+
+        if (compatibles.len != 2) {
+            // NULL must be used as the delimiter as the DTB parser assumes NULL.
+            log.err("Compatibile string {s} isn't in the expected format of 'generic-uio\\0<name>'.", .{ node.prop(.Compatible).? });
+            @panic("todo");
+        }
+        const node_name = compatibles[1];
+
+        if (node_name.len > UIO_NAME_LEN - 1) {
+            log.err("Encountered UIO node '{s}', with name of length {d}, greater than limit of {d}.", .{ node_name, node_name.len, UIO_NAME_LEN - 1 });
+            @panic("todo");
+        }
+        if (system.findUio(node_name) != null) {
+            @panic("todo");
+        }
+
+        const uio_node = dtb.LinuxUio.create(allocator, node, system.sdf.arch);
+
+        system.data.linux_uios[i] = .{
+            .name = undefined,
+            .size = uio_node.size,
+            .guest_paddr = uio_node.guest_paddr,
+            .irq = uio_node.irq orelse 0,
+            // We don't map the UIO regions into the VMM by default as sometimes
+            // they are intentionally "fake" for the guest to generate
+            // faults as an event signalling mechanism. It is up to whoever using
+            // the VMM system to map in.
+            .vmm_vaddr = 0,
+        };
+        @memset(&system.data.linux_uios[i].name, 0);
+        const name_to_copy_len = @min(node_name.len, UIO_NAME_LEN);
+        const name_to_copy = node_name[0..name_to_copy_len];
+        std.mem.copyForwards(u8, &system.data.linux_uios[i].name, name_to_copy);
+
+        system.data.num_linux_uio_regions += 1;
+    }
+}
+
+pub fn findUio(system: *Self, target_name: []const u8) ?*LinuxUioRegion {
+    for (0..system.data.num_linux_uio_regions) |i| {
+        if (std.mem.eql(u8, target_name, system.data.linux_uios[i].name[0..target_name.len])) {
+            return &system.data.linux_uios[i];
+        }
+    }
+
+    return null;
+}
+
 pub fn connect(system: *Self) !void {
     const allocator = system.allocator;
     var sdf = system.sdf;
@@ -372,6 +449,8 @@ pub fn connect(system: *Self) !void {
         }
     };
 
+    try parseUios(system);
+
     system.data.ram = memory_paddr;
     system.data.ram_size = guest_ram_size;
     system.data.dtb = try allocateDtbAddress(system.guest_dtb_size, system.data.ram, system.data.ram + system.data.ram_size, initrd_start, initrd_end);
@@ -384,7 +463,9 @@ pub fn serialiseConfig(system: *Self, prefix: []const u8) !void {
     if (!system.connected) return error.NotConnected;
 
     const allocator = system.allocator;
-    const config_name = fmt(allocator, "vmm_{s}.data", .{system.vmm.name});
+    const config_name = fmt(allocator, "vmm_{s}", .{system.vmm.name});
 
     try mod_data.serialize(allocator, system.data, prefix, config_name);
+
+    system.serialised = true;
 }
