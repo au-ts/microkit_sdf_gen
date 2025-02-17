@@ -9,10 +9,19 @@ The workflow when working on the tooling slightly differs depending on whether
 you're working on purely internal changes or changes that affect the C or Python
 bindings as well.
 
-After making any changes it is good to first run:
+After making any changes it is good to run the tests.
+
+For the tests, you will after first initiliase the submodule(s):
+```sh
+git submodule update --init
+```
+
+To run the tests:
 ```sh
 zig build test
 ```
+
+On success, there should be no output.
 
 To build the C library specifically you want to run:
 ```sh
