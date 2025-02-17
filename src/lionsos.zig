@@ -86,7 +86,14 @@ pub const FileSystem = struct {
         }
     }
 
-    pub fn connect(system: *FileSystem, map_options: Map.Options) void {
+    const ConnectOptions = struct {
+        cached: ?bool = null,
+        command_vaddr: ?u64 = null,
+        completion_vaddr: ?u64 = null,
+        share_vaddr: ?u64 = null,
+    }
+
+    pub fn connect(system: *FileSystem, options: ConnectOptions) void {
         const allocator = system.allocator;
         const fs = system.fs;
         const client = system.client;
@@ -107,7 +114,9 @@ pub const FileSystem = struct {
             }
         };
 
-        const server_command_map = Map.create(fs_command_queue, fs.getMapVaddr(&fs_command_queue), .rw, map_options);
+        const server_command_map = Map.create(fs_command_queue, fs.getMapVaddr(&fs_command_queue), .rw, .{
+            .cached = options.cached,
+        );
         createMapping(fs, server_command_map);
         system.server_config.client.command_queue = .createFromMap(server_command_map);
 
