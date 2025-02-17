@@ -91,7 +91,7 @@ pub const FileSystem = struct {
         command_vaddr: ?u64 = null,
         completion_vaddr: ?u64 = null,
         share_vaddr: ?u64 = null,
-    }
+    };
 
     pub fn connect(system: *FileSystem, options: ConnectOptions) void {
         const allocator = system.allocator;
@@ -116,28 +116,28 @@ pub const FileSystem = struct {
 
         const server_command_map = Map.create(fs_command_queue, fs.getMapVaddr(&fs_command_queue), .rw, .{
             .cached = options.cached,
-        );
+        });
         createMapping(fs, server_command_map);
         system.server_config.client.command_queue = .createFromMap(server_command_map);
 
-        const server_completion_map = Map.create(fs_completion_queue, fs.getMapVaddr(&fs_completion_queue), .rw, map_options);
+        const server_completion_map = Map.create(fs_completion_queue, fs.getMapVaddr(&fs_completion_queue), .rw, .{ .cached = options.cached });
         system.server_config.client.completion_queue = .createFromMap(server_completion_map);
         createMapping(fs, server_completion_map);
 
-        const server_share_map = Map.create(fs_share, fs.getMapVaddr(&fs_share), .rw, map_options);
+        const server_share_map = Map.create(fs_share, fs.getMapVaddr(&fs_share), .rw, .{ .cached = options.cached });
         createMapping(fs, server_share_map);
         system.server_config.client.share = .createFromMap(server_share_map);
 
-        const client_command_map = Map.create(fs_command_queue, client.getMapVaddr(&fs_command_queue), .rw, map_options);
+        const client_command_map = Map.create(fs_command_queue, client.getMapVaddr(&fs_command_queue), .rw, .{ .cached = options.cached });
         system.client.addMap(client_command_map);
         system.client_config.server.command_queue = .createFromMap(client_command_map);
 
-        const client_completion_map = Map.create(fs_completion_queue, client.getMapVaddr(&fs_completion_queue), .rw, map_options);
+        const client_completion_map = Map.create(fs_completion_queue, client.getMapVaddr(&fs_completion_queue), .rw, .{ .cached = options.cached });
 
         system.client.addMap(client_completion_map);
         system.client_config.server.completion_queue = .createFromMap(client_completion_map);
 
-        const client_share_map = Map.create(fs_share, client.getMapVaddr(&fs_share), .rw, map_options);
+        const client_share_map = Map.create(fs_share, client.getMapVaddr(&fs_share), .rw, .{ .cached = options.cached });
         system.client.addMap(client_share_map);
         system.client_config.server.share = .createFromMap(client_share_map);
 
