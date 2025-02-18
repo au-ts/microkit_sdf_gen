@@ -302,7 +302,7 @@ pub const FileSystem = struct {
             try vmfs.fs_vm_sys.addVirtioMmioBlk(vmfs.virtio_device, vmfs.blk, .{
                 .partition = vmfs.partition,
             });
-            vmfs.fs.connect(.{ .cached = false, .command_vaddr = 0x20000000, .completion_vaddr = 0x22000000, .share_vaddr = 0x10000000 });
+            vmfs.fs.connect(.{ .cached = false, .command_vaddr = 0x20000000, .completion_vaddr = 0x21000000, .share_vaddr = 0x22000000 });
         }
 
         pub fn serialiseConfig(vmfs: *VmFs, prefix: []const u8) !void {
