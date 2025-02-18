@@ -80,8 +80,10 @@ pub const FileSystem = struct {
 
     fn createMapping(fs: *Pd, map: Map) void {
         if (fs.vm) |vm| {
+            std.log.debug("creating mapping for vm", .{});
             vm.addMap(map);
         } else {
+            std.log.debug("creating mapping for normal", .{});
             fs.addMap(map);
         }
     }
@@ -274,7 +276,7 @@ pub const FileSystem = struct {
     pub const VmFs = struct {
         fs: FileSystem,
         data: ConfigResources.Fs,
-        fs_vm_sys: VirtualMachineSystem,
+        fs_vm_sys: *VirtualMachineSystem,
         blk: *Blk,
         virtio_device: *dtb.Node,
         partition: u32,
@@ -297,7 +299,7 @@ pub const FileSystem = struct {
         }
 
         pub fn connect(vmfs: *VmFs) !void {
-            vmfs.vmm.addVirtioMmioBlk(vmfs.virtio_device, vmfs.blk, .{
+            try vmfs.fs_vm_sys.addVirtioMmioBlk(vmfs.virtio_device, vmfs.blk, .{
                 .partition = vmfs.partition,
             });
             vmfs.fs.connect(.{ .cached = false, .command_vaddr = 0x20000000, .completion_vaddr = 0x22000000, .share_vaddr = 0x10000000 });
