@@ -34,13 +34,8 @@ const Options = struct {
     one_to_one_ram: bool = false,
 };
 
-const PAGE_SIZE_4K = 0x1000;
-
 // This is way more than enough as they are typically just "uio@<integer>"
-const UIO_NAME_LEN = 8;
-const UIO_DT_REG_NUM_VALS = 2;
-const UIO_DT_IRQ_NUM_WALS = 3;
-const uio_compatibles = [_][]const u8{"generic-uio"};
+pub const UIO_NAME_LEN = 8;
 const UioRegion = extern struct {
     name: [UIO_NAME_LEN]c_char,
     guest_paddr: u64,
@@ -308,6 +303,47 @@ fn allocateDtbAddress(dtb_size: u64, ram_start: u64, ram_end: u64, initrd_start:
     }
 }
 
+/// This function parses all UIO regions from the DTB on `connect()` and saves the info into
+/// `system.data`. It does NOT map the regions into the guest or VMMs. It is up to the user of the
+/// VM system object to decide which UIO region to map where.
+fn parseUios(system: *Self) !void {
+    const allocator = system.allocator;
+
+    const uio_nodes = try dtb.findAllCompatible(allocator, system.guest_dtb, &dtb.LinuxUIO.uio_compatible);
+    defer uio_nodes.deinit();
+    if (uio_nodes.items.len >= MAX_UIOS) {
+        std.log.err("The DTB parser found {d} UIO nodes, but the limit is {d}", .{ uio_nodes.items.len, MAX_UIOS });
+        return error.InvalidUio;
+    }
+
+    for (uio_nodes.items, 0..) |node, i| {
+        std.log.debug("In VM system connect, at UIO node: {s}", .{node.name});
+
+        if (node.name.len > UIO_NAME_LEN - 1) {
+            std.log.err("Encountered UIO node '{s}', with name of length {d}, greater than limit of {d}.", .{ node.name, node.name.len, UIO_NAME_LEN - 1 });
+            @panic("UIO node name longer than allowed");
+        }
+
+        const this_node = dtb.LinuxUIO.create(node, system.sdf.arch);
+
+        // Convert `LinuxUIO` into a C compatible data structure
+        const src: [*]const c_char = @ptrCast(this_node.node.name.ptr);
+        @memcpy(&system.data.uios[i].name, src[0..UIO_NAME_LEN]);
+        system.data.uios[i].size = this_node.size;
+        system.data.uios[i].guest_paddr = this_node.guest_paddr;
+        system.data.uios[i].irq = this_node.irq orelse 0;
+
+        // We don't map the UIO regions into the VMM by default as sometimes they are intentionally "fake" for the guest to generate
+        // faults as an event signalling mechanism. It is up to whoever using the VM system object to map in.
+        system.data.uios[i].vmm_vaddr = 0;
+    }
+    std.log.debug("Successfully processed {d} UIO nodes", .{uio_nodes.items.len});
+    system.data.num_uio_regions = @intCast(uio_nodes.items.len);
+}
+
+// TODO: deal with the general problem of having multiple gic vcpu mappings but only one MR.
+// Two options, find the GIC vcpu mr and if it it doesn't exist, create it, if it does, use it.
+// other option is to have each a 'VirtualMachineSystem' that is responsible for every single VM.
 pub fn connect(system: *Self) !void {
     const allocator = system.allocator;
     var sdf = system.sdf;
@@ -390,92 +426,7 @@ pub fn connect(system: *Self) !void {
         }
     };
 
-    const uio_nodes = try dtb.findAllCompatible(allocator, system.guest_dtb, &uio_compatibles);
-    defer uio_nodes.deinit();
-    if (uio_nodes.items.len >= MAX_UIOS) {
-        std.log.err("The DTB parser found {d} UIO nodes, but the limit is {d}", .{ uio_nodes.items.len, MAX_UIOS });
-        return error.InvalidUio;
-    }
-
-    for (uio_nodes.items, 0..) |node, i| {
-        if (node.name.len > UIO_NAME_LEN - 1) {
-            std.log.err("Encountered UIO node '{s}', with name of length {d}, greater than limit of {d}.", .{ node.name, node.name.len, UIO_NAME_LEN - 1 });
-            return error.InvalidUio;
-        }
-        std.log.debug("In VM system connect, at UIO node: {s}", .{node.name});
-        const src: [*]const c_char = @ptrCast(node.name.ptr);
-        @memcpy(&system.data.uios[i].name, src[0..UIO_NAME_LEN]);
-
-        // Check and record whether this UIO node have an IRQ attached
-        const maybe_dt_irqs = node.prop(.Interrupts);
-        if (maybe_dt_irqs == null) {
-            system.data.uios[i].irq = 0;
-        } else {
-            const dt_irqs = maybe_dt_irqs.?;
-            if (dt_irqs.len == 0) {
-                std.log.err("Encountered UIO node '{s}' with an empty interrupt prop.", .{node.name});
-                return error.InvalidUio;
-            } else if (dt_irqs.len >= 1) {
-                if (dt_irqs[0].len != UIO_DT_IRQ_NUM_WALS) {
-                    std.log.err("Encountered UIO node '{s}' with an interrupt prop not containing exactly {d} values.", .{ node.name, UIO_DT_IRQ_NUM_WALS });
-                    return error.InvalidUio;
-                }
-
-                const dt_irq_type = dt_irqs[0][0];
-                const dt_irq_num = dt_irqs[0][1];
-                if (dt_irq_num == 0) {
-                    std.log.err("Encountered UIO node '{s}' with IRQ 0!", .{node.name});
-                    return error.InvalidUio;
-                }
-
-                system.data.uios[i].irq = dtb.armGicIrqNumber(dt_irq_num, dtb.armGicIrqType(dt_irq_type));
-                std.log.debug("This UIO node have IRQ {d}", .{system.data.uios[i].irq});
-            }
-        }
-
-        // We don't map the UIO regions into the VMM by default as sometimes they are intentionally "fake" for the guest to generate
-        // faults as an event signalling mechanism. It is up to whoever using the VM system object to map in.
-        system.data.uios[i].vmm_vaddr = 0;
-
-        // Record the guest physical memory region details.
-        const maybe_dt_guest_phy_mem_region = node.prop(.Reg);
-        if (maybe_dt_guest_phy_mem_region == null) {
-            std.log.err("Encountered UIO node '{s}' with no memory region!", .{node.name});
-            return error.InvalidUio;
-        } else {
-            const dt_guest_phy_mem_region = maybe_dt_guest_phy_mem_region.?;
-            if (dt_guest_phy_mem_region.len == 0) {
-                std.log.err("Encountered UIO node '{s}' with an empty reg prop.", .{node.name});
-                return error.InvalidUio;
-            } else if (dt_guest_phy_mem_region.len >= 1) {
-                if (dt_guest_phy_mem_region[0].len != UIO_DT_REG_NUM_VALS) {
-                    std.log.err("Encountered UIO node '{s}' with a reg prop not containing exactly {d} values. Got {d}", .{ node.name, UIO_DT_REG_NUM_VALS, dt_guest_phy_mem_region[0].len });
-                    return error.InvalidUio;
-                }
-
-                const paddr: u64 = @intCast(dt_guest_phy_mem_region[0][0]);
-                const size: u64 = @intCast(dt_guest_phy_mem_region[0][1]);
-
-                if (paddr == 0) {
-                    std.log.err("Encountered UIO node '{s}' with a NULL paddr.", .{node.name});
-                    return error.InvalidUio;
-                }
-                if (paddr % PAGE_SIZE_4K > 0) {
-                    std.log.err("Encountered UIO node '{s}' with paddr {x} isn't a multiple of page size.", .{ node.name, paddr });
-                    return error.InvalidUio;
-                }
-                if (size % PAGE_SIZE_4K > 0) {
-                    std.log.err("Encountered UIO node '{s}' with size {x} isn't a multiple of page size.", .{ node.name, size });
-                    return error.InvalidUio;
-                }
-
-                system.data.uios[i].guest_paddr = paddr;
-                system.data.uios[i].size = size;
-            }
-        }
-    }
-    std.log.debug("Successfully processed {d} UIO nodes", .{uio_nodes.items.len});
-    system.data.num_uio_regions = @intCast(uio_nodes.items.len);
+    try parseUios(system);
 
     system.data.ram = memory_paddr;
     system.data.ram_size = guest_ram_size;
