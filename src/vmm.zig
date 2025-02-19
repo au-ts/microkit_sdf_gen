@@ -404,6 +404,7 @@ pub fn connect(system: *Self) !void {
         const src: [*]const c_char = @ptrCast(node.name.ptr);
         @memcpy(&system.data.uios[i].name, src[0..UIO_NAME_LEN]);
 
+        // Check and record whether this UIO node have an IRQ attached
         const maybe_dt_irqs = node.prop(.Interrupts);
         if (maybe_dt_irqs == null) {
             system.data.uios[i].irq = 0;
@@ -434,6 +435,7 @@ pub fn connect(system: *Self) !void {
         // faults as an event signalling mechanism. It is up to whoever using the VM system object to map in.
         system.data.uios[i].vmm_vaddr = 0;
 
+        // Record the guest physical memory region details.
         const maybe_dt_guest_phy_mem_region = node.prop(.Reg);
         if (maybe_dt_guest_phy_mem_region == null) {
             std.log.err("Encountered UIO node '{s}' with no memory region!", .{node.name});

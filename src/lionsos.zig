@@ -318,23 +318,28 @@ pub const FileSystem = struct {
                 .partition = vmfs.partition,
             });
 
+            // Figure out where all the FS regions are supposed to go from DTB
             const cmd_guest_paddr = vmfs.fs_vm_sys.data.uios[FS_UIO_IDX_CMD].guest_paddr;
             const comp_guest_paddr = vmfs.fs_vm_sys.data.uios[FS_UIO_IDX_COMP].guest_paddr;
             const data_guest_paddr = vmfs.fs_vm_sys.data.uios[FS_UIO_IDX_DATA].guest_paddr;
             vmfs.fs.connect(.{ .cached = false, .command_vaddr = cmd_guest_paddr, .completion_vaddr = comp_guest_paddr, .share_vaddr = data_guest_paddr });
 
+            // Set up the shared configs region between guest and VMM
             const allocator = vmfs.fs.allocator;
             const config_share_size = vmfs.fs_vm_sys.data.uios[FS_UIO_IDX_SHARED_CONF].size;
             const config_share_guest_paddr = vmfs.fs_vm_sys.data.uios[FS_UIO_IDX_SHARED_CONF].guest_paddr;
             const config_share_region = Mr.create(allocator, fmt(allocator, "fs_{s}_guest_conf_share", .{vmfs.fs_vm_sys.guest.name}), config_share_size, .{});
             vmfs.fs_vm_sys.sdf.addMemoryRegion(config_share_region);
 
+            // Finally map everything in
             const guest_config_share_map = Map.create(config_share_region, config_share_guest_paddr, .rw, .{ .cached = false });
             vmfs.fs_vm_sys.guest.addMap(guest_config_share_map);
 
             const vmm_config_share_map_vaddr = vmfs.fs_vm_sys.vmm.getMapVaddr(&config_share_region);
             const vmm_config_share_map = Map.create(config_share_region, vmm_config_share_map_vaddr, .rw, .{ .cached = false });
             vmfs.fs_vm_sys.vmm.addMap(vmm_config_share_map);
+
+            // Update the UIO book keeping data in the VM system. This is why config serialisation must be deferred until everything is set up.
             vmfs.fs_vm_sys.data.uios[FS_UIO_IDX_SHARED_CONF].vmm_vaddr = vmm_config_share_map_vaddr;
         }
 
