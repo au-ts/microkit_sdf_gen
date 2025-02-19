@@ -283,6 +283,12 @@ pub const FileSystem = struct {
 
         const Error = FileSystem.Error;
 
+        const FS_UIO_IDX_SHARED_CONF = 0;
+        const FS_UIO_IDX_CMD = 1;
+        const FS_UIO_IDX_COMP = 2;
+        const FS_UIO_IDX_DATA = 3;
+        const NUMS_FS_UIO_REGIONS = 5;
+
         pub const Options = struct {
             partition: u32,
         };
@@ -299,10 +305,37 @@ pub const FileSystem = struct {
         }
 
         pub fn connect(vmfs: *VmFs) !void {
+            if (!vmfs.fs_vm_sys.connected) {
+                log.err("The FS driver VM system must be connected first before the FS.", .{});
+                return error.OutOfOrderConnection;
+            }
+            if (vmfs.fs_vm_sys.data.num_uio_regions != NUMS_FS_UIO_REGIONS) {
+                log.err("The FS driver VM does not have the required 5 UIO regions, got {d}", .{vmfs.fs_vm_sys.data.num_uio_regions});
+                return error.InvalidVMConf;
+            }
+
             try vmfs.fs_vm_sys.addVirtioMmioBlk(vmfs.virtio_device, vmfs.blk, .{
                 .partition = vmfs.partition,
             });
-            vmfs.fs.connect(.{ .cached = false, .command_vaddr = 0x20000000, .completion_vaddr = 0x21000000, .share_vaddr = 0x22000000 });
+
+            const cmd_guest_paddr = vmfs.fs_vm_sys.data.uios[FS_UIO_IDX_CMD].guest_paddr;
+            const comp_guest_paddr = vmfs.fs_vm_sys.data.uios[FS_UIO_IDX_COMP].guest_paddr;
+            const data_guest_paddr = vmfs.fs_vm_sys.data.uios[FS_UIO_IDX_DATA].guest_paddr;
+            vmfs.fs.connect(.{ .cached = false, .command_vaddr = cmd_guest_paddr, .completion_vaddr = comp_guest_paddr, .share_vaddr = data_guest_paddr });
+
+            const allocator = vmfs.fs.allocator;
+            const config_share_size = vmfs.fs_vm_sys.data.uios[FS_UIO_IDX_SHARED_CONF].size;
+            const config_share_guest_paddr = vmfs.fs_vm_sys.data.uios[FS_UIO_IDX_SHARED_CONF].guest_paddr;
+            const config_share_region = Mr.create(allocator, fmt(allocator, "fs_{s}_guest_conf_share", .{vmfs.fs_vm_sys.guest.name}), config_share_size, .{});
+            vmfs.fs_vm_sys.sdf.addMemoryRegion(config_share_region);
+
+            const guest_config_share_map = Map.create(config_share_region, config_share_guest_paddr, .rw, .{ .cached = false });
+            vmfs.fs_vm_sys.guest.addMap(guest_config_share_map);
+
+            const vmm_config_share_map_vaddr = vmfs.fs_vm_sys.vmm.getMapVaddr(&config_share_region);
+            const vmm_config_share_map = Map.create(config_share_region, vmm_config_share_map_vaddr, .rw, .{ .cached = false });
+            vmfs.fs_vm_sys.vmm.addMap(vmm_config_share_map);
+            vmfs.fs_vm_sys.data.uios[FS_UIO_IDX_SHARED_CONF].vmm_vaddr = vmm_config_share_map_vaddr;
         }
 
         pub fn serialiseConfig(vmfs: *VmFs, prefix: []const u8) !void {
