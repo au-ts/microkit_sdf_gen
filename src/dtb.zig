@@ -176,6 +176,32 @@ pub fn findCompatible(d: *dtb.Node, compatibles: []const []const u8) ?*dtb.Node 
     return null;
 }
 
+pub fn findAllCompatible(allocator: std.mem.Allocator, d: *dtb.Node, compatibles: []const []const u8) !std.ArrayList(*dtb.Node) {
+    var result = std.ArrayList(*dtb.Node).init(allocator);
+    errdefer result.deinit();
+
+    for (d.children) |child| {
+        const device_compatibles = child.prop(.Compatible);
+        if (device_compatibles != null) {
+            for (compatibles) |compatible| {
+                for (device_compatibles.?) |device_compatible| {
+                    if (std.mem.eql(u8, device_compatible, compatible)) {
+                        try result.append(child);
+                        break;
+                    }
+                }
+            }
+        }
+
+        var child_matches = try findAllCompatible(allocator, child, compatibles);
+        defer child_matches.deinit();
+
+        try result.appendSlice(child_matches.items);
+    }
+
+    return result;
+}
+
 // Given an address from a DTB node's 'reg' property, convert it to a
 // mappable MMIO address. This involves traversing any higher-level busses
 // to find the CPU visible address rather than some address relative to the
