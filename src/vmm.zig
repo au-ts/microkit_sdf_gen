@@ -34,6 +34,8 @@ const Options = struct {
     one_to_one_ram: bool = false,
 };
 
+const PAGE_SIZE_4K = 0x1000;
+
 // This is way more than enough as they are typically just "uio@<integer>"
 const UIO_NAME_LEN = 8;
 const UIO_DT_REG_NUM_VALS = 2;
@@ -458,8 +460,12 @@ pub fn connect(system: *Self) !void {
                     std.log.err("Encountered UIO node '{s}' with a NULL paddr.", .{node.name});
                     return error.InvalidUio;
                 }
-                if (size % 0x1000 > 0) {
-                    std.log.err("Encountered UIO node '{s}' with {x} paddr isn't a multiple of page size.", .{ node.name, size });
+                if (paddr % PAGE_SIZE_4K > 0) {
+                    std.log.err("Encountered UIO node '{s}' with paddr {x} isn't a multiple of page size.", .{ node.name, paddr });
+                    return error.InvalidUio;
+                }
+                if (size % PAGE_SIZE_4K > 0) {
+                    std.log.err("Encountered UIO node '{s}' with size {x} isn't a multiple of page size.", .{ node.name, size });
                     return error.InvalidUio;
                 }
 

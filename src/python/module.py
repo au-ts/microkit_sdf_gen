@@ -1078,7 +1078,7 @@ class LionsOs:
             ):
                 if partition < 0:
                     raise Exception(
-                        f"Parition cannot be negative!: {partition}"
+                        f"Partition cannot be negative!: {partition}"
                     )
 
                 assert isinstance(blk, Sddf.Blk)
