@@ -313,6 +313,11 @@ pub const FileSystem = struct {
                 log.err("The Block system must be connected after the FS.", .{});
                 return error.OutOfOrderConnection;
             }
+            if (vmfs.blk.serialised || vmfs.fs_vm_sys.serialised) {
+                log.err("Serialisation must take place after all conections", .{});
+                return error.OutOfOrderSerialisation;
+            }
+
             if (vmfs.fs_vm_sys.data.num_uio_regions != NUMS_FS_UIO_REGIONS) {
                 log.err("The FS driver VM does not have the required 5 UIO regions, got {d}", .{vmfs.fs_vm_sys.data.num_uio_regions});
                 return error.InvalidVMConf;
