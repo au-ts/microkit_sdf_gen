@@ -306,7 +306,11 @@ pub const FileSystem = struct {
 
         pub fn connect(vmfs: *VmFs) !void {
             if (!vmfs.fs_vm_sys.connected) {
-                log.err("The FS driver VM system must be connected first before the FS.", .{});
+                log.err("The FS driver VM system must be connected before the FS.", .{});
+                return error.OutOfOrderConnection;
+            }
+            if (vmfs.blk.connected) {
+                log.err("The Block system must be connected after the FS.", .{});
                 return error.OutOfOrderConnection;
             }
             if (vmfs.fs_vm_sys.data.num_uio_regions != NUMS_FS_UIO_REGIONS) {
