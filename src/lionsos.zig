@@ -313,7 +313,7 @@ pub const FileSystem = struct {
                 log.err("The Block system must be connected after the FS.", .{});
                 return error.OutOfOrderConnection;
             }
-            if (vmfs.blk.serialised || vmfs.fs_vm_sys.serialised) {
+            if (vmfs.blk.serialised or vmfs.fs_vm_sys.serialised) {
                 log.err("Serialisation must take place after all conections", .{});
                 return error.OutOfOrderSerialisation;
             }
