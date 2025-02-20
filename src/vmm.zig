@@ -27,6 +27,7 @@ data: Data,
 /// Whether or not to map guest RAM with 1-1 mappings with physical memory
 one_to_one_ram: bool,
 connected: bool = false,
+serialised: bool = false,
 
 const Options = struct {
     one_to_one_ram: bool = false,
@@ -429,4 +430,6 @@ pub fn serialiseConfig(system: *Self, prefix: []const u8) !void {
         const json_name = fmt(allocator, "vmm_{s}.json", .{system.vmm.name});
         try mod_data.jsonify(system.data, try fs.path.join(allocator, &.{ prefix, json_name }));
     }
+
+    system.serialised = true;
 }
