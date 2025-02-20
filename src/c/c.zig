@@ -948,17 +948,25 @@ export fn sdfgen_sddf_lwip_serialise_config(c_lib: *align(8) anyopaque, output_d
     return true;
 }
 
-export fn sdfgen_lionsos_firewall(c_sdf: *align(8) anyopaque, c_net1: *align(8) anyopaque, c_net2: *align(8) anyopaque, c_router: *align(8) anyopaque, c_arp_responder: *align(8) anyopaque, c_arp_requester: *align(8) anyopaque, ip: u32) *anyopaque {
+export fn sdfgen_lionsos_firewall(c_sdf: *align(8) anyopaque, c_net1: *align(8) anyopaque, c_net2: *align(8) anyopaque, c_router: *align(8) anyopaque, c_arp_responder: *align(8) anyopaque, c_arp_requester: *align(8) anyopaque) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const firewall = allocator.create(lionsos.Firewall) catch @panic("OOM");
-    firewall.* = lionsos.Firewall.init(allocator, sdf, @ptrCast(c_net1), @ptrCast(c_net2), @ptrCast(c_router), @ptrCast(c_arp_responder), @ptrCast(c_arp_requester), ip);
+    firewall.* = lionsos.Firewall.init(allocator, sdf, @ptrCast(c_net1), @ptrCast(c_net2), @ptrCast(c_router), @ptrCast(c_arp_responder), @ptrCast(c_arp_requester));
 
     return firewall;
 }
 
-export fn sdfgen_lionsos_firewall_connect(system: *align(8) anyopaque) bool {
+export fn sdfgen_lionsos_firewall_connect(system: *align(8) anyopaque, ip: u32, mac_addr: [*c]u8, mac_addr2: [*c] u8) bool {
     const firewall: *lionsos.Firewall = @ptrCast(system);
-    firewall.connect() catch @panic("TODO");
+    var options: lionsos.Firewall.FirewallOptions = .{};
+    if (mac_addr) |a| {
+        options.mac_addr = std.mem.span(a);
+    }
+    if (mac_addr2) |a| {
+        options.arp_mac_addr = std.mem.span(a);
+    }
+    options.ip = ip;
+    firewall.connect(options) catch @panic("TODO");
 
     return true;
 }

@@ -297,7 +297,7 @@ libsdfgen.sdfgen_lionsos_fs_vmfs_serialise_config.argtypes = [c_void_p, c_char_p
 libsdfgen.sdfgen_lionsos_firewall.restype = c_void_p
 libsdfgen.sdfgen_lionsos_firewall.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p]
 libsdfgen.sdfgen_lionsos_firewall_connect.restype = c_bool
-libsdfgen.sdfgen_lionsos_firewall_connect.argtypes = [c_void_p]
+libsdfgen.sdfgen_lionsos_firewall_connect.argtypes = [c_void_p, c_uint32, c_char_p, c_char_p]
 libsdfgen.sdfgen_lionsos_firewall_serialise_config.restype = c_bool
 libsdfgen.sdfgen_lionsos_firewall_serialise_config.argtypes = [c_void_p, c_char_p]
 
@@ -1257,12 +1257,20 @@ class LionsOs:
             router: SystemDescription.ProtectionDomain,
             arp_responder: SystemDescription.ProtectionDomain,
             arp_requester: SystemDescription.ProtectionDomain,
-            ip: c_uint32,
         ):
-            self._obj = libsdfgen.sdfgen_lionsos_firewall(sdf._obj, net1._obj, net2._obj, router._obj, arp_responder._obj, arp_requester._obj, ip)
+            self._obj = libsdfgen.sdfgen_lionsos_firewall(sdf._obj, net1._obj, net2._obj, router._obj, arp_responder._obj, arp_requester._obj)
 
-        def connect(self) -> bool:
-            return libsdfgen.sdfgen_lionsos_firewall_connect(self._obj)
+        def connect(self, mac_addr: Optional[str] = None, ip: c_uint32 = 0) -> bool:
+            if mac_addr is not None and len(mac_addr) != 17:
+                raise Exception(f"invalid MAC address length")
+
+            c_mac_addr = c_char_p(0)
+            if mac_addr is not None:
+                c_mac_addr = c_char_p(mac_addr.encode("utf-8"))
+            arp_mac_addr = f"FF:FF:FF:FF:FF:FF"
+            c_arp_mac_addr = c_char_p(arp_mac_addr.encode("utf-8"))
+            c_mac_addr = c_char_p(mac_addr.encode("utf-8"))
+            return libsdfgen.sdfgen_lionsos_firewall_connect(self._obj, ip, c_mac_addr, c_arp_mac_addr)
 
         def serailise_config(self, output_dir: str) -> bool:
             c_output_dir = c_char_p(output_dir.encode("utf-8"))

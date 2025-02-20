@@ -1196,8 +1196,6 @@ pub const Net = struct {
     }
 
     pub fn addClientWithCopier(system: *Net, client: *Pd, copier: *Pd, options: ClientOptions) Error!void {
-        log.debug("In addClientWIthCopier", .{});
-
         // Check that at least rx or tx is set in ClientOptions
         if (!options.rx and !options.tx) {
             return Error.InvalidOptions;
@@ -1489,9 +1487,9 @@ pub const Net = struct {
         }
 
         for (system.clients.items, 0..) |client, i| {
-            const data_name = fmt(allocator, "net_{s}_client_{s}.data", .{ system.device.name, client.name });
+            const data_name = fmt(allocator, "net_{s}_client_{s}.data", .{ system.driver.name, client.name });
             try data.serialize(system.client_configs.items[i], try fs.path.join(allocator, &.{ prefix, data_name }));
-            const json_name = fmt(allocator, "net_{s}_client_{s}.json", .{ system.device.name, client.name });
+            const json_name = fmt(allocator, "net_{s}_client_{s}.json", .{ system.driver.name, client.name });
             try data.jsonify(system.client_configs.items[i], try fs.path.join(allocator, &.{ prefix, json_name }));
         }
 
@@ -1519,10 +1517,10 @@ pub const Net = struct {
                 }
             }
 
-            for (system.clients.items, 0..) |client, i| {
-                const json_name = fmt(allocator, "net_{s}_client_{s}.json", .{ system.device.name, client.name });
-                try data.jsonify(system.client_configs.items[i], try fs.path.join(allocator, &.{ prefix, json_name }));
-            }
+            // for (system.clients.items, 0..) |client, i| {
+            //     const json_name = fmt(allocator, "net_{s}_client_{s}.json", .{ system.device.name, client.name });
+            //     try data.jsonify(system.client_configs.items[i], try fs.path.join(allocator, &.{ prefix, json_name }));
+            // }
         }
     }
 };

@@ -392,6 +392,8 @@ pub const Resources = struct {
         pub const ArpRequester = extern struct {
             magic: [8]u8 = MAGIC,
             router: ArpRouterConnection,
+            // This is the MAC addr of NIC2
+            mac_addr: [6]u8,
         };
 
         pub const ArpResponder = extern struct {
@@ -400,6 +402,8 @@ pub const Resources = struct {
             // It is the static IP address of the network
             // subsystem that it is attached to.
             ip: u32,
+            // This is the mac address of NIC1
+            mac_addr: [6]u8,
         };
 
         // @kwinter: Note that this is teh same as the ARP structure,
@@ -408,6 +412,8 @@ pub const Resources = struct {
         pub const Router = extern struct {
             magic: [8]u8 = MAGIC,
             arp_requester: ArpRouterConnection,
+            // This is the MAC addr of NIC2
+            mac_addr: [6]u8,
         };
     };
 

@@ -382,6 +382,9 @@ pub const FileSystem = struct {
 };
 
 pub const Firewall = struct {
+    pub const Error = error{
+        InvalidMacAddr,
+    };
     // @kwinter: Add in proper error checking here.
     allocator: Allocator,
     sdf: *SystemDescription,
@@ -390,13 +393,18 @@ pub const Firewall = struct {
     router: *Pd,
     arp_requester: *Pd,
     arp_responder: *Pd,
-    ip: u32,
-    // This is the static IP address associated with this firewall.
     arp_responder_config: ConfigResources.Firewall.ArpResponder,
     router_config: ConfigResources.Firewall.Router,
     arp_requester_config: ConfigResources.Firewall.ArpRequester,
 
-    pub fn init(allocator: Allocator, sdf: *SystemDescription, net1: *Net, net2: *Net, router: *Pd, arp_responder: *Pd, arp_requester: *Pd, ip: u32) Firewall {
+    // Static build time configurations for the firewall
+    pub const FirewallOptions = struct {
+        ip: u32 = 0,
+        mac_addr: ?[]const u8 = null,
+        arp_mac_addr: ?[]const u8 = null,
+    };
+
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, net1: *Net, net2: *Net, router: *Pd, arp_responder: *Pd, arp_requester: *Pd) Firewall {
         return .{
             .allocator = allocator,
             .sdf = sdf,
@@ -408,27 +416,60 @@ pub const Firewall = struct {
             .router_config = std.mem.zeroInit(ConfigResources.Firewall.Router, .{}),
             .arp_responder_config = std.mem.zeroInit(ConfigResources.Firewall.ArpResponder, .{}),
             .arp_requester_config = std.mem.zeroInit(ConfigResources.Firewall.ArpRequester, .{}),
-            .ip = ip,
         };
     }
 
-    pub fn connect(firewall: *Firewall) !void {
+    fn parseMacAddr(mac_str: []const u8) ![6]u8 {
+        var mac_arr = std.mem.zeroes([6]u8);
+        var it = std.mem.splitScalar(u8, mac_str, ':');
+        for (0..6) |i| {
+            mac_arr[i] = try std.fmt.parseInt(u8, it.next().?, 16);
+        }
+        return mac_arr;
+    }
+
+    pub fn connect(firewall: *Firewall, firewall_options: FirewallOptions) !void {
         const allocator = firewall.allocator;
-        var options: sddf.Net.ClientOptions = .{};
+
+        firewall.arp_responder_config.ip = firewall_options.ip;
+
+        var responder_options: sddf.Net.ClientOptions = .{};
         // @kwinter: Letting the MAC address be automatically selected.
-        options.rx = true;
-        options.tx = true;
+        responder_options.rx = true;
+        responder_options.tx = true;
+
+        if (firewall_options.arp_mac_addr) |a| {
+            responder_options.mac_addr = a;
+        }
 
         // Connect the ARP responder to tx and rx of network 1
-        try firewall.network1.addClient(firewall.arp_responder, options);
+        try firewall.network1.addClient(firewall.arp_responder, responder_options);
         // Connect the ARP requester to tx and rx of network 2
-        try firewall.network2.addClient(firewall.arp_requester, options);
+
+        var requester_options: sddf.Net.ClientOptions = .{};
+        // @kwinter: Letting the MAC address be automatically selected.
+        requester_options.rx = true;
+        requester_options.tx = true;
+
+        if (firewall_options.arp_mac_addr) |a| {
+            requester_options.mac_addr = a;
+        }
+
+        try firewall.network2.addClient(firewall.arp_requester, requester_options);
+
         // Connect the router to the rx of network 1 and tx of network 2
-        options.tx = false;
-        try firewall.network1.addClient(firewall.router, options);
-        options.rx = false;
-        options.tx = true;
-        try firewall.network2.addClient(firewall.router, options);
+        // These router options are for the transmit of NIC1
+        var router_options: sddf.Net.ClientOptions = .{};
+        if (firewall_options.mac_addr) |a| {
+            router_options.mac_addr = a;
+        }
+        router_options.rx = true;
+        router_options.tx = false;
+        try firewall.network1.addClient(firewall.router, router_options);
+        var router2_options: sddf.Net.ClientOptions = .{};
+        router2_options.rx = false;
+        router2_options.tx = true;
+        try firewall.network2.addClient(firewall.router, router2_options);
 
         // Add memory regions for the arp cache and arp queue.
 
@@ -466,8 +507,6 @@ pub const Firewall = struct {
         // if (!firewall.connected) return Error.NotConnected;
 
         const allocator = firewall.allocator;
-
-        firewall.arp_responder_config.ip = firewall.ip;
 
         const router_name = fmt(allocator, "router.data", .{});
         try data.serialize(firewall.router_config, try std.fs.path.join(allocator, &.{ prefix, router_name }));
