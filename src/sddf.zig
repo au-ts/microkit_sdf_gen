@@ -327,6 +327,7 @@ pub const Timer = struct {
     clients: std.ArrayList(*Pd),
     client_configs: std.ArrayList(ConfigResources.Timer.Client),
     connected: bool = false,
+    serialised: bool = false,
 
     pub const Error = SystemError;
 
@@ -410,6 +411,8 @@ pub const Timer = struct {
                 try data.jsonify(system.client_configs.items[i], try fs.path.join(allocator, &.{ prefix, json_name }));
             }
         }
+
+        system.serialised = true;
     }
 };
 
@@ -429,6 +432,7 @@ pub const I2c = struct {
     client_configs: std.ArrayList(ConfigResources.I2c.Client),
     num_buffers: u16,
     connected: bool = false,
+    serialised: bool = false,
 
     pub const Error = SystemError;
 
@@ -634,6 +638,8 @@ pub const I2c = struct {
                 try data.jsonify(system.client_configs.items[i], try fs.path.join(allocator, &.{ prefix, json_name }));
             }
         }
+
+        system.serialised = true;
     }
 };
 
@@ -647,6 +653,7 @@ pub const Blk = struct {
     clients: std.ArrayList(*Pd),
     client_partitions: std.ArrayList(u32),
     connected: bool = false,
+    serialised: bool = false,
     // TODO: make this configurable per component
     queue_mr_size: usize = 2 * 1024 * 1024,
     // TODO: make configurable
@@ -883,6 +890,8 @@ pub const Blk = struct {
                 try data.jsonify(config, try fs.path.join(allocator, &.{ prefix, client_json }));
             }
         }
+
+        system.serialised = true;
     }
 };
 
@@ -898,6 +907,7 @@ pub const Serial = struct {
     virt_tx: *Pd,
     clients: std.ArrayList(*Pd),
     connected: bool = false,
+    serialised: bool = false,
 
     driver_config: ConfigResources.Serial.Driver,
     virt_rx_config: ConfigResources.Serial.VirtRx,
@@ -1071,6 +1081,8 @@ pub const Serial = struct {
                 try data.jsonify(system.client_configs.items[i], try fs.path.join(allocator, &.{ prefix, json_name }));
             }
         }
+
+        system.serialised = true;
     }
 };
 
@@ -1118,6 +1130,7 @@ pub const Net = struct {
     client_configs: std.ArrayList(ConfigResources.Net.Client),
 
     connected: bool = false,
+    serialised: bool = false,
 
     rx_buffers: usize,
     client_info: std.ArrayList(ClientInfo),
@@ -1401,6 +1414,8 @@ pub const Net = struct {
                 try data.jsonify(system.client_configs.items[i], try fs.path.join(allocator, &.{ prefix, json_name }));
             }
         }
+
+        system.serialised = true;
     }
 };
 
@@ -1413,6 +1428,7 @@ pub const Gpu = struct {
     virt: *Pd,
     clients: std.ArrayList(*Pd),
     connected: bool = false,
+    serialised: bool = false,
     config: Gpu.Config,
     // Configurable parameters. Right now we just hard-code
     // these.
@@ -1627,6 +1643,8 @@ pub const Gpu = struct {
                 try data.jsonify(config, try fs.path.join(allocator, &.{ prefix, client_json }));
             }
         }
+
+        system.serialised = true;
     }
 };
 
@@ -1716,7 +1734,7 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: *dtb.Node, class: 
         log.err("Cannot find driver matching '{s}' for class '{s}'", .{ device.name, @tagName(class) });
         return error.UnknownDevice;
     };
-    log.debug("Found compatible driver '{s}'", .{ driver.dir });
+    log.debug("Found compatible driver '{s}'", .{driver.dir});
 
     // If a status property does exist, we should check that it is 'okay'
     if (device.prop(.Status)) |status| {
@@ -1733,7 +1751,7 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: *dtb.Node, class: 
         }
 
         if (region_resource.dt_index != null and region_resource.cached != null and region_resource.cached.? == true) {
-            log.err("driver '{s}' has region resource '{s}' which tries to map MMIO region as cached", .{ driver.dir , region_resource.name });
+            log.err("driver '{s}' has region resource '{s}' which tries to map MMIO region as cached", .{ driver.dir, region_resource.name });
         }
 
         const mr_name = fmt(sdf.allocator, "{s}/{s}/{s}", .{ device.name, driver.dir, region_resource.name });
