@@ -393,18 +393,23 @@ pub const Firewall = struct {
     router: *Pd,
     arp_requester: *Pd,
     arp_responder: *Pd,
+    udp_filter: *Pd,
+    tcp_filter: *Pd,
+    icmp_filter: *Pd,
+    // @kwinter: TODO: Figure out what the configs for the above filters will look like
     arp_responder_config: ConfigResources.Firewall.ArpResponder,
     router_config: ConfigResources.Firewall.Router,
     arp_requester_config: ConfigResources.Firewall.ArpRequester,
 
     // Static build time configurations for the firewall
     pub const FirewallOptions = struct {
-        ip: u32 = 0,
+        network1_ip: u32 = 0,
+        network2_ip: u32 = 0,
         mac_addr: ?[]const u8 = null,
         arp_mac_addr: ?[]const u8 = null,
     };
 
-    pub fn init(allocator: Allocator, sdf: *SystemDescription, net1: *Net, net2: *Net, router: *Pd, arp_responder: *Pd, arp_requester: *Pd) Firewall {
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, net1: *Net, net2: *Net, router: *Pd, arp_responder: *Pd, arp_requester: *Pd, udp_filter: *Pd, tcp_filter: *Pd, icmp_filter: *Pd) Firewall {
         return .{
             .allocator = allocator,
             .sdf = sdf,
@@ -413,6 +418,9 @@ pub const Firewall = struct {
             .router = router,
             .arp_responder = arp_responder,
             .arp_requester = arp_requester,
+            .udp_filter = udp_filter,
+            .tcp_filter = tcp_filter,
+            .icmp_filter = icmp_filter,
             .router_config = std.mem.zeroInit(ConfigResources.Firewall.Router, .{}),
             .arp_responder_config = std.mem.zeroInit(ConfigResources.Firewall.ArpResponder, .{}),
             .arp_requester_config = std.mem.zeroInit(ConfigResources.Firewall.ArpRequester, .{}),
@@ -431,13 +439,14 @@ pub const Firewall = struct {
     pub fn connect(firewall: *Firewall, firewall_options: FirewallOptions) !void {
         const allocator = firewall.allocator;
 
-        firewall.arp_responder_config.ip = firewall_options.ip;
+        firewall.arp_responder_config.ip = firewall_options.network1_ip;
+        firewall.arp_requester_config.ip = firewall_options.network2_ip;
 
         var responder_options: sddf.Net.ClientOptions = .{};
         // @kwinter: Letting the MAC address be automatically selected.
         responder_options.rx = true;
         responder_options.tx = true;
-
+        responder_options.protocol = 0x92;
         if (firewall_options.arp_mac_addr) |a| {
             responder_options.mac_addr = a;
         }
@@ -450,7 +459,7 @@ pub const Firewall = struct {
         // @kwinter: Letting the MAC address be automatically selected.
         requester_options.rx = true;
         requester_options.tx = true;
-
+        requester_options.protocol = 0x92;
         if (firewall_options.arp_mac_addr) |a| {
             requester_options.mac_addr = a;
         }
@@ -485,14 +494,14 @@ pub const Firewall = struct {
         firewall.router.addMap(router_arp_queue_map);
         firewall.router_config.arp_requester.arp_queue = .createFromMap(router_arp_queue_map);
         // @kwinter: This can probably be read only.
-        const router_arp_cache_map = Map.create(arp_cache, firewall.router.getMapVaddr(&arp_cache), .rw, .{});
+        const router_arp_cache_map = Map.create(arp_cache, 0x3_000_000, .rw, .{});
         firewall.router.addMap(router_arp_cache_map);
         firewall.router_config.arp_requester.arp_cache = .createFromMap(router_arp_cache_map);
 
         const arp_requester_queue_map = Map.create(arp_queue, firewall.arp_requester.getMapVaddr(&arp_queue), .rw, .{});
         firewall.arp_requester.addMap(arp_requester_queue_map);
         firewall.arp_requester_config.router.arp_queue = .createFromMap(arp_requester_queue_map);
-        const arp_requester_cache_map = Map.create(arp_cache, firewall.arp_requester.getMapVaddr(&arp_cache), .rw, .{});
+        const arp_requester_cache_map = Map.create(arp_cache, 0x3_000_000, .rw, .{});
         firewall.arp_requester.addMap(arp_requester_cache_map);
         firewall.arp_requester_config.router.arp_cache = .createFromMap(arp_requester_cache_map);
 

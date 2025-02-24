@@ -1055,6 +1055,7 @@ pub const Net = struct {
         InvalidClient,
         DuplicateCopier,
         DuplicateMacAddr,
+        DuplicateProtocol,
         InvalidMacAddr,
         OutOfMemory,
         InvalidOptions,
@@ -1070,6 +1071,7 @@ pub const Net = struct {
         rx_buffers: usize = 512,
         tx_buffers: usize = 512,
         mac_addr: ?[]const u8 = null,
+        protocol: u16 = 0,
     };
 
     pub const ClientInfo = struct {
@@ -1080,6 +1082,7 @@ pub const Net = struct {
         rx_buffers: usize = 512,
         tx_buffers: usize = 512,
         mac_addr: ?[6]u8 = null,
+        protocol: u16 = 0,
         // Store a reference to the copier in the client info.
         copier: ?*Pd = null,
     };
@@ -1171,6 +1174,15 @@ pub const Net = struct {
             }
         }
 
+        // Check that if a protocol is present, that there is no duplicate client.
+        if (options.protocol != 0) {
+            for (0..client_idx) |i| {
+                if (system.client_info.items[i].protocol == options.protocol) {
+                    return Error.DuplicateProtocol;
+                }
+            }
+        }
+
         system.clients.append(client) catch @panic("Could not add client to Net");
         system.client_configs.append(std.mem.zeroInit(ConfigResources.Net.Client, .{})) catch @panic("Could not add client to Net");
 
@@ -1185,6 +1197,9 @@ pub const Net = struct {
         if (options.tx) {
             system.client_info.items[client_idx].tx_buffers = options.tx_buffers;
             system.virt_tx_config.num_clients += 1;
+        }
+        if (options.protocol != 0) {
+            system.client_info.items[client_idx].protocol = options.protocol;
         }
         // We will always regardless append null to these lists to maintain continuity.
         try system.copiers.append(null);
@@ -1227,6 +1242,15 @@ pub const Net = struct {
             }
         }
 
+        // Check that if a protocol is present, that there is no duplicate client.
+        if (options.protocol != 0) {
+            for (0..client_idx) |i| {
+                if (system.client_info.items[i].protocol == options.protocol) {
+                    return Error.DuplicateProtocol;
+                }
+            }
+        }
+
         system.clients.append(client) catch @panic("Could not add client with copier to Net");
         system.client_info.append(std.mem.zeroInit(ClientInfo, .{})) catch @panic("Could not add client with copier to Net");
 
@@ -1252,6 +1276,9 @@ pub const Net = struct {
         if (options.tx) {
             system.client_info.items[client_idx].tx_buffers = options.tx_buffers;
             system.virt_tx_config.num_clients += 1;
+        }
+        if (options.protocol != 0) {
+            system.client_info.items[client_idx].protocol = options.protocol;
         }
         system.client_info.items[client_idx].rx = options.rx;
         system.client_info.items[client_idx].tx = options.tx;
@@ -1441,6 +1468,7 @@ pub const Net = struct {
                     system.clientRxConnect(rx_dma_mr, i);
                 }
                 system.virt_rx_config.clients[i].mac_addr = system.client_info.items[i].mac_addr.?;
+                system.virt_rx_config.clients[i].protocol = system.client_info.items[i].protocol;
             }
             if (system.client_info.items[i].tx == true) {
                 system.clientTxConnect(i);

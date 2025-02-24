@@ -242,6 +242,7 @@ pub const Resources = struct {
             pub const VirtRxClient = extern struct {
                 conn: Connection,
                 mac_addr: [6]u8,
+                protocol: u16,
             };
 
             magic: [5]u8 = MAGIC,
@@ -279,6 +280,7 @@ pub const Resources = struct {
             tx: Connection,
             tx_data: Region,
             mac_addr: [6]u8,
+            protocol: u16,
         };
     };
 
@@ -394,6 +396,7 @@ pub const Resources = struct {
             router: ArpRouterConnection,
             // This is the MAC addr of NIC2
             mac_addr: [6]u8,
+            ip: u32,
         };
 
         pub const ArpResponder = extern struct {

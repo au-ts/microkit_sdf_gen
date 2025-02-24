@@ -589,7 +589,7 @@ export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: *align(8) anyopa
     return net;
 }
 
-export fn sdfgen_sddf_net_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque, mac_addr: [*c]u8, rx: bool, tx: bool) bindings.sdfgen_sddf_status_t {
+export fn sdfgen_sddf_net_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque, mac_addr: [*c]u8, rx: bool, tx: bool, protocol: u16) bindings.sdfgen_sddf_status_t {
     const net: *sddf.Net = @ptrCast(system);
     var options: sddf.Net.ClientOptions = .{};
     if (mac_addr) |a| {
@@ -597,15 +597,17 @@ export fn sdfgen_sddf_net_add_client(system: *align(8) anyopaque, client: *align
     }
     options.rx = rx;
     options.tx = tx;
+    options.protocol = protocol;
     net.addClient(@ptrCast(client), options) catch |e| {
         switch (e) {
             sddf.Net.Error.DuplicateClient => return 1,
             sddf.Net.Error.InvalidClient => return 2,
             sddf.Net.Error.DuplicateCopier => return 100,
             sddf.Net.Error.DuplicateMacAddr => return 101,
-            sddf.Net.Error.InvalidMacAddr => return 102,
-            sddf.Net.Error.OutOfMemory => return 103,
-            sddf.Net.Error.InvalidOptions => return 104,
+            sddf.Net.Error.DuplicateProtocol => return 102,
+            sddf.Net.Error.InvalidMacAddr => return 103,
+            sddf.Net.Error.OutOfMemory => return 104,
+            sddf.Net.Error.InvalidOptions => return 105,
             // Should never happen when adding a client
             sddf.Net.Error.NotConnected => @panic("internal error"),
         }
@@ -614,7 +616,7 @@ export fn sdfgen_sddf_net_add_client(system: *align(8) anyopaque, client: *align
     return 0;
 }
 
-export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, client: *align(8) anyopaque, copier: *align(8) anyopaque, mac_addr: [*c]u8, rx: bool, tx: bool) bindings.sdfgen_sddf_status_t {
+export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, client: *align(8) anyopaque, copier: *align(8) anyopaque, mac_addr: [*c]u8, rx: bool, tx: bool, protocol: u16) bindings.sdfgen_sddf_status_t {
     const net: *sddf.Net = @ptrCast(system);
     var options: sddf.Net.ClientOptions = .{};
     if (mac_addr) |a| {
@@ -622,15 +624,17 @@ export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, cl
     }
     options.rx = rx;
     options.tx = tx;
+    options.protocol = protocol;
     net.addClientWithCopier(@ptrCast(client), @ptrCast(copier), options) catch |e| {
         switch (e) {
             sddf.Net.Error.DuplicateClient => return 1,
             sddf.Net.Error.InvalidClient => return 2,
             sddf.Net.Error.DuplicateCopier => return 100,
             sddf.Net.Error.DuplicateMacAddr => return 101,
-            sddf.Net.Error.InvalidMacAddr => return 102,
-            sddf.Net.Error.OutOfMemory => return 103,
-            sddf.Net.Error.InvalidOptions => return 104,
+            sddf.Net.Error.DuplicateProtocol => return 102,
+            sddf.Net.Error.InvalidMacAddr => return 103,
+            sddf.Net.Error.OutOfMemory => return 104,
+            sddf.Net.Error.InvalidOptions => return 105,
             // Should never happen when adding a client
             sddf.Net.Error.NotConnected => @panic("internal error"),
         }
@@ -948,15 +952,15 @@ export fn sdfgen_sddf_lwip_serialise_config(c_lib: *align(8) anyopaque, output_d
     return true;
 }
 
-export fn sdfgen_lionsos_firewall(c_sdf: *align(8) anyopaque, c_net1: *align(8) anyopaque, c_net2: *align(8) anyopaque, c_router: *align(8) anyopaque, c_arp_responder: *align(8) anyopaque, c_arp_requester: *align(8) anyopaque) *anyopaque {
+export fn sdfgen_lionsos_firewall(c_sdf: *align(8) anyopaque, c_net1: *align(8) anyopaque, c_net2: *align(8) anyopaque, c_router: *align(8) anyopaque, c_arp_responder: *align(8) anyopaque, c_arp_requester: *align(8) anyopaque, c_udp_filter: *align(8) anyopaque, c_tcp_filter: *align(8) anyopaque, c_icmp_filter: *align(8) anyopaque) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const firewall = allocator.create(lionsos.Firewall) catch @panic("OOM");
-    firewall.* = lionsos.Firewall.init(allocator, sdf, @ptrCast(c_net1), @ptrCast(c_net2), @ptrCast(c_router), @ptrCast(c_arp_responder), @ptrCast(c_arp_requester));
+    firewall.* = lionsos.Firewall.init(allocator, sdf, @ptrCast(c_net1), @ptrCast(c_net2), @ptrCast(c_router), @ptrCast(c_arp_responder), @ptrCast(c_arp_requester), @ptrCast(c_udp_filter), @ptrCast(c_tcp_filter), @ptrCast(c_icmp_filter));
 
     return firewall;
 }
 
-export fn sdfgen_lionsos_firewall_connect(system: *align(8) anyopaque, ip: u32, mac_addr: [*c]u8, mac_addr2: [*c] u8) bool {
+export fn sdfgen_lionsos_firewall_connect(system: *align(8) anyopaque, network1_ip: u32, network2_ip: u32, mac_addr: [*c]u8, mac_addr2: [*c] u8) bool {
     const firewall: *lionsos.Firewall = @ptrCast(system);
     var options: lionsos.Firewall.FirewallOptions = .{};
     if (mac_addr) |a| {
@@ -965,7 +969,9 @@ export fn sdfgen_lionsos_firewall_connect(system: *align(8) anyopaque, ip: u32, 
     if (mac_addr2) |a| {
         options.arp_mac_addr = std.mem.span(a);
     }
-    options.ip = ip;
+    options.network1_ip = network1_ip;
+    options.network2_ip =network2_ip;
+
     firewall.connect(options) catch @panic("TODO");
 
     return true;
