@@ -173,7 +173,8 @@ libsdfgen.sdfgen_sddf_net_add_client.argtypes = [
     c_void_p,
     c_char_p,
     c_bool,
-    c_bool
+    c_bool,
+    c_uint16,
 ]
 
 libsdfgen.sdfgen_sddf_net_add_client_with_copier.restype = c_bool
@@ -183,7 +184,8 @@ libsdfgen.sdfgen_sddf_net_add_client_with_copier.argtypes = [
     c_void_p,
     c_char_p,
     c_bool,
-    c_bool
+    c_bool,
+    c_uint16,
 ]
 
 libsdfgen.sdfgen_sddf_net_connect.restype = c_bool
@@ -234,9 +236,9 @@ libsdfgen.sdfgen_lionsos_fs_nfs_connect.argtypes = [c_void_p]
 libsdfgen.sdfgen_lionsos_fs_nfs_serialise_config.restype = c_bool
 libsdfgen.sdfgen_lionsos_fs_nfs_serialise_config.argtypes = [c_void_p, c_char_p]
 libsdfgen.sdfgen_lionsos_firewall.restype = c_void_p
-libsdfgen.sdfgen_lionsos_firewall.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p]
+libsdfgen.sdfgen_lionsos_firewall.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p]
 libsdfgen.sdfgen_lionsos_firewall_connect.restype = c_bool
-libsdfgen.sdfgen_lionsos_firewall_connect.argtypes = [c_void_p, c_uint32, c_char_p, c_char_p]
+libsdfgen.sdfgen_lionsos_firewall_connect.argtypes = [c_void_p, c_uint32, c_uint32, c_char_p, c_char_p]
 libsdfgen.sdfgen_lionsos_firewall_serialise_config.restype = c_bool
 libsdfgen.sdfgen_lionsos_firewall_serialise_config.argtypes = [c_void_p, c_char_p]
 
@@ -713,6 +715,7 @@ class Sddf:
             mac_addr: Optional[str] = None,
             rx: bool=True,
             tx: bool=True,
+            protocol: c_uint16=0xFF,
         ) -> None:
             """
             Add a client connected to a copier component for RX traffic.
@@ -727,7 +730,7 @@ class Sddf:
             if mac_addr is not None:
                 c_mac_addr = c_char_p(mac_addr.encode("utf-8"))
             ret = libsdfgen.sdfgen_sddf_net_add_client(
-                self._obj, client._obj, c_mac_addr, rx, tx
+                self._obj, client._obj, c_mac_addr, rx, tx, protocol
             )
             if ret == SddfStatus.OK:
                 return
@@ -735,8 +738,6 @@ class Sddf:
                 raise Exception(f"duplicate client given '{client}'")
             elif ret == SddfStatus.INVALID_CLIENT:
                 raise Exception(f"invalid client given '{client}'")
-            elif ret == SddfStatus.NET_DUPLICATE_COPIER:
-                raise Exception(f"duplicate copier given '{copier}'")
             elif ret == SddfStatus.NET_DUPLICATE_MAC_ADDR:
                 raise Exception(f"duplicate MAC address given '{mac_addr}'")
             else:
@@ -751,6 +752,7 @@ class Sddf:
             mac_addr: Optional[str] = None,
             rx: bool=True,
             tx: bool=True,
+            protocol: c_uint16=0xFF,
         ) -> None:
             """
             Add a client connected to a copier component for RX traffic.
@@ -765,7 +767,7 @@ class Sddf:
             if mac_addr is not None:
                 c_mac_addr = c_char_p(mac_addr.encode("utf-8"))
             ret = libsdfgen.sdfgen_sddf_net_add_client_with_copier(
-                self._obj, client._obj, copier._obj, c_mac_addr, rx, tx
+                self._obj, client._obj, copier._obj, c_mac_addr, rx, tx, protocol
             )
             if ret == SddfStatus.OK:
                 return
@@ -977,10 +979,13 @@ class LionsOs:
             router: SystemDescription.ProtectionDomain,
             arp_responder: SystemDescription.ProtectionDomain,
             arp_requester: SystemDescription.ProtectionDomain,
+            udp_filter: SystemDescription.ProtectionDomain,
+            tcp_filter: SystemDescription.ProtectionDomain,
+            icmp_filter: SystemDescription.ProtectionDomain,
         ):
-            self._obj = libsdfgen.sdfgen_lionsos_firewall(sdf._obj, net1._obj, net2._obj, router._obj, arp_responder._obj, arp_requester._obj)
+            self._obj = libsdfgen.sdfgen_lionsos_firewall(sdf._obj, net1._obj, net2._obj, router._obj, arp_responder._obj, arp_requester._obj, udp_filter._obj, tcp_filter._obj, icmp_filter._obj)
 
-        def connect(self, mac_addr: Optional[str] = None, ip: c_uint32 = 0) -> bool:
+        def connect(self, mac_addr: Optional[str] = None, network1_ip: c_uint32 = 0, network2_ip: c_uint32 = 0) -> bool:
             if mac_addr is not None and len(mac_addr) != 17:
                 raise Exception(f"invalid MAC address length")
 
@@ -990,7 +995,7 @@ class LionsOs:
             arp_mac_addr = f"FF:FF:FF:FF:FF:FF"
             c_arp_mac_addr = c_char_p(arp_mac_addr.encode("utf-8"))
             c_mac_addr = c_char_p(mac_addr.encode("utf-8"))
-            return libsdfgen.sdfgen_lionsos_firewall_connect(self._obj, ip, c_mac_addr, c_arp_mac_addr)
+            return libsdfgen.sdfgen_lionsos_firewall_connect(self._obj, network1_ip, network2_ip,  c_mac_addr, c_arp_mac_addr)
 
         def serialise_config(self, output_dir: str) -> bool:
             c_output_dir = c_char_p(output_dir.encode("utf-8"))
