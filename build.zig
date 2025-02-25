@@ -19,12 +19,17 @@ pub fn build(b: *std.Build) !void {
     const dtbzig_dep = b.dependency("dtb.zig", .{});
     const dtb_module = dtbzig_dep.module("dtb");
 
+    const libfdt_dep = b.dependency("libfdt_c", .{});
+    const libfdt = libfdt_dep.artifact("fdt");
+
     const sdf_module = b.addModule("sdf", .{
         .root_source_file = b.path("src/mod.zig"),
         .target = target,
         .optimize = optimize,
     });
     sdf_module.addImport("dtb", dtb_module);
+    sdf_module.linkLibrary(libfdt);
+    sdf_module.addIncludePath(libfdt_dep.path("."));
 
     const dtb_step = b.step("dtbs", "Compile Device Tree Sources into .dtb");
     inline for (test_device_trees) |device_tree| {
@@ -43,6 +48,8 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    zig_example.linkLibrary(libfdt);
+    zig_example.addIncludePath(libfdt_dep.path("."));
     // TODO: should these be runtime options instead?
     const zig_example_options = b.addOptions();
     zig_example_options.addOptionPath("sddf", b.path("sddf"));
@@ -100,7 +107,9 @@ pub fn build(b: *std.Build) !void {
     });
     c_example.addCSourceFile(.{ .file = b.path("examples/examples.c") });
     c_example.linkLibrary(csdfgen);
+    c_example.linkLibrary(libfdt);
     c_example.linkLibC();
+    c_example.addIncludePath(libfdt_dep.path("."));
 
     const c_example_step = b.step("c_example", "Run example program using C bindings");
     const c_example_cmd = b.addRunArtifact(c_example);
@@ -138,6 +147,8 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    tests.linkLibrary(libfdt);
+    tests.addIncludePath(libfdt_dep.path("."));
 
     const test_options = b.addOptions();
     test_options.addOptionPath("c_example", .{ .cwd_relative = b.getInstallPath(.bin, c_example.name) });

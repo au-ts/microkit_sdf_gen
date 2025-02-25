@@ -6,6 +6,9 @@
             .url = "https://github.com/Ivan-Velickovic/dtb.zig/archive/6a1307379f5a0c048dbf8e4eb01644eb215c76e7.tar.gz",
             .hash = "12208605f828f0ce1d3deeb965cf929aea48f2914088df5e38d3664b33c7662ac02e"
         },
+        .@"libfdt_c" = .{
+            .path = "./libfdt/"
+        },
     },
     .paths = .{
         "build.zig",
