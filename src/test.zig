@@ -184,7 +184,8 @@ test "basic VM" {
 
     var vm = try VirtualMachine.create(allocator, "vm", &.{.{ .id = 0 }}, .{});
 
-    var vmm_system = Vmm.init(allocator, &sdf, &vmm, &vm, guest_dtb, dtb_size, .{});
+    var vmm_system = Vmm.init(allocator, &sdf, &vmm, &vm, guest_dtb, blob_bytes.ptr, dtb_size, .{});
+    defer vmm_system.deinit();
 
     try vmm_system.connect();
 
@@ -213,9 +214,11 @@ test "two VMs" {
     sdf.addProtectionDomain(&vmm2);
 
     var vm1 = try VirtualMachine.create(allocator, "vm1", &.{.{ .id = 0 }}, .{});
-    var vmm_system1 = Vmm.init(allocator, &sdf, &vmm1, &vm1, guest_dtb, dtb_size, .{});
+    var vmm_system1 = Vmm.init(allocator, &sdf, &vmm1, &vm1, guest_dtb, blob_bytes.ptr, dtb_size, .{});
+    defer vmm_system1.deinit();
     var vm2 = try VirtualMachine.create(allocator, "vm2", &.{.{ .id = 0 }}, .{});
-    var vmm_system2 = Vmm.init(allocator, &sdf, &vmm2, &vm2, guest_dtb, dtb_size, .{});
+    var vmm_system2 = Vmm.init(allocator, &sdf, &vmm2, &vm2, guest_dtb, blob_bytes.ptr, dtb_size, .{});
+    defer vmm_system2.deinit();
 
     try vmm_system1.connect();
     try vmm_system2.connect();

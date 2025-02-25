@@ -671,10 +671,10 @@ export fn sdfgen_sddf_gpu_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
-export fn sdfgen_vmm(c_sdf: *align(8) anyopaque, vmm_pd: *align(8) anyopaque, vm: *align(8) anyopaque, c_dtb: *align(8) anyopaque, dtb_size: u64, one_to_one_ram: bool) *anyopaque {
+export fn sdfgen_vmm(c_sdf: *align(8) anyopaque, vmm_pd: *align(8) anyopaque, vm: *align(8) anyopaque, c_dtb_parsed: *align(8) anyopaque, c_dtb_blob: *align(8) anyopaque, dtb_size: u64, one_to_one_ram: bool) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const vmm = allocator.create(Vmm) catch @panic("OOM");
-    vmm.* = Vmm.init(allocator, sdf, @ptrCast(vmm_pd), @ptrCast(vm), @ptrCast(c_dtb), dtb_size, .{
+    vmm.* = Vmm.init(allocator, sdf, @ptrCast(vmm_pd), @ptrCast(vm), @ptrCast(c_dtb_parsed), @ptrCast(c_dtb_blob), dtb_size, .{
         .one_to_one_ram = one_to_one_ram,
     });
 

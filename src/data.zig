@@ -384,10 +384,15 @@ pub fn serialize(allocator: Allocator, s: anytype, prefix: []const u8, path: []c
     const full_path = try std.fs.path.join(allocator, &.{ prefix, path });
     const full_path_data = try std.fmt.allocPrint(allocator, "{s}.data", .{full_path});
     const full_path_json = try std.fmt.allocPrint(allocator, "{s}.json", .{full_path});
+    const full_path_dtb = try std.fmt.allocPrint(allocator, "{s}.dtb", .{full_path});
 
     const serialize_file = try std.fs.cwd().createFile(full_path_data, .{});
     defer serialize_file.close();
     try serialize_file.writeAll(bytes);
+
+    const serialize_dtb = try std.fs.cwd().createFile(full_path_dtb, .{});
+    defer serialize_dtb.close();
+    try serialize_dtb.writeAll(bytes);
 
     if (emit_json) {
         const json_file = try std.fs.cwd().createFile(full_path_json, .{});

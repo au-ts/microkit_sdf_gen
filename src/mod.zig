@@ -5,3 +5,4 @@ pub const sddf = @import("sddf.zig");
 pub const dtb = @import("dtb.zig");
 pub const data = @import("data.zig");
 pub const log = @import("log.zig");
+pub const libfdt = @import("libfdt.zig");

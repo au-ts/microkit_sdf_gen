@@ -7,6 +7,11 @@ const log = @import("log.zig");
 const dtb = @import("dtb.zig");
 const Allocator = std.mem.Allocator;
 
+const libfdt_c = @cImport({
+    @cInclude("libfdt_env.h");
+    @cInclude("fdt.h");
+});
+
 const SystemDescription = mod_sdf.SystemDescription;
 const Pd = SystemDescription.ProtectionDomain;
 const Mr = SystemDescription.MemoryRegion;
@@ -318,25 +323,22 @@ pub const FileSystem = struct {
                 return error.OutOfOrderSerialisation;
             }
 
-            if (vmfs.fs_vm_sys.data.num_uio_regions != NUMS_FS_UIO_REGIONS) {
-                log.err("The FS driver VM does not have the required 5 UIO regions, got {d}", .{vmfs.fs_vm_sys.data.num_uio_regions});
-                return error.InvalidVMConf;
-            }
-
             try vmfs.fs_vm_sys.addVirtioMmioBlk(vmfs.virtio_device, vmfs.blk, .{
                 .partition = vmfs.partition,
             });
 
-            // Figure out where all the FS regions are supposed to go from DTB
-            const cmd_guest_paddr = vmfs.fs_vm_sys.data.uios[FS_UIO_IDX_CMD].guest_paddr;
-            const comp_guest_paddr = vmfs.fs_vm_sys.data.uios[FS_UIO_IDX_COMP].guest_paddr;
-            const data_guest_paddr = vmfs.fs_vm_sys.data.uios[FS_UIO_IDX_DATA].guest_paddr;
+            // TODO: figure out how to automatically allocate guest phy mem.
+            const config_share_guest_paddr = 0x10002000;
+            const config_share_size = 0x1000;
+            const cmd_guest_paddr = 0x20000000;
+            const comp_guest_paddr = 0x21000000;
+            const data_guest_paddr = 0x22000000;
+            const fault_guest_paddr = 0x10000000;
+
             vmfs.fs.connect(.{ .cached = false, .command_vaddr = cmd_guest_paddr, .completion_vaddr = comp_guest_paddr, .share_vaddr = data_guest_paddr });
 
             // Set up the shared configs region between guest and VMM
             const allocator = vmfs.fs.allocator;
-            const config_share_size = vmfs.fs_vm_sys.data.uios[FS_UIO_IDX_SHARED_CONF].size;
-            const config_share_guest_paddr = vmfs.fs_vm_sys.data.uios[FS_UIO_IDX_SHARED_CONF].guest_paddr;
             const config_share_region = Mr.create(allocator, fmt(allocator, "fs_{s}_guest_conf_share", .{vmfs.fs_vm_sys.guest.name}), config_share_size, .{});
             vmfs.fs_vm_sys.sdf.addMemoryRegion(config_share_region);
 
@@ -347,6 +349,14 @@ pub const FileSystem = struct {
             const vmm_config_share_map_vaddr = vmfs.fs_vm_sys.vmm.getMapVaddr(&config_share_region);
             const vmm_config_share_map = Map.create(config_share_region, vmm_config_share_map_vaddr, .rw, .{ .cached = false });
             vmfs.fs_vm_sys.vmm.addMap(vmm_config_share_map);
+
+            // Write the UIO regions into the DTB, order doesn't matter
+            // Although if the names change, the corresponding #defines in lionsos/components/fs/vmfs/vmfs_shared.h must also be changed.
+            try vmfs.fs_vm_sys.addUioMemRegion("vmfs_config", config_share_guest_paddr, config_share_size, null);
+            try vmfs.fs_vm_sys.addUioMemRegion("vmfs_command", cmd_guest_paddr, vmfs.fs.command_queue_size, 39);
+            try vmfs.fs_vm_sys.addUioMemRegion("vmfs_completion", comp_guest_paddr, vmfs.fs.completion_queue_size, null);
+            try vmfs.fs_vm_sys.addUioMemRegion("vmfs_data", data_guest_paddr, vmfs.fs.data_size, null);
+            try vmfs.fs_vm_sys.addUioMemRegion("vmfs_fault", fault_guest_paddr, 0x1000, null);
 
             // Update the UIO book keeping data in the VM system. This is why config serialisation must be deferred until everything is set up.
             vmfs.fs_vm_sys.data.uios[FS_UIO_IDX_SHARED_CONF].vmm_vaddr = vmm_config_share_map_vaddr;

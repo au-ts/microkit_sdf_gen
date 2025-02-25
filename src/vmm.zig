@@ -5,6 +5,12 @@ const dtb = @import("dtb.zig");
 const mod_data = @import("data.zig");
 const sddf = @import("sddf.zig");
 const log = @import("log.zig");
+const libfdt_c = @cImport({
+    @cInclude("libfdt_env.h");
+    @cInclude("fdt.h");
+    @cInclude("libfdt.h");
+});
+const libfdt_c_wrappers = @import("libfdt.zig");
 
 const Allocator = std.mem.Allocator;
 
@@ -23,11 +29,13 @@ allocator: Allocator,
 sdf: *SystemDescription,
 vmm: *Pd,
 guest: *Vm,
-guest_dtb: *dtb.Node,
+guest_dtb_parsed: *dtb.Node,
+guest_dtb_blob: []u8,
 guest_dtb_size: u64,
 data: Data,
 /// Whether or not to map guest RAM with 1-1 mappings with physical memory
 one_to_one_ram: bool,
+num_uio_regions: u8,
 connected: bool = false,
 serialised: bool = false,
 
@@ -35,8 +43,8 @@ const Options = struct {
     one_to_one_ram: bool = false,
 };
 
-// This is way more than enough as they are typically just "uio@<integer>"
-pub const UIO_NAME_LEN = 8;
+pub const uio_compatible = "generic-uio";
+pub const UIO_NAME_LEN = 32;
 const UioRegion = extern struct {
     name: [UIO_NAME_LEN]c_char,
     guest_paddr: u64,
@@ -49,6 +57,8 @@ const MAX_IRQS: usize = 32;
 const MAX_VCPUS: usize = 32;
 const MAX_UIOS: usize = 16;
 const MAX_VIRTIO_MMIO_DEVICES: usize = 32;
+
+const DTB_BLOB_GROWTH_AMOUNT = 128;
 
 const Data = extern struct {
     const VirtioMmioDevice = extern struct {
@@ -89,17 +99,33 @@ const Data = extern struct {
     virtio_mmio_devices: [MAX_VIRTIO_MMIO_DEVICES]VirtioMmioDevice,
 };
 
-pub fn init(allocator: Allocator, sdf: *SystemDescription, vmm: *Pd, guest: *Vm, guest_dtb: *dtb.Node, guest_dtb_size: u64, options: Options) Self {
-    return .{
+pub fn init(allocator: Allocator, sdf: *SystemDescription, vmm: *Pd, guest: *Vm, guest_dtb_parsed: *dtb.Node, guest_dtb_blob: [*]const u8, guest_dtb_size: u64, options: Options) Self {
+    // Sanity check the raw FDT blob
+    if (libfdt_c.fdt_check_header(guest_dtb_blob) != 0) {
+        std.log.err("libfdt_c ", .{});
+        @panic("invalid FDT blob!");
+    }
+
+    var obj: Self = .{
         .allocator = allocator,
         .sdf = sdf,
         .vmm = vmm,
         .guest = guest,
-        .guest_dtb = guest_dtb,
+        .guest_dtb_parsed = guest_dtb_parsed,
+        .guest_dtb_blob = allocator.alloc(u8, guest_dtb_size) catch @panic("Out of memory"),
         .guest_dtb_size = guest_dtb_size,
         .data = std.mem.zeroInit(Data, .{}),
+        .num_uio_regions = 0,
         .one_to_one_ram = options.one_to_one_ram,
     };
+    @memcpy(obj.guest_dtb_blob[0..guest_dtb_size], guest_dtb_blob[0..guest_dtb_size]);
+
+    std.log.debug("VMM initialised ok", .{});
+    return obj;
+}
+
+pub fn deinit(self: Self) void {
+    self.allocator.free(self.guest_dtb_blob);
 }
 
 fn fmt(allocator: Allocator, comptime s: []const u8, args: anytype) []u8 {
@@ -291,6 +317,137 @@ pub fn addPassthroughIrq(system: *Self, irq: Irq) !void {
     system.data.num_irqs += 1;
 }
 
+fn dtb_blob_expand(system: *Self) !void {
+    // If we run out of space then grow the FDT
+    std.log.debug("dtb_blob_expand()", .{});
+    const old_blob = system.guest_dtb_blob;
+
+    system.guest_dtb_blob = system.allocator.alloc(u8, system.guest_dtb_size + DTB_BLOB_GROWTH_AMOUNT) catch @panic("Out of memory");
+    system.guest_dtb_size += DTB_BLOB_GROWTH_AMOUNT;
+
+    const grow_err = libfdt_c.fdt_open_into(old_blob.ptr, system.guest_dtb_blob.ptr, @intCast(system.guest_dtb_size));
+    if (grow_err != 0) {
+        std.log.debug("can't grow FDT with err {d} from libfdt", .{grow_err});
+        @panic("can't grow FDT");
+    }
+    std.log.debug("FDT grew successfully from {d} -> {d}", .{ old_blob.len, system.guest_dtb_size });
+    defer system.allocator.free(old_blob);
+}
+
+fn get_root_offset(dtb_blob: []u8) !c_int {
+    const root_offset = libfdt_c.fdt_path_offset(dtb_blob.ptr, "/");
+    if (root_offset != 0) {
+        std.log.err("can't find root offset of FDT", .{});
+        try libfdt_c_wrappers.libfdt_panic_if_err(root_offset);
+    }
+    return root_offset;
+}
+
+pub fn addUioMemRegion(system: *Self, name: []const u8, guest_paddr: u64, size: u64, irq: ?u32) !void {
+    if (name.len >= UIO_NAME_LEN) {
+        @panic("UIO region name must be lower than UIO_NAME_LEN - 1");
+    }
+
+    const root_offset = try get_root_offset(system.guest_dtb_blob);
+    var new_node_offset: c_int = -1;
+
+    // First, create the node, grow buf as necessary
+    var new_node_name_buf: [8]u8 = undefined; // len 8 is enough for the node name as they are just "uio@<integer>"
+    const formatted_name = try std.fmt.bufPrintZ(@ptrCast(&new_node_name_buf), "uio@{d}", .{system.data.num_uio_regions});
+    while (true) {
+        new_node_offset = libfdt_c.fdt_add_subnode(system.guest_dtb_blob.ptr, root_offset, formatted_name.ptr);
+        if (new_node_offset == -libfdt_c.FDT_ERR_NOSPACE) {
+            try dtb_blob_expand(system);
+        } else if (new_node_offset < 0) {
+            std.log.err("can't insert new node with err code from libfdt {d}", .{new_node_offset});
+            @panic("can't insert new node");
+        } else {
+            break;
+        }
+    }
+
+    // Then insert the linux name so that the guest know which region is what.
+    while (true) {
+        const err = libfdt_c_wrappers.fdt_setprop_string(system.guest_dtb_blob, new_node_offset, "linux,uio-name", name.ptr);
+        if (err == -libfdt_c.FDT_ERR_NOSPACE) {
+            try dtb_blob_expand(system);
+        } else {
+            try libfdt_c_wrappers.libfdt_panic_if_err(err);
+            break;
+        }
+    }
+    @memset(&system.data.uios[system.data.num_uio_regions].name, 0);
+    const dest: [*]u8 = @ptrCast(&system.data.uios[system.data.num_uio_regions].name);
+    @memcpy(dest, name);
+
+    // Insert compat string
+    while (true) {
+        const err = libfdt_c_wrappers.fdt_setprop_string(system.guest_dtb_blob, new_node_offset, "compatible", uio_compatible);
+        if (err == -libfdt_c.FDT_ERR_NOSPACE) {
+            try dtb_blob_expand(system);
+        } else {
+            try libfdt_c_wrappers.libfdt_panic_if_err(err);
+            break;
+        }
+    }
+
+    // Insert memory range
+    while (true) {
+        const err = libfdt_c.fdt_appendprop_addrrange(system.guest_dtb_blob.ptr, root_offset, new_node_offset, "reg", guest_paddr, size);
+        if (err == -libfdt_c.FDT_ERR_NOSPACE) {
+            try dtb_blob_expand(system);
+        } else {
+            try libfdt_c_wrappers.libfdt_panic_if_err(err);
+            break;
+        }
+    }
+    system.data.uios[system.data.num_uio_regions].guest_paddr = guest_paddr;
+    system.data.uios[system.data.num_uio_regions].size = size;
+
+    // Insert irq if applicable
+    if (irq) |actual_irq| {
+        // Step 1: write the GIC irq type, which is SPI in this case
+        while (true) {
+            const err = libfdt_c.fdt_appendprop_u32(system.guest_dtb_blob.ptr, new_node_offset, "interrupts", 0);
+            if (err == -libfdt_c.FDT_ERR_NOSPACE) {
+                try dtb_blob_expand(system);
+            } else {
+                try libfdt_c_wrappers.libfdt_panic_if_err(err);
+                break;
+            }
+        }
+
+        // Step 2: write the IRQ number
+        while (true) {
+            const err = libfdt_c.fdt_appendprop_u32(system.guest_dtb_blob.ptr, new_node_offset, "interrupts", @intCast(actual_irq));
+            if (err == -libfdt_c.FDT_ERR_NOSPACE) {
+                try dtb_blob_expand(system);
+            } else {
+                try libfdt_c_wrappers.libfdt_panic_if_err(err);
+                break;
+            }
+        }
+
+        // Final step: write the trigger, which is level for UIOs
+        while (true) {
+            const err = libfdt_c.fdt_appendprop_u32(system.guest_dtb_blob.ptr, new_node_offset, "interrupts", 4);
+            if (err == -libfdt_c.FDT_ERR_NOSPACE) {
+                try dtb_blob_expand(system);
+            } else {
+                try libfdt_c_wrappers.libfdt_panic_if_err(err);
+                break;
+            }
+        }
+        system.data.uios[system.data.num_uio_regions].irq = actual_irq;
+    } else {
+        system.data.uios[system.data.num_uio_regions].irq = 0;
+    }
+
+    // Update book-keeping
+    system.data.uios[system.data.num_uio_regions].vmm_vaddr = 0;
+    system.data.num_uio_regions += 1;
+}
+
 /// Figure out where to place the DTB based on the guest's RAM and initrd.
 /// Our preference is to place it towards the end of RAM.
 fn allocateDtbAddress(dtb_size: u64, ram_start: u64, ram_end: u64, initrd_start: u64, initrd_end: u64) !u64 {
@@ -304,44 +461,6 @@ fn allocateDtbAddress(dtb_size: u64, ram_start: u64, ram_end: u64, initrd_start:
     }
 }
 
-/// This function parses all UIO regions from the DTB on `connect()` and saves the info into
-/// `system.data`. It does NOT map the regions into the guest or VMMs. It is up to the user of the
-/// VM system object to decide which UIO region to map where.
-fn parseUios(system: *Self) !void {
-    const allocator = system.allocator;
-
-    const uio_nodes = try dtb.findAllCompatible(allocator, system.guest_dtb, &dtb.LinuxUIO.uio_compatible);
-    defer uio_nodes.deinit();
-    if (uio_nodes.items.len >= MAX_UIOS) {
-        std.log.err("The DTB parser found {d} UIO nodes, but the limit is {d}", .{ uio_nodes.items.len, MAX_UIOS });
-        return error.InvalidUio;
-    }
-
-    for (uio_nodes.items, 0..) |node, i| {
-        std.log.debug("In VM system connect, at UIO node: {s}", .{node.name});
-
-        if (node.name.len > UIO_NAME_LEN - 1) {
-            std.log.err("Encountered UIO node '{s}', with name of length {d}, greater than limit of {d}.", .{ node.name, node.name.len, UIO_NAME_LEN - 1 });
-            @panic("UIO node name longer than allowed");
-        }
-
-        const this_node = dtb.LinuxUIO.create(node, system.sdf.arch);
-
-        // Convert `LinuxUIO` into a C compatible data structure
-        const src: [*]const c_char = @ptrCast(this_node.node.name.ptr);
-        @memcpy(&system.data.uios[i].name, src[0..UIO_NAME_LEN]);
-        system.data.uios[i].size = this_node.size;
-        system.data.uios[i].guest_paddr = this_node.guest_paddr;
-        system.data.uios[i].irq = this_node.irq orelse 0;
-
-        // We don't map the UIO regions into the VMM by default as sometimes they are intentionally "fake" for the guest to generate
-        // faults as an event signalling mechanism. It is up to whoever using the VM system object to map in.
-        system.data.uios[i].vmm_vaddr = 0;
-    }
-    std.log.debug("Successfully processed {d} UIO nodes", .{uio_nodes.items.len});
-    system.data.num_uio_regions = @intCast(uio_nodes.items.len);
-}
-
 // TODO: deal with the general problem of having multiple gic vcpu mappings but only one MR.
 // Two options, find the GIC vcpu mr and if it it doesn't exist, create it, if it does, use it.
 // other option is to have each a 'VirtualMachineSystem' that is responsible for every single VM.
@@ -353,7 +472,7 @@ pub fn connect(system: *Self) !void {
     try vmm.setVirtualMachine(guest);
 
     if (sdf.arch.isArm()) {
-        const gic = dtb.ArmGic.fromDtb(sdf.arch, system.guest_dtb) orelse {
+        const gic = dtb.ArmGic.fromDtb(sdf.arch, system.guest_dtb_parsed) orelse {
             log.err("error connecting VMM '{s}' system: could not find GIC interrupt controller DTB node", .{vmm.name});
             return error.MissinGicNode;
         };
@@ -376,7 +495,7 @@ pub fn connect(system: *Self) !void {
         }
     }
 
-    const memory_node = dtb.memory(system.guest_dtb) orelse {
+    const memory_node = dtb.memory(system.guest_dtb_parsed) orelse {
         log.err("error connecting VMM '{s}' system: could not find 'memory' DTB node", .{vmm.name});
         return error.MissingMemoryNode;
     };
@@ -413,21 +532,19 @@ pub fn connect(system: *Self) !void {
     }
 
     const initrd_start = blk: {
-        if (system.guest_dtb.propAt(&.{"chosen"}, .LinuxInitrdStart)) |addr| {
+        if (system.guest_dtb_parsed.propAt(&.{"chosen"}, .LinuxInitrdStart)) |addr| {
             break :blk addr;
         } else {
             return error.MissingInitrd;
         }
     };
     const initrd_end = blk: {
-        if (system.guest_dtb.propAt(&.{"chosen"}, .LinuxInitrdEnd)) |addr| {
+        if (system.guest_dtb_parsed.propAt(&.{"chosen"}, .LinuxInitrdEnd)) |addr| {
             break :blk addr;
         } else {
             return error.MissingInitrd;
         }
     };
-
-    try parseUios(system);
 
     system.data.ram = memory_paddr;
     system.data.ram_size = guest_ram_size;

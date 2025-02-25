@@ -131,7 +131,7 @@ bool sdfgen_sddf_gpu_connect(void *system);
 bool sdfgen_sddf_gpu_serialise_config(void *system, char *output_dir);
 
 /*** Virtual Machine Monitor ***/
-void *sdfgen_vmm(void *sdf, void *vmm_pd, void *vm, char *name, void *dtb, bool one_to_one_ram);
+void *sdfgen_vmm(void *sdf, void *vmm_pd, void *vm, void *dtb_parsed, void *dtb_blob, uint64_t dtb_size, bool one_to_one_ram);
 bool sdfgen_vmm_add_passthrough_device(void *vmm, char *name, void *device);
 bool sdfgen_vmm_connect(void *vmm);
 

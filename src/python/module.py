@@ -217,6 +217,7 @@ libsdfgen.sdfgen_vmm.argtypes = [
     c_void_p,
     c_void_p,
     c_void_p,
+    c_void_p,
     c_uint64,
     c_bool
 ]
@@ -987,11 +988,12 @@ class Vmm:
         sdf: SystemDescription,
         vmm: SystemDescription.ProtectionDomain,
         vm: SystemDescription.VirtualMachine,
-        dtb: DeviceTree,
+        dtb_parsed: DeviceTree,
+        dtb_blob: bytes,
         *,
         one_to_one_ram: bool = False,
     ):
-        self._obj = libsdfgen.sdfgen_vmm(sdf._obj, vmm._obj, vm._obj, dtb._obj, dtb.size, one_to_one_ram)
+        self._obj = libsdfgen.sdfgen_vmm(sdf._obj, vmm._obj, vm._obj, dtb_parsed._obj, (c_ubyte * dtb_parsed.size)(*dtb_blob), dtb_parsed.size, one_to_one_ram)
 
     def add_passthrough_device(
         self,
