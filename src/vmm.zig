@@ -558,9 +558,11 @@ pub fn serialiseConfig(system: *Self, prefix: []const u8) !void {
     if (!system.connected) return error.NotConnected;
 
     const allocator = system.allocator;
-    const config_name = fmt(allocator, "vmm_{s}.data", .{system.vmm.name});
-
+    const config_name = fmt(allocator, "vmm_{s}", .{system.vmm.name});
     try mod_data.serialize(allocator, system.data, prefix, config_name);
+
+    const dtb_name = fmt(allocator, "vm_{s}.dtb", .{system.vmm.name});
+    try mod_data.rawWrite(system.guest_dtb_blob, try fs.path.join(allocator, &.{ prefix, dtb_name }));
 
     system.serialised = true;
 }

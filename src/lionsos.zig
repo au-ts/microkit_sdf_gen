@@ -362,13 +362,9 @@ pub const FileSystem = struct {
             vmfs.fs_vm_sys.data.uios[FS_UIO_IDX_SHARED_CONF].vmm_vaddr = vmm_config_share_map_vaddr;
         }
 
-        pub fn serialiseConfig(vmfs: *VmFs, prefix: []const u8) !void {
-            try data.serialize(vmfs.data, try std.fs.path.join(vmfs.fs.allocator, &.{ prefix, "vmfs_config.data" }));
-            vmfs.fs.serialiseConfig(prefix) catch @panic("Could not serialise config");
-
-            if (data.emit_json) {
-                try data.jsonify(vmfs.data, try std.fs.path.join(vmfs.fs.allocator, &.{ prefix, "vmfs_config.json" }));
-            }
+        pub fn serialiseConfig(vmfs: *VmFs, prefix: []const u8) !void {            
+            try data.serialize(vmfs.fs.allocator, vmfs.data, prefix, "vmfs_config");
+            try vmfs.fs.serialiseConfig(prefix);
         }
     };
 };

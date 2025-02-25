@@ -993,7 +993,7 @@ class Vmm:
         *,
         one_to_one_ram: bool = False,
     ):
-        self._obj = libsdfgen.sdfgen_vmm(sdf._obj, vmm._obj, vm._obj, dtb_parsed._obj, (c_ubyte * dtb_parsed.size)(*dtb_blob), dtb_parsed.size, one_to_one_ram)
+        self._obj = libsdfgen.sdfgen_vmm(sdf._obj, vmm._obj, vm._obj, dtb_parsed._obj, (c_int8 * dtb_parsed.size)(*dtb_blob), dtb_parsed.size, one_to_one_ram)
 
     def add_passthrough_device(
         self,
