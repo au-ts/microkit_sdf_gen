@@ -869,6 +869,7 @@ pub const Serial = struct {
     virt_tx: *Pd,
     clients: std.ArrayList(*Pd),
     connected: bool = false,
+    enable_color: bool,
 
     driver_config: ConfigResources.Serial.Driver,
     virt_rx_config: ConfigResources.Serial.VirtRx,
@@ -883,6 +884,7 @@ pub const Serial = struct {
         data_size: usize = 0x10000,
         queue_size: usize = 0x1000,
         virt_rx: ?*Pd = null,
+        enable_color: bool = true,
     };
 
     pub fn init(allocator: Allocator, sdf: *SystemDescription, device: *dtb.Node, driver: *Pd, virt_tx: *Pd, options: Options) Error!Serial {
@@ -911,6 +913,7 @@ pub const Serial = struct {
             .device_res = std.mem.zeroInit(ConfigResources.Device, .{}),
             .virt_rx = options.virt_rx,
             .virt_tx = virt_tx,
+            .enable_color = options.enable_color,
 
             .driver_config = std.mem.zeroInit(ConfigResources.Serial.Driver, .{}),
             .virt_rx_config = std.mem.zeroInit(ConfigResources.Serial.VirtRx, .{}),
@@ -1004,7 +1007,7 @@ pub const Serial = struct {
             system.createConnection(system.virt_tx, client, &system.virt_tx_config.clients[i].conn, &system.client_configs.items[i].tx);
         }
 
-        system.virt_tx_config.enable_colour = 1;
+        system.virt_tx_config.enable_colour = @intFromBool(system.enable_color);
 
         const begin_str = "Begin input\n";
         @memcpy(system.virt_tx_config.begin_str[0..begin_str.len], begin_str);

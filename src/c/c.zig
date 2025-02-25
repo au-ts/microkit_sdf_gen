@@ -447,11 +447,11 @@ export fn sdfgen_sddf_timer_serialise_config(system: *align(8) anyopaque, output
     return true;
 }
 
-export fn sdfgen_sddf_serial(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: ?*align(8) anyopaque) ?*anyopaque {
+export fn sdfgen_sddf_serial(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: ?*align(8) anyopaque, enable_color: bool) ?*anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const device: *dtb.Node = @ptrCast(c_device);
     const serial = allocator.create(sddf.Serial) catch @panic("OOM");
-    serial.* = sddf.Serial.init(allocator, sdf, device, @ptrCast(driver), @ptrCast(virt_tx), .{ .virt_rx = @ptrCast(virt_rx) }) catch |e| {
+    serial.* = sddf.Serial.init(allocator, sdf, device, @ptrCast(driver), @ptrCast(virt_tx), .{ .virt_rx = @ptrCast(virt_rx), .enable_color = enable_color }) catch |e| {
         log.err("failed to initialiase serial system for device '{s}': {any}", .{ device.name, e });
         allocator.destroy(serial);
         return null;
