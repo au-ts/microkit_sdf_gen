@@ -169,7 +169,7 @@ pub const LinuxUio = struct {
     guest_paddr: u64,
     irq: ?u32,
 
-    pub fn create(allocator: Allocator, node: *dtb.Node, arch: SystemDescription.Arch) LinuxUio {
+    pub fn create(allocator: Allocator, node: *dtb.Node, arch: SystemDescription.Arch) !LinuxUio {
         const node_compatible = node.prop(.Compatible).?;
         if (!isCompatible(node_compatible, &compatible)) {
             @panic("invalid UIO compatible string.");
@@ -180,12 +180,12 @@ pub const LinuxUio = struct {
 
             if (dt_irqs.len != 1) {
                 log.err("expected UIO device '{s}' to have one interrupt, instead found {}", .{ node.name, dt_irqs.len });
-                @panic("todo");
+                return error.InvalidUio;
             }
 
             const parsed_irqs = parseIrqs(allocator, arch, dt_irqs) catch |e| {
                 log.err("failed to parse 'interrupts' property for UIO device '{s}': {any}", .{ node.name, e });
-                @panic("todo");
+                return error.InvalidUio;
             };
             defer parsed_irqs.deinit();
             std.debug.assert(parsed_irqs.items.len == 1);
@@ -195,24 +195,24 @@ pub const LinuxUio = struct {
 
         const dt_reg = node.prop(.Reg) orelse {
             log.err("expected UIO device '{s}' to have 'reg' property", .{ node.name });
-            @panic("todo");
+            return error.InvalidUio;
         };
 
         if (dt_reg.len != 1) {
             log.err("expected UIO device '{s}' to have one region, instead found {}", .{ node.name, dt_reg.len });
-            @panic("todo");
+            return error.InvalidUio;
         }
 
         const dt_paddr = dt_reg[0][0];
         if (dt_paddr % arch.defaultPageSize() != 0) {
             log.err("Encountered UIO node '{s}' with paddr 0x{x} isn't a multiple of page size", .{ node.name, dt_paddr });
-            @panic("todo");
+            return error.InvalidUio;
         }
 
         const dt_size = dt_reg[0][1];
         if (dt_size % arch.defaultPageSize() != 0) {
             log.err("Encountered UIO node '{s}' with size {x} isn't a multiple of page size", .{ node.name, dt_size });
-            @panic("todo");
+            return error.InvalidUio;
         }
 
         const paddr: u64 = regPaddr(arch, node, dt_paddr);

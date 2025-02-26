@@ -323,19 +323,20 @@ fn parseUios(system: *Self) !void {
         if (compatibles.len != 2) {
             // NULL must be used as the delimiter as the DTB parser assumes NULL.
             log.err("Compatibile string {s} isn't in the expected format of 'generic-uio\\0<name>'.", .{ node.prop(.Compatible).? });
-            @panic("todo");
+            return error.InvalidUio;
         }
         const node_name = compatibles[1];
 
         if (node_name.len > UIO_NAME_LEN - 1) {
             log.err("Encountered UIO node '{s}', with name of length {d}, greater than limit of {d}.", .{ node_name, node_name.len, UIO_NAME_LEN - 1 });
-            @panic("todo");
+            return error.InvalidUio;
         }
         if (system.findUio(node_name) != null) {
-            @panic("todo");
+            log.err("Encountered UIO node with duplicate name: {s}", .{node_name});
+            return error.InvalidUio;
         }
 
-        const uio_node = dtb.LinuxUio.create(allocator, node, system.sdf.arch);
+        const uio_node = try dtb.LinuxUio.create(allocator, node, system.sdf.arch);
 
         system.data.linux_uios[i] = .{
             .name = undefined,
