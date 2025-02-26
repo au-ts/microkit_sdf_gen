@@ -635,5 +635,13 @@ pub const Firewall = struct {
             const arp_requester_json_name = fmt(allocator, "arp_requester.json", .{});
             try data.jsonify(firewall.arp_requester_config, try std.fs.path.join(allocator, &.{ prefix, arp_requester_json_name }));
         }
+
+        for (firewall.filters.items, 0..) |filter, i| {
+            // @kwinter: TODO - find a better naming scheme for filtering data
+            const data_name = fmt(allocator, "firewall_filter_{s}.data", .{ filter.name });
+            try data.serialize(firewall.filter_configs.items[i], try std.fs.path.join(allocator, &.{ prefix, data_name }));
+            const json_name = fmt(allocator, "firewall_filter_{s}.json", .{ filter.name });
+            try data.jsonify(firewall.filter_configs.items[i], try std.fs.path.join(allocator, &.{ prefix, json_name }));
+        }
     }
 };

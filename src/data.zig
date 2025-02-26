@@ -429,10 +429,11 @@ pub const Resources = struct {
             // This is the MAC addr of NIC2
             mac_addr: [6]u8,
             filters: [MAX_NUM_FILTERS]FilterInfo,
-            num_filters: u8,
+            num_filters: u16,
         };
 
         pub const Filter = extern struct {
+            magic: [8]u8 = MAGIC,
             conn: FilterConnection,
             data: Region,
             // @kwinter: Not sure if the filters actually need to know their protocol num
