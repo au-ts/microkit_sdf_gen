@@ -1459,6 +1459,16 @@ pub const Net = struct {
 
         system.generateMacAddrs();
 
+        // Map in device info region to driver. The driver will populate with device specific
+        // info, and clients can read this region.
+        const device_info_mr_name = fmt(system.allocator, "{s}_device_info", .{system.device.name});
+        const device_info = Mr.create(system.allocator, device_info_mr_name, 0x2_000, .{});
+        system.sdf.addMemoryRegion(device_info);
+
+        const driver_dev_info_map = Map.create(device_info, system.driver.getMapVaddr(&device_info), .rw, .{});
+        system.driver.addMap(driver_dev_info_map);
+        system.driver_config.dev_info = .createFromMap(driver_dev_info_map);
+
         for (system.clients.items, 0..) |_, i| {
             // TODO: we have an assumption that all copiers are RX copiers
             if (system.client_info.items[i].rx == true) {
@@ -1475,6 +1485,10 @@ pub const Net = struct {
             }
 
             system.client_configs.items[i].mac_addr = system.client_info.items[i].mac_addr.?;
+
+            const client_dev_info_map = Map.create(device_info, system.clients.items[i].getMapVaddr(&device_info), .rw, .{});
+            system.clients.items[i].addMap(client_dev_info_map);
+            system.client_configs.items[i].dev_info = .createFromMap(client_dev_info_map);
         }
 
         system.connected = true;

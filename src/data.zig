@@ -236,6 +236,7 @@ pub const Resources = struct {
             magic: [5]u8 = MAGIC,
             virt_rx: Connection,
             virt_tx: Connection,
+            dev_info: Region,
         };
 
         pub const VirtRx = extern struct {
@@ -280,7 +281,7 @@ pub const Resources = struct {
             tx: Connection,
             tx_data: Region,
             mac_addr: [6]u8,
-            protocol: u16,
+            dev_info: Region,
         };
     };
 
@@ -385,6 +386,15 @@ pub const Resources = struct {
     pub const Firewall = extern struct {
         const MAGIC: [8]u8 = LIONS_MAGIC_START ++ .{0x3};
 
+        pub const MAX_NUM_FILTERS = 61;
+
+        pub const FilterConnection = extern struct {
+            free_queue: Region,
+            active_queue: Region,
+            num_buffers: u16,
+            id: u8,
+        };
+
         pub const ArpRouterConnection = extern struct {
             arp_queue: Region,
             arp_cache: Region,
@@ -409,14 +419,24 @@ pub const Resources = struct {
             mac_addr: [6]u8,
         };
 
-        // @kwinter: Note that this is teh same as the ARP structure,
-        // this is just while the router is a simple PoC. Once we
-        // have the filtering components in, this struct will change.
         pub const Router = extern struct {
+            pub const FilterInfo = extern struct {
+                conn: FilterConnection,
+                data: Device.Region,
+            };
             magic: [8]u8 = MAGIC,
             arp_requester: ArpRouterConnection,
             // This is the MAC addr of NIC2
             mac_addr: [6]u8,
+            filters: [MAX_NUM_FILTERS]FilterInfo,
+            num_filters: u8,
+        };
+
+        pub const Filter = extern struct {
+            conn: FilterConnection,
+            data: Region,
+            // @kwinter: Not sure if the filters actually need to know their protocol num
+            protocol: u16,
         };
     };
 

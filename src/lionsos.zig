@@ -26,6 +26,20 @@ fn fmt(allocator: Allocator, comptime s: []const u8, args: anytype) []u8 {
     return std.fmt.allocPrint(allocator, s, args) catch @panic("OOM");
 }
 
+fn round_up(n: usize, d: usize) usize {
+    var result = d * (n / d);
+    if (n % d != 0) {
+        result += d;
+    }
+    return result;
+}
+
+// TODO: need to put this in a better place
+fn round_to_page(n: usize) usize {
+    const page_size = 4096;
+    return round_up(n, page_size);
+}
+
 pub const FileSystem = struct {
     allocator: Allocator,
     sdf: *SystemDescription,
@@ -382,6 +396,9 @@ pub const FileSystem = struct {
 };
 
 pub const Firewall = struct {
+    // Inherited from the network buffer size.
+    const BUFFER_SIZE = 2048;
+
     pub const Error = error{
         InvalidMacAddr,
     };
@@ -393,13 +410,13 @@ pub const Firewall = struct {
     router: *Pd,
     arp_requester: *Pd,
     arp_responder: *Pd,
-    udp_filter: *Pd,
-    tcp_filter: *Pd,
-    icmp_filter: *Pd,
-    // @kwinter: TODO: Figure out what the configs for the above filters will look like
+    // @kwinter: All that a filter may need is in the net config structure for now.
+    // We can extend this in the future.
+    filters: std.ArrayList(*Pd),
     arp_responder_config: ConfigResources.Firewall.ArpResponder,
     router_config: ConfigResources.Firewall.Router,
     arp_requester_config: ConfigResources.Firewall.ArpRequester,
+    filter_configs: std.ArrayList(ConfigResources.Firewall.Filter),
 
     // Static build time configurations for the firewall
     pub const FirewallOptions = struct {
@@ -409,7 +426,12 @@ pub const Firewall = struct {
         arp_mac_addr: ?[]const u8 = null,
     };
 
-    pub fn init(allocator: Allocator, sdf: *SystemDescription, net1: *Net, net2: *Net, router: *Pd, arp_responder: *Pd, arp_requester: *Pd, udp_filter: *Pd, tcp_filter: *Pd, icmp_filter: *Pd) Firewall {
+    pub const FilterOptions = struct {
+        protocol: u16 = 0,
+        router_buffers: usize = 512,
+    };
+
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, net1: *Net, net2: *Net, router: *Pd, arp_responder: *Pd, arp_requester: *Pd) Firewall {
         return .{
             .allocator = allocator,
             .sdf = sdf,
@@ -418,12 +440,11 @@ pub const Firewall = struct {
             .router = router,
             .arp_responder = arp_responder,
             .arp_requester = arp_requester,
-            .udp_filter = udp_filter,
-            .tcp_filter = tcp_filter,
-            .icmp_filter = icmp_filter,
+            .filters = std.ArrayList(*Pd).init(allocator),
             .router_config = std.mem.zeroInit(ConfigResources.Firewall.Router, .{}),
             .arp_responder_config = std.mem.zeroInit(ConfigResources.Firewall.ArpResponder, .{}),
             .arp_requester_config = std.mem.zeroInit(ConfigResources.Firewall.ArpRequester, .{}),
+            .filter_configs = std.ArrayList(ConfigResources.Firewall.Filter).init(allocator),
         };
     }
 
@@ -435,6 +456,84 @@ pub const Firewall = struct {
         }
         return mac_arr;
     }
+
+    // Semantically the same as the Net.createConnection
+    fn createConnection(firewall: *Firewall, filter: *Pd, filter_conn: *ConfigResources.Firewall.FilterConnection, router_conn: *ConfigResources.Firewall.FilterConnection, num_buffers: usize) void {
+        const queue_mr_size = round_to_page(8 + 16 * num_buffers);
+
+        filter_conn.num_buffers = @intCast(num_buffers);
+        router_conn.num_buffers = @intCast(num_buffers);
+
+        const free_mr_name = fmt(firewall.allocator, "firewall/queue/router/{s}/free", .{ filter.name });
+        const free_mr = Mr.create(firewall.allocator, free_mr_name, queue_mr_size, .{});
+        firewall.sdf.addMemoryRegion(free_mr);
+
+        const free_mr_router_map = Map.create(free_mr, firewall.router.getMapVaddr(&free_mr), .rw, .{});
+        firewall.router.addMap(free_mr_router_map);
+        router_conn.free_queue = .createFromMap(free_mr_router_map);
+
+        const free_mr_filter_map = Map.create(free_mr, filter.getMapVaddr(&free_mr), .rw, .{});
+        filter.addMap(free_mr_filter_map);
+        filter_conn.free_queue = .createFromMap(free_mr_filter_map);
+
+        const active_mr_name = fmt(firewall.allocator, "firewall/queue/router/{s}/active", .{ filter.name });
+        const active_mr = Mr.create(firewall.allocator, active_mr_name, queue_mr_size, .{});
+        firewall.sdf.addMemoryRegion(active_mr);
+
+        const active_mr_router_map = Map.create(active_mr, firewall.router.getMapVaddr(&active_mr), .rw, .{});
+        firewall.router.addMap(active_mr_router_map);
+        router_conn.active_queue = .createFromMap(active_mr_router_map);
+
+        const active_mr_filter_map = Map.create(active_mr, filter.getMapVaddr(&active_mr), .rw, .{});
+        filter.addMap(active_mr_filter_map);
+        filter_conn.active_queue = .createFromMap(active_mr_filter_map);
+
+        const channel = Channel.create(firewall.router, filter, .{}) catch @panic("failed to create connection channel");
+        firewall.sdf.addChannel(channel);
+        router_conn.id = channel.pd_a_id;
+        filter_conn.id = channel.pd_b_id;
+
+    }
+
+    pub fn addFilter(firewall: *Firewall, filter: *Pd, options: FilterOptions) !void {
+        // @kwinter: Add error checking for supported protocols in the future.
+
+        var filter_options: sddf.Net.ClientOptions = .{};
+        filter_options.protocol = options.protocol;
+        filter_options.rx = true;
+        filter_options.tx = false;
+
+        // Add each filter to the rx of network 1.
+        try firewall.network1.addClient(filter, filter_options);
+
+        const filter_idx = firewall.filters.items.len;
+
+        // Connect the tx of each filter to the routing component.
+        firewall.filters.append(filter) catch @panic("Could not add filter to firewall.");
+        firewall.filter_configs.append(std.mem.zeroInit(ConfigResources.Firewall.Filter, .{})) catch @panic("Could not add filter to firewall");
+
+        // Create the shared memory regions needed.
+        const data_mr_size = round_to_page(options.router_buffers * BUFFER_SIZE);
+        // @kwinter: TODO: Whats an appropriate way to name these regions. The net system prefixes with device name.
+        const data_mr_name = fmt(firewall.allocator, "firewall/router/data/filter/{s}", .{ filter.name });
+        const data_mr = Mr.physical(firewall.allocator, firewall.sdf, data_mr_name, data_mr_size, .{});
+        firewall.sdf.addMemoryRegion(data_mr);
+
+        // Add the map into the router
+        const data_mr_router_map = Map.create(data_mr, firewall.router.getMapVaddr(&data_mr), .r, .{});
+        firewall.router.addMap(data_mr_router_map);
+        firewall.router_config.filters[filter_idx].data = .createFromMap(data_mr_router_map);
+
+        // Add the map into the filter
+        const data_mr_filter_map = Map.create(data_mr, filter.getMapVaddr(&data_mr), .rw, .{});
+        filter.addMap(data_mr_filter_map);
+        firewall.filter_configs.items[filter_idx].data = .createFromMap(data_mr_filter_map);
+
+        firewall.createConnection(filter, &firewall.router_config.filters[filter_idx].conn, &firewall.filter_configs.items[filter_idx].conn, options.router_buffers);
+
+        firewall.router_config.num_filters += 1;
+    }
+
 
     pub fn connect(firewall: *Firewall, firewall_options: FirewallOptions) !void {
         const allocator = firewall.allocator;
