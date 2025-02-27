@@ -205,13 +205,13 @@ pub const LinuxUio = struct {
 
         const dt_paddr = dt_reg[0][0];
         if (dt_paddr % arch.defaultPageSize() != 0) {
-            log.err("Encountered UIO node '{s}' with paddr 0x{x} isn't a multiple of page size", .{ node.name, dt_paddr });
+            log.err("expected UIO device '{s}' region to be page aligned, found non-page aligned address: 0x{x}", .{ node.name, dt_paddr });
             return error.InvalidUio;
         }
 
         const dt_size = dt_reg[0][1];
         if (dt_size % arch.defaultPageSize() != 0) {
-            log.err("Encountered UIO node '{s}' with size {x} isn't a multiple of page size", .{ node.name, dt_size });
+            log.err("expected UIO device '{s}' region size to be page aligned, found non-page aligned size: 0x{x}", .{ node.name, dt_paddr });
             return error.InvalidUio;
         }
 
