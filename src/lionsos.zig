@@ -464,7 +464,7 @@ pub const Firewall = struct {
         filter_conn.num_buffers = @intCast(num_buffers);
         router_conn.num_buffers = @intCast(num_buffers);
 
-        const free_mr_name = fmt(firewall.allocator, "firewall/queue/router/{s}/free", .{ filter.name });
+        const free_mr_name = fmt(firewall.allocator, "firewall/queue/router/{s}/free", .{filter.name});
         const free_mr = Mr.create(firewall.allocator, free_mr_name, queue_mr_size, .{});
         firewall.sdf.addMemoryRegion(free_mr);
 
@@ -476,7 +476,7 @@ pub const Firewall = struct {
         filter.addMap(free_mr_filter_map);
         filter_conn.free_queue = .createFromMap(free_mr_filter_map);
 
-        const active_mr_name = fmt(firewall.allocator, "firewall/queue/router/{s}/active", .{ filter.name });
+        const active_mr_name = fmt(firewall.allocator, "firewall/queue/router/{s}/active", .{filter.name});
         const active_mr = Mr.create(firewall.allocator, active_mr_name, queue_mr_size, .{});
         firewall.sdf.addMemoryRegion(active_mr);
 
@@ -492,7 +492,6 @@ pub const Firewall = struct {
         firewall.sdf.addChannel(channel);
         router_conn.id = channel.pd_a_id;
         filter_conn.id = channel.pd_b_id;
-
     }
 
     pub fn addFilter(firewall: *Firewall, filter: *Pd, options: FilterOptions) !void {
@@ -515,12 +514,12 @@ pub const Firewall = struct {
         // Create the shared memory regions needed.
         const data_mr_size = round_to_page(options.router_buffers * BUFFER_SIZE);
         // @kwinter: TODO: Whats an appropriate way to name these regions. The net system prefixes with device name.
-        const data_mr_name = fmt(firewall.allocator, "firewall/router/data/filter/{s}", .{ filter.name });
+        const data_mr_name = fmt(firewall.allocator, "firewall/router/data/filter/{s}", .{filter.name});
         const data_mr = Mr.physical(firewall.allocator, firewall.sdf, data_mr_name, data_mr_size, .{});
         firewall.sdf.addMemoryRegion(data_mr);
 
         // Add the map into the router
-        const data_mr_router_map = Map.create(data_mr, firewall.router.getMapVaddr(&data_mr), .r, .{});
+        const data_mr_router_map = Map.create(data_mr, firewall.router.getMapVaddr(&data_mr), .rw, .{});
         firewall.router.addMap(data_mr_router_map);
         firewall.router_config.filters[filter_idx].data = .createFromMap(data_mr_router_map);
 
@@ -529,11 +528,10 @@ pub const Firewall = struct {
         filter.addMap(data_mr_filter_map);
         firewall.filter_configs.items[filter_idx].data = .createFromMap(data_mr_filter_map);
 
-        firewall.createConnection(filter, &firewall.router_config.filters[filter_idx].conn, &firewall.filter_configs.items[filter_idx].conn, options.router_buffers);
+        firewall.createConnection(filter, &firewall.filter_configs.items[filter_idx].conn, &firewall.router_config.filters[filter_idx].conn, options.router_buffers);
 
         firewall.router_config.num_filters += 1;
     }
-
 
     pub fn connect(firewall: *Firewall, firewall_options: FirewallOptions) !void {
         const allocator = firewall.allocator;
@@ -567,13 +565,13 @@ pub const Firewall = struct {
 
         // Connect the router to the rx of network 1 and tx of network 2
         // These router options are for the transmit of NIC1
-        var router_options: sddf.Net.ClientOptions = .{};
-        if (firewall_options.mac_addr) |a| {
-            router_options.mac_addr = a;
-        }
-        router_options.rx = true;
-        router_options.tx = false;
-        try firewall.network1.addClient(firewall.router, router_options);
+        // var router_options: sddf.Net.ClientOptions = .{};
+        // if (firewall_options.mac_addr) |a| {
+        //     router_options.mac_addr = a;
+        // }
+        // router_options.rx = true;
+        // router_options.tx = false;
+        // try firewall.network1.addClient(firewall.router, router_options);
         var router2_options: sddf.Net.ClientOptions = .{};
         router2_options.rx = false;
         router2_options.tx = true;
@@ -638,9 +636,9 @@ pub const Firewall = struct {
 
         for (firewall.filters.items, 0..) |filter, i| {
             // @kwinter: TODO - find a better naming scheme for filtering data
-            const data_name = fmt(allocator, "firewall_filter_{s}.data", .{ filter.name });
+            const data_name = fmt(allocator, "firewall_filter_{s}.data", .{filter.name});
             try data.serialize(firewall.filter_configs.items[i], try std.fs.path.join(allocator, &.{ prefix, data_name }));
-            const json_name = fmt(allocator, "firewall_filter_{s}.json", .{ filter.name });
+            const json_name = fmt(allocator, "firewall_filter_{s}.json", .{filter.name});
             try data.jsonify(firewall.filter_configs.items[i], try std.fs.path.join(allocator, &.{ prefix, json_name }));
         }
     }

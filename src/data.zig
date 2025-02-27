@@ -395,6 +395,11 @@ pub const Resources = struct {
             id: u8,
         };
 
+        pub const FilterInfo = extern struct {
+            conn: FilterConnection,
+            data: Region,
+        };
+
         pub const ArpRouterConnection = extern struct {
             arp_queue: Region,
             arp_cache: Region,
@@ -420,10 +425,6 @@ pub const Resources = struct {
         };
 
         pub const Router = extern struct {
-            pub const FilterInfo = extern struct {
-                conn: FilterConnection,
-                data: Device.Region,
-            };
             magic: [8]u8 = MAGIC,
             arp_requester: ArpRouterConnection,
             // This is the MAC addr of NIC2
