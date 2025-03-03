@@ -426,6 +426,7 @@ pub const Resources = struct {
 
         pub const Router = extern struct {
             magic: [8]u8 = MAGIC,
+            pkt_queue: Region,
             arp_requester: ArpRouterConnection,
             // This is the MAC addr of NIC2
             mac_addr: [6]u8,

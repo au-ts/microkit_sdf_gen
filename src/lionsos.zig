@@ -556,7 +556,7 @@ pub const Firewall = struct {
         // @kwinter: Letting the MAC address be automatically selected.
         requester_options.rx = true;
         requester_options.tx = true;
-        requester_options.protocol = 0x92;
+        requester_options.protocol = 0x93;
         if (firewall_options.arp_mac_addr) |a| {
             requester_options.mac_addr = a;
         }
@@ -584,8 +584,10 @@ pub const Firewall = struct {
         // have two of these in a system, one for each direction.
         const arp_queue = Mr.create(allocator, "firewall_arp_queue", 0x10_000, .{});
         const arp_cache = Mr.create(allocator, "firewall_arp_cache", 0x10_000, .{});
+        const pkt_queue = Mr.create(allocator, "pkt_queue", 0x10_000, .{});
         firewall.sdf.addMemoryRegion(arp_queue);
         firewall.sdf.addMemoryRegion(arp_cache);
+        firewall.sdf.addMemoryRegion(pkt_queue);
 
         const router_arp_queue_map = Map.create(arp_queue, firewall.router.getMapVaddr(&arp_queue), .rw, .{});
         firewall.router.addMap(router_arp_queue_map);
@@ -601,6 +603,10 @@ pub const Firewall = struct {
         const arp_requester_cache_map = Map.create(arp_cache, 0x3_000_000, .rw, .{});
         firewall.arp_requester.addMap(arp_requester_cache_map);
         firewall.arp_requester_config.router.arp_cache = .createFromMap(arp_requester_cache_map);
+
+        const router_pkt_queue = Map.create(pkt_queue, 0x3_020_000, .rw, .{});
+        firewall.router.addMap(router_pkt_queue);
+        firewall.router_config.pkt_queue = .createFromMap(router_pkt_queue);
 
         // Create a channel between the router and ARP requester.
         const channel = Channel.create(firewall.router, firewall.arp_requester, .{}) catch @panic("failed to create connection channel");
