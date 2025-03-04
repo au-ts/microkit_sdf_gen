@@ -1352,11 +1352,13 @@ pub const Net = struct {
         system.createConnection(system.driver, system.virt_tx, &system.driver_config.virt_tx, &system.virt_tx_config.driver, num_buffers);
     }
 
-    fn clientRxConnect(system: *Net, rx_dma: Mr, client_idx: usize) void {
+    fn clientRxConnect(system: *Net, rx_dma: Mr, client_idx: usize, client_rx_config_idx: usize) void {
         // const client_info = system.client_info.items[client_idx];
         const client = system.clients.items[client_idx];
         var client_config = &system.client_configs.items[client_idx];
-        var virt_client_config = &system.virt_rx_config.clients[client_idx];
+        // @kwinter: TODO: client_idx doesnt work for us here as we may not have a one to one mapping.
+        // is using the number of clients okay in this case?
+        var virt_client_config = &system.virt_rx_config.clients[client_rx_config_idx];
 
         // @kwinter: remove client_info.rx_buffers for the case of no copier. Just map the
         // DMA buffers in directly.
@@ -1368,14 +1370,14 @@ pub const Net = struct {
         client_config.rx_data = ConfigResources.Region.createFromMap(rx_dma_map);
     }
 
-    fn clientRxConnectWithCopier(system: *Net, rx_dma: Mr, client_idx: usize) void {
+    fn clientRxConnectWithCopier(system: *Net, rx_dma: Mr, client_idx: usize, client_rx_config_idx: usize) void {
         const client_info = system.client_info.items[client_idx];
         const client = system.clients.items[client_idx];
         const copier = system.copiers.items[client_idx].?;
 
         // @kwinter: Not sure if this is the best solution.
         var client_config = &system.client_configs.items[client_idx];
-        var virt_client_config = &system.virt_rx_config.clients[client_idx];
+        var virt_client_config = &system.virt_rx_config.clients[client_rx_config_idx];
         var copier_config = &system.copy_configs.items[client_idx].?;
         system.createConnection(system.virt_rx, copier, &virt_client_config.conn, &copier_config.virt_rx, system.rx_buffers);
         system.createConnection(copier, client, &copier_config.client, &client_config.rx, client_info.rx_buffers);
@@ -1398,11 +1400,11 @@ pub const Net = struct {
         copier_config.client_data = ConfigResources.Region.createFromMap(client_data_copier_map);
     }
 
-    fn clientTxConnect(system: *Net, client_id: usize) void {
+    fn clientTxConnect(system: *Net, client_id: usize, client_tx_config_idx: usize) void {
         const client_info = &system.client_info.items[client_id];
         const client = system.clients.items[client_id];
         var client_config = &system.client_configs.items[client_id];
-        const virt_client_config = &system.virt_tx_config.clients[client_id];
+        const virt_client_config = &system.virt_tx_config.clients[client_tx_config_idx];
 
         system.createConnection(system.virt_tx, client, &virt_client_config.conn, &client_config.tx, client_info.tx_buffers);
 
@@ -1469,19 +1471,24 @@ pub const Net = struct {
         system.driver.addMap(driver_dev_info_map);
         system.driver_config.dev_info = .createFromMap(driver_dev_info_map);
 
+        var num_rx_clients: usize = 0;
+        var num_tx_clients: usize = 0;
+
         for (system.clients.items, 0..) |_, i| {
             // TODO: we have an assumption that all copiers are RX copiers
             if (system.client_info.items[i].rx == true) {
                 if (system.client_info.items[i].rx_copier == true) {
-                    system.clientRxConnectWithCopier(rx_dma_mr, i);
+                    system.clientRxConnectWithCopier(rx_dma_mr, i, num_rx_clients);
                 } else {
-                    system.clientRxConnect(rx_dma_mr, i);
+                    system.clientRxConnect(rx_dma_mr, i, num_rx_clients);
                 }
                 system.virt_rx_config.clients[i].mac_addr = system.client_info.items[i].mac_addr.?;
                 system.virt_rx_config.clients[i].protocol = system.client_info.items[i].protocol;
+                num_rx_clients += 1;
             }
             if (system.client_info.items[i].tx == true) {
-                system.clientTxConnect(i);
+                system.clientTxConnect(i, num_tx_clients);
+                num_tx_clients += 1;
             }
 
             system.client_configs.items[i].mac_addr = system.client_info.items[i].mac_addr.?;
