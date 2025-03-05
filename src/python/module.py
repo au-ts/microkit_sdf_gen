@@ -2,7 +2,7 @@ from __future__ import annotations
 import ctypes
 import importlib.util
 from ctypes import (
-    cast, c_void_p, c_char_p, c_int8, c_uint8, c_uint32, c_uint64, c_bool, POINTER, byref, pointer
+    cast, c_void_p, c_char_p, c_int8, c_uint8, c_uint16, c_uint32, c_uint64, c_bool, POINTER, byref, pointer
 )
 from typing import Optional, List, Tuple
 from enum import IntEnum

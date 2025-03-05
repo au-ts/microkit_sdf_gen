@@ -706,50 +706,30 @@ pub const Firewall = struct {
 
         const allocator = firewall.allocator;
 
-        const router1_name = fmt(allocator, "router1.data", .{});
-        try data.serialize(firewall.router1_config, try std.fs.path.join(allocator, &.{ prefix, router1_name }));
-        const arp_responder1_name = fmt(allocator, "arp_responder1.data", .{});
-        try data.serialize(firewall.arp_responder1_config, try std.fs.path.join(allocator, &.{ prefix, arp_responder1_name }));
-        const arp_requester1_name = fmt(allocator, "arp_requester1.data", .{});
-        try data.serialize(firewall.arp_requester1_config, try std.fs.path.join(allocator, &.{ prefix, arp_requester1_name }));
+        const router1_name = fmt(allocator, "router1", .{});
+        try data.serialize(allocator, firewall.router1_config, prefix, router1_name);
+        const arp_responder1_name = fmt(allocator, "arp_responder1", .{});
+        try data.serialize(allocator, firewall.arp_responder1_config, prefix, arp_responder1_name);
+        const arp_requester1_name = fmt(allocator, "arp_requester1", .{});
+        try data.serialize(allocator, firewall.arp_requester1_config, prefix, arp_requester1_name);
 
-        const router2_name = fmt(allocator, "router2.data", .{});
-        try data.serialize(firewall.router2_config, try std.fs.path.join(allocator, &.{ prefix, router2_name }));
-        const arp_responder2_name = fmt(allocator, "arp_responder2.data", .{});
-        try data.serialize(firewall.arp_responder2_config, try std.fs.path.join(allocator, &.{ prefix, arp_responder2_name }));
-        const arp_requester2_name = fmt(allocator, "arp_requester2.data", .{});
-        try data.serialize(firewall.arp_requester2_config, try std.fs.path.join(allocator, &.{ prefix, arp_requester2_name }));
-
-        if (data.emit_json) {
-            const router1_json_name = fmt(allocator, "router1.json", .{});
-            try data.jsonify(firewall.router1_config, try std.fs.path.join(allocator, &.{ prefix, router1_json_name }));
-            const arp_responder1_json_name = fmt(allocator, "arp_responder1.json", .{});
-            try data.jsonify(firewall.arp_responder1_config, try std.fs.path.join(allocator, &.{ prefix, arp_responder1_json_name }));
-            const arp_requester1_json_name = fmt(allocator, "arp_requester1.json", .{});
-            try data.jsonify(firewall.arp_requester1_config, try std.fs.path.join(allocator, &.{ prefix, arp_requester1_json_name }));
-
-            const router2_json_name = fmt(allocator, "router2.json", .{});
-            try data.jsonify(firewall.router2_config, try std.fs.path.join(allocator, &.{ prefix, router2_json_name }));
-            const arp_responder2_json_name = fmt(allocator, "arp_responder2.json", .{});
-            try data.jsonify(firewall.arp_responder2_config, try std.fs.path.join(allocator, &.{ prefix, arp_responder2_json_name }));
-            const arp_requester2_json_name = fmt(allocator, "arp_requester2.json", .{});
-            try data.jsonify(firewall.arp_requester2_config, try std.fs.path.join(allocator, &.{ prefix, arp_requester2_json_name }));
-        }
+        const router2_name = fmt(allocator, "router2", .{});
+        try data.serialize(allocator, firewall.router2_config, prefix, router2_name);
+        const arp_responder2_name = fmt(allocator, "arp_responder2", .{});
+        try data.serialize(allocator, firewall.arp_responder2_config, prefix, arp_responder2_name);
+        const arp_requester2_name = fmt(allocator, "arp_requester2", .{});
+        try data.serialize(allocator, firewall.arp_requester2_config, prefix, arp_requester2_name);
 
         for (firewall.filters1.items, 0..) |filter, i| {
             // @kwinter: TODO - find a better naming scheme for filtering data
-            const data_name = fmt(allocator, "firewall_filters1_{s}.data", .{filter.name});
-            try data.serialize(firewall.filter1_configs.items[i], try std.fs.path.join(allocator, &.{ prefix, data_name }));
-            const json_name = fmt(allocator, "firewall_filters1_{s}.json", .{filter.name});
-            try data.jsonify(firewall.filter1_configs.items[i], try std.fs.path.join(allocator, &.{ prefix, json_name }));
+            const data_name = fmt(allocator, "firewall_filters1_{s}", .{filter.name});
+            try data.serialize(allocator, firewall.filter1_configs.items[i], prefix, data_name);
         }
 
         for (firewall.filters2.items, 0..) |filter, i| {
             // @kwinter: TODO - find a better naming scheme for filtering data
-            const data_name = fmt(allocator, "firewall_filters2_{s}.data", .{filter.name});
-            try data.serialize(firewall.filter2_configs.items[i], try std.fs.path.join(allocator, &.{ prefix, data_name }));
-            const json_name = fmt(allocator, "firewall_filters2_{s}.json", .{filter.name});
-            try data.jsonify(firewall.filter2_configs.items[i], try std.fs.path.join(allocator, &.{ prefix, json_name }));
+            const data_name = fmt(allocator, "firewall_filters2_{s}", .{filter.name});
+            try data.serialize(allocator, firewall.filter2_configs.items[i], prefix, data_name);
         }
     }
 };
