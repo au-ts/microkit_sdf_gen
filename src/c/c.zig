@@ -952,7 +952,7 @@ export fn sdfgen_sddf_lwip_serialise_config(c_lib: *align(8) anyopaque, output_d
     return true;
 }
 
-export fn sdfgen_lionsos_firewall(c_sdf: *align(8) anyopaque, c_net1: *align(8) anyopaque, c_net2: *align(8) anyopaque, c_router1: *align(8) anyopaque, c_router2: *align(8) anyopaque, c_arp_responder1: *align(8) anyopaque, c_arp_requester2: *align(8) anyopaque, c_arp_requester1: *align(8) anyopaque, c_arp_responder2: *align(8) anyopaque) *anyopaque {
+export fn sdfgen_lionsos_firewall(c_sdf: *align(8) anyopaque, c_net1: *align(8) anyopaque, c_net2: *align(8) anyopaque, c_router1: *align(8) anyopaque, c_router2: *align(8) anyopaque, c_arp_responder1: *align(8) anyopaque, c_arp_responder2: *align(8) anyopaque, c_arp_requester1: *align(8) anyopaque, c_arp_requester2: *align(8) anyopaque) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const firewall = allocator.create(lionsos.Firewall) catch @panic("OOM");
     firewall.* = lionsos.Firewall.init(allocator, sdf, @ptrCast(c_net1), @ptrCast(c_net2), @ptrCast(c_router1), @ptrCast(c_router2), @ptrCast(c_arp_responder1), @ptrCast(c_arp_responder2), @ptrCast(c_arp_requester1), @ptrCast(c_arp_requester2));

@@ -595,8 +595,8 @@ pub const Firewall = struct {
 
         firewall.arp_responder1_config.ip = firewall_options.network1_ip;
         firewall.arp_requester2_config.ip = firewall_options.network2_ip;
-        firewall.arp_responder2_config.ip = firewall_options.network1_ip;
-        firewall.arp_requester1_config.ip = firewall_options.network2_ip;
+        firewall.arp_responder2_config.ip = firewall_options.network2_ip;
+        firewall.arp_requester1_config.ip = firewall_options.network1_ip;
 
         var responder_options: sddf.Net.ClientOptions = .{};
         // @kwinter: Letting the MAC address be automatically selected.
@@ -615,8 +615,8 @@ pub const Firewall = struct {
         requester_options.tx = true;
         requester_options.protocol = 0x93;
 
-        try firewall.network1.addClient(firewall.arp_requester1, requester_options);
-        try firewall.network2.addClient(firewall.arp_requester2, requester_options);
+        try firewall.network2.addClient(firewall.arp_requester1, requester_options);
+        try firewall.network1.addClient(firewall.arp_requester2, requester_options);
         // Connect the router to the rx of network 1 and tx of network 2
         // These router options are for the transmit of NIC1
         // var router_options: sddf.Net.ClientOptions = .{};
@@ -629,8 +629,8 @@ pub const Firewall = struct {
         var router_options: sddf.Net.ClientOptions = .{};
         router_options.rx = false;
         router_options.tx = true;
-        try firewall.network1.addClient(firewall.router1, router_options);
-        try firewall.network2.addClient(firewall.router2, router_options);
+        try firewall.network2.addClient(firewall.router1, router_options);
+        try firewall.network1.addClient(firewall.router2, router_options);
         // Add memory regions for the arp cache and arp queue.
 
         // @kwinter: Placeholder MR sizes. Fine tune this so that we're not wasting space.
@@ -658,7 +658,7 @@ pub const Firewall = struct {
         firewall.arp_requester1.addMap(arp_requester1_cache_map);
         firewall.arp_requester1_config.router.arp_cache = .createFromMap(arp_requester1_cache_map);
 
-        const router1_pkt_queue = Map.create(pkt_queue1, 0x3_020_000, .rw, .{});
+        const router1_pkt_queue = Map.create(pkt_queue1, firewall.router1.getMapVaddr(&pkt_queue1), .rw, .{});
         firewall.router1.addMap(router1_pkt_queue);
         firewall.router1_config.pkt_queue = .createFromMap(router1_pkt_queue);
 
@@ -690,7 +690,7 @@ pub const Firewall = struct {
         firewall.arp_requester2.addMap(arp_requester2_cache_map);
         firewall.arp_requester2_config.router.arp_cache = .createFromMap(arp_requester2_cache_map);
 
-        const router2_pkt_queue = Map.create(pkt_queue2, 0x3_020_000, .rw, .{});
+        const router2_pkt_queue = Map.create(pkt_queue2, firewall.router2.getMapVaddr(&pkt_queue2), .rw, .{});
         firewall.router2.addMap(router2_pkt_queue);
         firewall.router2_config.pkt_queue = .createFromMap(router2_pkt_queue);
 
