@@ -413,16 +413,18 @@ pub const Firewall = struct {
     arp_requester2: *Pd,
     arp_responder1: *Pd,
     arp_responder2: *Pd,
+    webserver: *Pd,
     // @kwinter: All that a filter may need is in the net config structure for now.
     // We can extend this in the future.
     filters1: std.ArrayList(*Pd),
     filters2: std.ArrayList(*Pd),
     arp_responder1_config: ConfigResources.Firewall.ArpResponder,
     arp_responder2_config: ConfigResources.Firewall.ArpResponder,
-    router1_config: ConfigResources.Firewall.Router,
-    router2_config: ConfigResources.Firewall.Router,
+    router1_config: ConfigResources.Firewall.RouterExternal,
+    router2_config: ConfigResources.Firewall.RouterInternal,
     arp_requester1_config: ConfigResources.Firewall.ArpRequester,
     arp_requester2_config: ConfigResources.Firewall.ArpRequester,
+    webserver_router_config: ConfigResources.Firewall.FilterInfo,
 
     filter1_configs: std.ArrayList(ConfigResources.Firewall.Filter),
     filter2_configs: std.ArrayList(ConfigResources.Firewall.Filter),
@@ -441,7 +443,7 @@ pub const Firewall = struct {
         router_buffers: usize = 512,
     };
 
-    pub fn init(allocator: Allocator, sdf: *SystemDescription, net1: *Net, net2: *Net, router1: *Pd, router2: *Pd, arp_responder1: *Pd, arp_responder2: *Pd, arp_requester1: *Pd, arp_requester2: *Pd) Firewall {
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, net1: *Net, net2: *Net, router1: *Pd, router2: *Pd, arp_responder1: *Pd, arp_responder2: *Pd, arp_requester1: *Pd, arp_requester2: *Pd, webserver: *Pd) Firewall {
         return .{
             .allocator = allocator,
             .sdf = sdf,
@@ -453,14 +455,16 @@ pub const Firewall = struct {
             .arp_responder2 = arp_responder2,
             .arp_requester1 = arp_requester1,
             .arp_requester2 = arp_requester2,
+            .webserver = webserver,
             .filters1 = std.ArrayList(*Pd).init(allocator),
             .filters2 = std.ArrayList(*Pd).init(allocator),
-            .router1_config = std.mem.zeroInit(ConfigResources.Firewall.Router, .{}),
-            .router2_config = std.mem.zeroInit(ConfigResources.Firewall.Router, .{}),
+            .router1_config = std.mem.zeroInit(ConfigResources.Firewall.RouterExternal, .{}),
+            .router2_config = std.mem.zeroInit(ConfigResources.Firewall.RouterInternal, .{}),
             .arp_responder1_config = std.mem.zeroInit(ConfigResources.Firewall.ArpResponder, .{}),
             .arp_responder2_config = std.mem.zeroInit(ConfigResources.Firewall.ArpResponder, .{}),
             .arp_requester1_config = std.mem.zeroInit(ConfigResources.Firewall.ArpRequester, .{}),
             .arp_requester2_config = std.mem.zeroInit(ConfigResources.Firewall.ArpRequester, .{}),
+            .webserver_router_config = std.mem.zeroInit(ConfigResources.Firewall.FilterInfo, .{}),
             .filter1_configs = std.ArrayList(ConfigResources.Firewall.Filter).init(allocator),
             .filter2_configs = std.ArrayList(ConfigResources.Firewall.Filter).init(allocator),
         };
@@ -536,7 +540,7 @@ pub const Firewall = struct {
             const data_mr_size = round_to_page(options.router_buffers * BUFFER_SIZE);
             // @kwinter: TODO: Whats an appropriate way to name these regions. The net system prefixes with device name.
             const data_mr_name = fmt(firewall.allocator, "firewall/router/data/filter1/{s}", .{filter.name});
-            const data_mr = Mr.physical(firewall.allocator, firewall.sdf, data_mr_name, data_mr_size, .{});
+            const data_mr = Mr.create(firewall.allocator, data_mr_name, data_mr_size, .{});
             firewall.sdf.addMemoryRegion(data_mr);
 
             // Add the map into the router
@@ -571,7 +575,7 @@ pub const Firewall = struct {
             const data_mr_size = round_to_page(options.router_buffers * BUFFER_SIZE);
             // @kwinter: TODO: Whats an appropriate way to name these regions. The net system prefixes with device name.
             const data_mr_name = fmt(firewall.allocator, "firewall/router/data/filter2/{s}", .{filter.name});
-            const data_mr = Mr.physical(firewall.allocator, firewall.sdf, data_mr_name, data_mr_size, .{});
+            const data_mr = Mr.create(firewall.allocator, data_mr_name, data_mr_size, .{});
             firewall.sdf.addMemoryRegion(data_mr);
 
             // Add the map into the router
@@ -597,6 +601,10 @@ pub const Firewall = struct {
         firewall.arp_requester2_config.ip = firewall_options.network2_ip;
         firewall.arp_responder2_config.ip = firewall_options.network2_ip;
         firewall.arp_requester1_config.ip = firewall_options.network1_ip;
+        firewall.router1_config.rx_ip = firewall_options.network1_ip;
+        firewall.router1_config.tx_ip = firewall_options.network2_ip;
+        firewall.router2_config.rx_ip = firewall_options.network2_ip;
+        firewall.router2_config.tx_ip = firewall_options.network1_ip;
 
         var responder_options: sddf.Net.ClientOptions = .{};
         // @kwinter: Letting the MAC address be automatically selected.
@@ -647,14 +655,14 @@ pub const Firewall = struct {
         firewall.router1.addMap(router1_arp_queue_map);
         firewall.router1_config.arp_requester.arp_queue = .createFromMap(router1_arp_queue_map);
         // @kwinter: This can probably be read only.
-        const router1_arp_cache_map = Map.create(arp_cache1, 0x3_000_000, .rw, .{});
+        const router1_arp_cache_map = Map.create(arp_cache1, firewall.router1.getMapVaddr(&arp_cache1), .rw, .{});
         firewall.router1.addMap(router1_arp_cache_map);
         firewall.router1_config.arp_requester.arp_cache = .createFromMap(router1_arp_cache_map);
 
         const arp_requester1_queue_map = Map.create(arp_queue1, firewall.arp_requester1.getMapVaddr(&arp_queue1), .rw, .{});
         firewall.arp_requester1.addMap(arp_requester1_queue_map);
         firewall.arp_requester1_config.router.arp_queue = .createFromMap(arp_requester1_queue_map);
-        const arp_requester1_cache_map = Map.create(arp_cache1, 0x3_000_000, .rw, .{});
+        const arp_requester1_cache_map = Map.create(arp_cache1, firewall.arp_requester1.getMapVaddr(&arp_cache1), .rw, .{});
         firewall.arp_requester1.addMap(arp_requester1_cache_map);
         firewall.arp_requester1_config.router.arp_cache = .createFromMap(arp_requester1_cache_map);
 
@@ -679,14 +687,14 @@ pub const Firewall = struct {
         firewall.router2.addMap(router2_arp_queue_map);
         firewall.router2_config.arp_requester.arp_queue = .createFromMap(router2_arp_queue_map);
         // @kwinter: This can probably be read only.
-        const router2_arp_cache_map = Map.create(arp_cache2, 0x3_000_000, .rw, .{});
+        const router2_arp_cache_map = Map.create(arp_cache2, firewall.router2.getMapVaddr(&arp_cache2), .rw, .{});
         firewall.router2.addMap(router2_arp_cache_map);
         firewall.router2_config.arp_requester.arp_cache = .createFromMap(router2_arp_cache_map);
 
         const arp_requester2_queue_map = Map.create(arp_queue2, firewall.arp_requester2.getMapVaddr(&arp_queue2), .rw, .{});
         firewall.arp_requester2.addMap(arp_requester2_queue_map);
         firewall.arp_requester2_config.router.arp_queue = .createFromMap(arp_requester2_queue_map);
-        const arp_requester2_cache_map = Map.create(arp_cache2, 0x3_000_000, .rw, .{});
+        const arp_requester2_cache_map = Map.create(arp_cache2, firewall.arp_requester2.getMapVaddr(&arp_cache2), .rw, .{});
         firewall.arp_requester2.addMap(arp_requester2_cache_map);
         firewall.arp_requester2_config.router.arp_cache = .createFromMap(arp_requester2_cache_map);
 
@@ -699,6 +707,32 @@ pub const Firewall = struct {
         firewall.sdf.addChannel(channel2);
         firewall.router2_config.arp_requester.id = channel2.pd_a_id;
         firewall.arp_requester2_config.router.id = channel2.pd_b_id;
+
+        // Connect the webserver to the transmit of network 2, and the rx will be the router2
+        var webserver_options: sddf.Net.ClientOptions = .{};
+        webserver_options.rx = false;
+        webserver_options.tx = true;
+        try firewall.network2.addClient(firewall.webserver, webserver_options);
+
+        // Create the shared memory regions needed.
+        const data_mr_size = round_to_page(512 * BUFFER_SIZE);
+        // @kwinter: TODO: Whats an appropriate way to name these regions. The net system prefixes with device name.
+        const data_mr_name = fmt(firewall.allocator, "firewall/router/data/webserver", .{});
+        const data_mr = Mr.create(firewall.allocator, data_mr_name, data_mr_size, .{});
+        firewall.sdf.addMemoryRegion(data_mr);
+
+        // Add the map into the router
+        const data_mr_router_map = Map.create(data_mr, firewall.router2.getMapVaddr(&data_mr), .rw, .{});
+        firewall.router2.addMap(data_mr_router_map);
+        firewall.router2_config.webserver_conn.data = .createFromMap(data_mr_router_map);
+
+        // Add the map into the webserver
+        const data_mr_webserver_map = Map.create(data_mr, firewall.webserver.getMapVaddr(&data_mr), .rw, .{});
+        firewall.webserver.addMap(data_mr_webserver_map);
+        firewall.webserver_router_config.data = .createFromMap(data_mr_webserver_map);
+
+        firewall.createConnection(firewall.router2, firewall.webserver, &firewall.webserver_router_config.conn, &firewall.router2_config.webserver_conn.conn, 512);
+        try firewall.network2.addRxClientConfig(firewall.webserver, firewall.webserver_router_config);
     }
 
     pub fn serialiseConfig(firewall: *Firewall, prefix: []const u8) !void {

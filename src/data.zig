@@ -424,7 +424,7 @@ pub const Resources = struct {
             mac_addr: [6]u8,
         };
 
-        pub const Router = extern struct {
+        pub const RouterExternal = extern struct {
             magic: [8]u8 = MAGIC,
             pkt_queue: Region,
             arp_requester: ArpRouterConnection,
@@ -432,6 +432,22 @@ pub const Resources = struct {
             mac_addr: [6]u8,
             filters: [MAX_NUM_FILTERS]FilterInfo,
             num_filters: u16,
+            rx_ip: u32,
+            tx_ip: u32,
+        };
+
+        pub const RouterInternal = extern struct {
+            magic: [8]u8 = MAGIC,
+            pkt_queue: Region,
+            arp_requester: ArpRouterConnection,
+            // This is the MAC addr of NIC2
+            mac_addr: [6]u8,
+            filters: [MAX_NUM_FILTERS]FilterInfo,
+            num_filters: u16,
+            rx_ip: u32,
+            tx_ip: u32,
+            webserver: u8,
+            webserver_conn: FilterInfo,
         };
 
         pub const Filter = extern struct {

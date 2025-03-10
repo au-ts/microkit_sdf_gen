@@ -1453,6 +1453,26 @@ pub const Net = struct {
         }
     }
 
+    pub fn addRxClientConfig(system: *Net, client: *Pd, config: ConfigResources.Firewall.FilterInfo) !void {
+        // Find the index of the client
+        var index: u32 = 0;
+        while (index < system.clients.items.len) {
+            if (system.clients.items[index] == client) {
+                break;
+            }
+            index += 1;
+        }
+        if (index == system.clients.items.len) {
+            log.err("Client'{s} is not part of the network system. Cannot add rx client config data", .{client.name});
+        }
+        system.client_configs.items[index].rx.free_queue = config.conn.free_queue;
+        system.client_configs.items[index].rx.active_queue = config.conn.active_queue;
+        system.client_configs.items[index].rx.num_buffers = config.conn.num_buffers;
+        system.client_configs.items[index].rx.id = config.conn.id;
+
+        system.client_configs.items[index].rx_data = config.data;
+    }
+
     pub fn connect(system: *Net) !void {
         try createDriver(system.sdf, system.driver, system.device, .network, &system.device_res);
 

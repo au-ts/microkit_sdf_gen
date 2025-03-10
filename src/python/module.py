@@ -297,7 +297,7 @@ libsdfgen.sdfgen_lionsos_fs_vmfs_serialise_config.restype = c_bool
 libsdfgen.sdfgen_lionsos_fs_vmfs_serialise_config.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_lionsos_firewall.restype = c_void_p
-libsdfgen.sdfgen_lionsos_firewall.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p]
+libsdfgen.sdfgen_lionsos_firewall.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p]
 libsdfgen.sdfgen_lionsos_firewall_add_filter.restype = c_bool
 libsdfgen.sdfgen_lionsos_firewall_add_filter.argtypes = [c_void_p, c_void_p, c_uint16, c_uint16]
 libsdfgen.sdfgen_lionsos_firewall_connect.restype = c_bool
@@ -1264,9 +1264,10 @@ class LionsOs:
             arp_responder2: SystemDescription.ProtectionDomain,
             arp_requester1: SystemDescription.ProtectionDomain,
             arp_requester2: SystemDescription.ProtectionDomain,
+            webserver: SystemDescription.ProtectionDomain,
 
         ):
-            self._obj = libsdfgen.sdfgen_lionsos_firewall(sdf._obj, net1._obj, net2._obj, router1._obj, router2._obj, arp_responder1._obj, arp_responder2._obj, arp_requester1._obj, arp_requester2._obj)
+            self._obj = libsdfgen.sdfgen_lionsos_firewall(sdf._obj, net1._obj, net2._obj, router1._obj, router2._obj, arp_responder1._obj, arp_responder2._obj, arp_requester1._obj, arp_requester2._obj, webserver._obj)
 
         def connect(self, mac_addr: Optional[str] = None, network1_ip: c_uint32 = 0, network2_ip: c_uint32 = 0) -> bool:
             if mac_addr is not None and len(mac_addr) != 17:
