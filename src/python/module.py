@@ -14,6 +14,7 @@ class SddfStatus(IntEnum):
     INVALID_CLIENT = 2,
     NET_DUPLICATE_COPIER = 100,
     NET_DUPLICATE_MAC_ADDR = 101,
+    NET_INVALID_OPTIONS = 103,
 
 
 # TOOD: double check
@@ -179,7 +180,7 @@ libsdfgen.sdfgen_sddf_serial_serialise_config.restype = c_bool
 libsdfgen.sdfgen_sddf_serial_serialise_config.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_sddf_net.restype = c_void_p
-libsdfgen.sdfgen_sddf_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p]
 libsdfgen.sdfgen_sddf_net_destroy.restype = None
 libsdfgen.sdfgen_sddf_net_destroy.argtypes = [c_void_p]
 
@@ -188,7 +189,9 @@ libsdfgen.sdfgen_sddf_net_add_client_with_copier.argtypes = [
     c_void_p,
     c_void_p,
     c_void_p,
-    c_char_p
+    c_char_p,
+    c_bool,
+    c_bool
 ]
 
 libsdfgen.sdfgen_sddf_net_connect.restype = c_bool
@@ -418,6 +421,7 @@ class SystemDescription:
 
     class ProtectionDomain:
         _name: str
+        _program_image: str
         _obj: c_void_p
         # We need to hold references to the PDs in case they get GC'd.
         _child_pds: List[SystemDescription.ProtectionDomain]
@@ -434,6 +438,7 @@ class SystemDescription:
             cpu: Optional[int] = None,
         ) -> None:
             self._name = name
+            self._program_image = program_image
             c_name = c_char_p(name.encode("utf-8"))
             c_program_image = c_char_p(program_image.encode("utf-8"))
             self._obj = libsdfgen.sdfgen_pd_create(c_name, c_program_image)
@@ -454,6 +459,10 @@ class SystemDescription:
         @property
         def name(self) -> str:
             return self._name
+
+        @property
+        def elf(self) -> str:
+            return self._program_image
 
         def add_child_pd(self, child_pd: SystemDescription.ProtectionDomain, child_id=None) -> int:
             """
@@ -551,6 +560,7 @@ class SystemDescription:
 
     class MemoryRegion:
         _obj: c_void_p
+        _size: int
 
         # TODO: handle more options
         def __init__(
@@ -565,6 +575,7 @@ class SystemDescription:
                 self._obj = libsdfgen.sdfgen_mr_create_physical(c_name, size, paddr)
             else:
                 self._obj = libsdfgen.sdfgen_mr_create(c_name, size)
+            self._size = size
 
         @property
         def paddr(self):
@@ -574,6 +585,10 @@ class SystemDescription:
                 return paddr
             else:
                 return None
+        
+        @property
+        def size(self):
+            return self._size
 
         def __del__(self):
             libsdfgen.sdfgen_mr_destroy(self._obj)
@@ -852,23 +867,30 @@ class Sddf:
             device: Optional[DeviceTree.Node],
             driver: SystemDescription.ProtectionDomain,
             virt_tx: SystemDescription.ProtectionDomain,
-            virt_rx: SystemDescription.ProtectionDomain
+            virt_rx: SystemDescription.ProtectionDomain,
+            rx_dma_mr: Optional[SystemDescription.MemoryRegion] = None
         ) -> None:
             if device is None:
                 device_obj = None
             else:
                 device_obj = device._obj
+            if rx_dma_mr is None:
+                rx_dma_mr_obj = None
+            else:
+                rx_dma_mr_obj = rx_dma_mr._obj
 
             self._obj = libsdfgen.sdfgen_sddf_net(
-                sdf._obj, device_obj, driver._obj, virt_tx._obj, virt_rx._obj
+                sdf._obj, device_obj, driver._obj, virt_tx._obj, virt_rx._obj, rx_dma_mr_obj
             )
 
         def add_client_with_copier(
             self,
             client: SystemDescription.ProtectionDomain,
-            copier: SystemDescription.ProtectionDomain,
+            copier: Optional[SystemDescription.ProtectionDomain] = None,
             *,
-            mac_addr: Optional[str] = None
+            mac_addr: Optional[str] = None,
+            rx: Optional[bool] = None,
+            tx: Optional[bool] = None
         ) -> None:
             """
             Add a client connected to a copier component for RX traffic.
@@ -884,8 +906,20 @@ class Sddf:
             c_mac_addr = c_char_p(0)
             if mac_addr is not None:
                 c_mac_addr = c_char_p(mac_addr.encode("utf-8"))
+            if copier is None:
+                copier_obj = None
+            else:
+                copier_obj = copier._obj
+            if rx is None or rx is True:
+                rx_arg = True
+            else:
+                rx_arg = False
+            if tx is None or tx is True:
+                tx_arg = True
+            else:
+                tx_arg = False
             ret = libsdfgen.sdfgen_sddf_net_add_client_with_copier(
-                self._obj, client._obj, copier._obj, c_mac_addr
+                self._obj, client._obj, copier_obj, c_mac_addr, rx_arg, tx_arg
             )
             if ret == SddfStatus.OK:
                 return
@@ -897,6 +931,8 @@ class Sddf:
                 raise Exception(f"duplicate copier given '{copier}'")
             elif ret == SddfStatus.NET_DUPLICATE_MAC_ADDR:
                 raise Exception(f"duplicate MAC address given '{mac_addr}'")
+            elif ret == SddfStatus.NET_INVALID_OPTIONS:
+                raise Exception(f"client must have rx or tx access")
             else:
                 raise Exception(f"internal error: {ret}")
 
