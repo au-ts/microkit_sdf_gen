@@ -61,12 +61,12 @@ test "PD + MR + mappings + channel" {
     const image = "hello.elf";
     var pd1 = ProtectionDomain.create(allocator, "hello-1", image, .{});
     _ = try pd1.addIrq(.create(33, .{}));
-    pd1.addMap(.create(mr, 0x400000000, .r, .{}));
-    pd1.addMap(.create(mr, 0x500000000, .x, .{}));
-    pd1.addMap(.create(mr, 0x600000000, .rw, .{}));
-    pd1.addMap(.create(mr, 0x700000000, .rx, .{}));
-    pd1.addMap(.create(mr, 0x800000000, .wx, .{}));
-    pd1.addMap(.create(mr, 0x900000000, .rwx, .{}));
+    pd1.addMap(.create(allocator, mr, 0x400000000, .r, .{}));
+    pd1.addMap(.create(allocator, mr, 0x500000000, .x, .{}));
+    pd1.addMap(.create(allocator, mr, 0x600000000, .rw, .{}));
+    pd1.addMap(.create(allocator, mr, 0x700000000, .rx, .{}));
+    pd1.addMap(.create(allocator, mr, 0x800000000, .wx, .{}));
+    pd1.addMap(.create(allocator, mr, 0x900000000, .rwx, .{}));
 
     var pd2 = ProtectionDomain.create(allocator, "hello-2", image, .{});
 

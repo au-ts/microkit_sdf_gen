@@ -564,6 +564,9 @@ class SystemDescription:
             if self._obj is None:
                 raise Exception("failed to create mapping")
 
+        def __del__(self):
+            libsdfgen.sdfgen_map_destroy(self._obj)
+
     class MemoryRegion:
         _obj: c_void_p
 

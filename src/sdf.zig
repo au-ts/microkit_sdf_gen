@@ -199,15 +199,18 @@ pub const SystemDescription = struct {
     };
 
     pub const Map = struct {
+        allocator: Allocator,
         mr: MemoryRegion,
         vaddr: u64,
         perms: Perms,
         cached: ?bool,
         setvar_vaddr: ?[]const u8,
+        setvar_size: ?[]const u8,
 
         pub const Options = struct {
             cached: ?bool = null,
             setvar_vaddr: ?[]const u8 = null,
+            setvar_size: ?[]const u8 = null,
         };
 
         pub const Perms = packed struct {
@@ -284,12 +287,23 @@ pub const SystemDescription = struct {
             }
 
             return Map{
+                .allocator = allocator,
                 .mr = mr,
                 .vaddr = vaddr,
                 .perms = perms,
                 .cached = options.cached,
-                .setvar_vaddr = options.setvar_vaddr,
+                .setvar_vaddr = setvar_vaddr,
+                .setvar_size = setvar_size,
             };
+        }
+
+        pub fn destroy(map: Map) void {
+            if (map.setvar_vaddr) |setvar_vaddr| {
+                map.allocator.free(setvar_vaddr);
+            }
+            if (map.setvar_size) |setvar_size| {
+                map.allocator.free(setvar_size);
+            }
         }
 
         pub fn render(map: *const Map, writer: ArrayList(u8).Writer, separator: []const u8) !void {
@@ -299,6 +313,10 @@ pub const SystemDescription = struct {
 
             if (map.setvar_vaddr) |setvar_vaddr| {
                 try std.fmt.format(writer, " setvar_vaddr=\"{s}\"", .{setvar_vaddr});
+            }
+
+            if (map.setvar_size) |setvar_size| {
+                try std.fmt.format(writer, " setvar_size=\"{s}\"", .{setvar_size});
             }
 
             if (map.cached) |cached| {

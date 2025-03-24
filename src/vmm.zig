@@ -127,7 +127,7 @@ fn addPassthroughDeviceMapping(system: *Self, name: []const u8, device: *dtb.Nod
                     }
                 }
                 // The MR exists but is not mapped in the guest yet, map it in.
-                system.guest.addMap(.create(mr, device_paddr, map_perms, map_options));
+                system.guest.addMap(.create(allocator, mr, device_paddr, map_perms, map_options));
             }
         }
     }
@@ -153,7 +153,7 @@ fn addPassthroughDeviceMapping(system: *Self, name: []const u8, device: *dtb.Nod
         });
         system.sdf.addMemoryRegion(device_mr.?);
     }
-    system.guest.addMap(.create(device_mr.?, device_paddr, map_perms, map_options));
+    system.guest.addMap(.create(allocator, device_mr.?, device_paddr, map_perms, map_options));
 
     if (mr_name_allocated) {
         system.allocator.free(mr_name);
@@ -388,7 +388,7 @@ pub fn connect(system: *Self) !void {
                 gic_vcpu_mr = Mr.physical(allocator, sdf, gic_vcpu_mr_name, gic.vcpu_size.?, .{ .paddr = gic.vcpu_paddr.? });
                 sdf.addMemoryRegion(gic_vcpu_mr.?);
             }
-            const gic_guest_map = Map.create(gic_vcpu_mr.?, gic.cpu_paddr.?, .rw, .{ .cached = false });
+            const gic_guest_map = Map.create(allocator, gic_vcpu_mr.?, gic.cpu_paddr.?, .rw, .{ .cached = false });
             guest.addMap(gic_guest_map);
         }
     }
@@ -419,8 +419,8 @@ pub fn connect(system: *Self) !void {
         }
     };
     sdf.addMemoryRegion(guest_ram_mr);
-    vmm.addMap(.create(guest_ram_mr, memory_paddr, .rw, .{}));
-    guest.addMap(.create(guest_ram_mr, memory_paddr, .rwx, .{}));
+    vmm.addMap(.create(allocator, guest_ram_mr, memory_paddr, .rw, .{}));
+    guest.addMap(.create(allocator, guest_ram_mr, memory_paddr, .rwx, .{}));
 
     for (system.guest.vcpus) |vcpu| {
         system.data.vcpus[system.data.num_vcpus] = .{
