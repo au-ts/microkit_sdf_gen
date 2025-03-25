@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const sdf = @import("sdf.zig");
+const log = @import("log.zig");
 const Allocator = std.mem.Allocator;
 
 comptime {
@@ -397,5 +398,31 @@ pub fn serialize(allocator: Allocator, s: anytype, prefix: []const u8, path: []c
         defer json_file.close();
         const writer = json_file.writer();
         try std.json.stringify(s, .{ .whitespace = .indent_4 }, writer);
+    }
+}
+
+pub fn updateSection(allocator: Allocator, elf: []const u8, data: []const u8, section: []const u8, prefix: []const u8) !void {
+    const data_path = try std.fs.path.join(allocator, &.{ prefix, data });
+    defer allocator.free(data_path);
+    const elf_path = try std.fs.path.join(allocator, &.{ prefix, elf });
+    defer allocator.free(elf_path);
+    const section_arg = try std.fmt.allocPrint(allocator, "{s}={s}.data", .{ section, data });
+    defer allocator.free(section_arg);
+    var cmd = std.process.Child.init(&.{ "llvm-objcopy", "--update-section", section_arg, elf_path }, allocator);
+    try cmd.spawn();
+    const status = try cmd.wait();
+    switch (status) {
+        .Exited => |code| {
+            if (code == 0) {
+                log.debug("objcopyed ELF '{s}' section '{s}' successfully", .{ elf, section });
+            } else {
+                log.err("failed to objcopy on ELF '{s}' to section '{s}'", .{ elf, section });
+                return error.ProcessFailed;
+            }
+        },
+        else => {
+            log.err("failed to objcopy on ELF '{s}' to section '{s}'", .{ elf, section });
+            return error.ProcessFailed;
+        }
     }
 }

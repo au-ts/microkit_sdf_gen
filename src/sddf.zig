@@ -397,10 +397,12 @@ pub const Timer = struct {
 
         const device_res_data_name = fmt(allocator, "{s}_device_resources", .{system.driver.name});
         try data.serialize(allocator, system.device_res, prefix, device_res_data_name);
+        try data.updateSection(allocator, system.driver.program_image.?, device_res_data_name, ".device_resources", prefix);
 
         for (system.clients.items, 0..) |client, i| {
             const data_name = fmt(allocator, "timer_client_{s}", .{client.name});
             try data.serialize(allocator, system.client_configs.items[i], prefix, data_name);
+            try data.updateSection(allocator, client.program_image.?, data_name, ".timer_client_config", prefix);
         }
 
         system.serialised = true;
