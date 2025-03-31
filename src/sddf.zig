@@ -1093,7 +1093,7 @@ pub const Net = struct {
 
     pub const Options = struct {
         rx_buffers: usize = 512,
-        rx_dma_mr: ?*Mr,
+        rx_dma_mr: ?*Mr = null,
     };
 
     pub const ClientOptions = struct {
