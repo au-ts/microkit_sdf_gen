@@ -250,6 +250,10 @@ libsdfgen.sdfgen_vmm_add_virtio_mmio_blk.restype = c_bool
 libsdfgen.sdfgen_vmm_add_virtio_mmio_blk.argtypes = [c_void_p, c_void_p, c_void_p, c_uint32]
 libsdfgen.sdfgen_vmm_add_virtio_mmio_net.restype = c_bool
 libsdfgen.sdfgen_vmm_add_virtio_mmio_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_char_p]
+libsdfgen.sdfgen_vmm_virtio_socket_connection.restype = c_void_p
+libsdfgen.sdfgen_vmm_virtio_socket_connection.argtypes = [c_void_p, c_void_p, c_void_p, c_uint32, c_void_p, c_uint32]
+libsdfgen.sdfgen_vmm_virtio_socket_connection_connect.restype = c_bool
+libsdfgen.sdfgen_vmm_virtio_socket_connection_connect.argtypes = [c_void_p]
 libsdfgen.sdfgen_vmm_connect.restype = c_bool
 libsdfgen.sdfgen_vmm_connect.argtypes = [c_void_p]
 libsdfgen.sdfgen_vmm_serialise_config.restype = c_bool
@@ -1020,6 +1024,23 @@ class Sddf:
 
 
 class Vmm:
+    class VmmVirtioSocketConnection:
+        _obj: c_void_p
+
+        def __init__(
+            self,
+            sdf: SystemDescription,
+            device: DeviceTree.Node,
+            vmm_a: Vmm,
+            cid_a: int,
+            vmm_b: Vmm,
+            cid_b: int
+        ):
+            self._obj = libsdfgen.sdfgen_vmm_virtio_socket_connection(sdf._obj, device._obj, vmm_a._obj, cid_a, vmm_b._obj, cid_b)
+
+        def connect(self) -> bool:
+            return libsdfgen.sdfgen_vmm_virtio_socket_connection_connect(self._obj)
+
     _obj: c_void_p
 
     def __init__(
