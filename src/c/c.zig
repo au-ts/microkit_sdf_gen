@@ -13,6 +13,7 @@ const dtb = modsdf.dtb;
 const sddf = modsdf.sddf;
 const lionsos = modsdf.lionsos;
 const Vmm = modsdf.Vmm;
+const gdb = modsdf.gdb;
 const SystemDescription = modsdf.sdf.SystemDescription;
 const Pd = SystemDescription.ProtectionDomain;
 const Irq = SystemDescription.Irq;
@@ -943,6 +944,41 @@ export fn sdfgen_sddf_lwip_connect(c_lib: *align(8) anyopaque) bool {
 export fn sdfgen_sddf_lwip_serialise_config(c_lib: *align(8) anyopaque, output_dir: [*c]u8) bool {
     const lib: *sddf.Lwip = @ptrCast(c_lib);
     lib.serialiseConfig(std.mem.span(output_dir)) catch return false;
+
+    return true;
+}
+
+export fn sdfgen_gdb(c_sdf: *align(8) anyopaque, c_debugger: *align(8) anyopaque) ?*anyopaque {
+    const sdf: *SystemDescription = @ptrCast(c_sdf);
+    const gdb_sys = allocator.create(gdb.Gdb) catch @panic("OOM");
+
+    gdb_sys.* = gdb.Gdb.init(allocator, sdf, @ptrCast(c_debugger));
+
+    return gdb_sys;
+}
+
+export fn sdfgen_gdb_add_pd(c_system: *align(8) anyopaque, c_debug_pd: *align(8) anyopaque) bool {
+    const gdb_sys: *gdb.Gdb = @ptrCast(c_system);
+    gdb.Gdb.addPd(gdb_sys, @ptrCast(c_debug_pd)) catch |e| {
+        log.err("Failed to add client of debugger: {any}", .{e});
+        return false;
+    };
+    return true;
+}
+
+export fn sdfgen_gdb_connect(c_system: *align(8) anyopaque) bool {
+    const gdb_sys: *gdb.Gdb = @ptrCast(c_system);
+    gdb.Gdb.connect(gdb_sys) catch |e| {
+        log.err("Failed to add debugger to system: {any}", .{e});
+        return false;
+    };
+
+    return true;
+}
+
+export fn sdfgen_gdb_serialise_config(c_system: *align(8) anyopaque, output_dir: [*c]u8) bool {
+    const gdb_sys: *gdb.Gdb = @ptrCast(c_system);
+    gdb_sys.serialiseConfig(std.mem.span(output_dir)) catch return false;
 
     return true;
 }

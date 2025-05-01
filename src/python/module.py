@@ -294,6 +294,14 @@ libsdfgen.sdfgen_sddf_lwip_connect.argtypes = [c_void_p]
 libsdfgen.sdfgen_sddf_lwip_serialise_config.restype = c_bool
 libsdfgen.sdfgen_sddf_lwip_serialise_config.argtypes = [c_void_p, c_char_p]
 
+libsdfgen.sdfgen_gdb.restype = c_void_p
+libsdfgen.sdfgen_gdb.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_gdb_add_pd.restype = c_bool
+libsdfgen.sdfgen_gdb_add_pd.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_gdb_connect.restype = c_bool
+libsdfgen.sdfgen_gdb_connect.argtypes = [c_void_p]
+libsdfgen.sdfgen_gdb_serialise_config.restype = c_bool
+libsdfgen.sdfgen_gdb_serialise_config.argtypes = [c_void_p, c_char_p]
 
 def ffi_uint8_ptr(n: Optional[int]):
     """
@@ -1221,3 +1229,32 @@ class LionsOs:
             def serialise_config(self, output_dir: str) -> bool:
                 c_output_dir = c_char_p(output_dir.encode("utf-8"))
                 return libsdfgen.sdfgen_lionsos_fs_vmfs_serialise_config(self._obj, c_output_dir)
+
+class Gdb:
+    _obj: c_void_p
+
+    def __init__(
+        self,
+        sdf: SystemDescription,
+        debugger: SystemDescription.ProtectionDomain,
+    ):
+        assert isinstance(sdf, SystemDescription)
+        assert isinstance(debugger, SystemDescription.ProtectionDomain)
+
+        self._obj = libsdfgen.sdfgen_gdb(
+            sdf._obj,
+            debugger._obj,
+        )
+        if self._obj is None:
+            raise Exception("Failed to create Gdb system.")
+
+    def add(self, client: SystemDescription.ProtectionDomain) -> bool:
+        assert isinstance(client, SystemDescription.ProtectionDomain)
+        return libsdfgen.sdfgen_gdb_add_pd(self._obj, client._obj)
+
+    def connect(self) -> bool:
+        return libsdfgen.sdfgen_gdb_connect(self._obj)
+
+    def serialise_config(self, output_dir: str) -> bool:
+        c_output_dir = c_char_p(output_dir.encode("utf-8"))
+        return libsdfgen.sdfgen_gdb_serialise_config(self._obj, c_output_dir)

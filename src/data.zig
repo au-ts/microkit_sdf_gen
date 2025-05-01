@@ -17,6 +17,7 @@ comptime {
 
 const MAGIC_START: [4]u8 = .{ 's', 'D', 'D', 'F' };
 const LIONS_MAGIC_START: [7]u8 = .{ 'L', 'i', 'o', 'n', 's', 'O', 'S' };
+const GDB_MAGIC_START: [6]u8 = .{ 'L', 'I', 'B', 'G', 'D', 'B' };
 
 /// Only emit JSON versions of the serialised configuration data
 /// in debug mode.
@@ -378,6 +379,11 @@ pub const Resources = struct {
             pbuf_pool: Region,
             num_pbufs: u64,
         };
+    };
+
+    pub const Gdb = extern struct {
+        magic: [6]u8 = GDB_MAGIC_START,
+        num_debugees: usize,
     };
 };
 
