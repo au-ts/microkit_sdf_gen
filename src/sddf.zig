@@ -282,6 +282,7 @@ pub const Config = struct {
             blk,
             i2c,
             gpu,
+            pinctrl,
 
             pub fn fromStr(str: []const u8) ?Class {
                 inline for (std.meta.fields(Class)) |field| {
@@ -301,6 +302,7 @@ pub const Config = struct {
                     .blk => &.{ "blk", "blk/mmc" },
                     .i2c => &.{"i2c"},
                     .gpu => &.{"gpu"},
+                    .pinctrl => &.{"pinctrl"},
                 };
             }
         };
@@ -1617,6 +1619,100 @@ pub const Gpu = struct {
         for (system.config.clients.items, 0..) |config, i| {
             const client_data = fmt(allocator, "gpu_client_{s}", .{system.clients.items[i].name});
             try data.serialize(allocator, config, prefix, client_data);
+        }
+
+        system.serialised = true;
+    }
+};
+
+pub const Pinctrl = struct {
+    allocator: Allocator,
+    sdf: *SystemDescription,
+    /// Protection Domain that will act as the driver for the pinmux device
+    driver: *Pd,
+    /// Device Tree node for the pinctrl device
+    device: *dtb.Node,
+    device_res: ConfigResources.Device,
+    /// Client PDs serviced by the pinctrl driver
+    clients: std.ArrayList(*Pd),
+    client_configs: std.ArrayList(ConfigResources.Pinctrl.Client),
+    connected: bool = false,
+    serialised: bool = false,
+
+    pub const Error = SystemError;
+
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, device: *dtb.Node, driver: *Pd) Pinctrl {
+        // First we have to set some properties on the driver. It is currently our policy that every pinctrl
+        // driver should be passive.
+        driver.passive = true;
+
+        return .{
+            .allocator = allocator,
+            .sdf = sdf,
+            .driver = driver,
+            .device = device,
+            .device_res = std.mem.zeroInit(ConfigResources.Device, .{}),
+            .clients = std.ArrayList(*Pd).init(allocator),
+            .client_configs = std.ArrayList(ConfigResources.Pinctrl.Client).init(allocator),
+        };
+    }
+
+    pub fn deinit(system: *Pinctrl) void {
+        system.clients.deinit();
+        system.client_configs.deinit();
+    }
+
+    pub fn addClient(system: *Pinctrl, client: *Pd) Error!void {
+        // Check that the client does not already exist
+        for (system.clients.items) |existing_client| {
+            if (std.mem.eql(u8, existing_client.name, client.name)) {
+                return Error.DuplicateClient;
+            }
+        }
+        if (std.mem.eql(u8, client.name, system.driver.name)) {
+            log.err("invalid pinctrl client, same name as driver '{s}", .{client.name});
+            return Error.InvalidClient;
+        }
+        const client_priority = if (client.priority) |priority| priority else Pd.DEFAULT_PRIORITY;
+        const driver_priority = if (system.driver.priority) |priority| priority else Pd.DEFAULT_PRIORITY;
+        if (client_priority >= driver_priority) {
+            log.err("invalid pinctrl client '{s}', driver '{s}' must have greater priority than client", .{ client.name, system.driver.name });
+            return Error.InvalidClient;
+        }
+        system.clients.append(client) catch @panic("Could not add client to Pinctrl");
+        system.client_configs.append(std.mem.zeroInit(ConfigResources.Pinctrl.Client, .{})) catch @panic("Could not add client to Timer");
+    }
+
+    pub fn connect(system: *Pinctrl) !void {
+        // The driver must be passive
+        assert(system.driver.passive.?);
+
+        try createDriver(system.sdf, system.driver, system.device, .pinctrl, &system.device_res);
+        for (system.clients.items, 0..) |client, i| {
+            const ch = Channel.create(system.driver, client, .{
+                // Client needs to be able to PPC into driver
+                .pp = .b,
+                // Client does not need to notify driver
+                .pd_b_notify = false,
+            }) catch unreachable;
+            system.sdf.addChannel(ch);
+            system.client_configs.items[i].driver_id = ch.pd_b_id;
+        }
+
+        system.connected = true;
+    }
+
+    pub fn serialiseConfig(system: *Pinctrl, prefix: []const u8) !void {
+        if (!system.connected) return Error.NotConnected;
+
+        const allocator = system.allocator;
+
+        const device_res_data_name = fmt(allocator, "{s}_device_resources", .{system.driver.name});
+        try data.serialize(allocator, system.device_res, prefix, device_res_data_name);
+
+        for (system.clients.items, 0..) |client, i| {
+            const data_name = fmt(allocator, "pinctrl_client_{s}", .{client.name});
+            try data.serialize(allocator, system.client_configs.items[i], prefix, data_name);
         }
 
         system.serialised = true;
