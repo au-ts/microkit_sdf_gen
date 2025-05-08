@@ -148,6 +148,16 @@ libsdfgen.sdfgen_sddf_timer_connect.argtypes = [c_void_p]
 libsdfgen.sdfgen_sddf_timer_serialise_config.restype = c_bool
 libsdfgen.sdfgen_sddf_timer_serialise_config.argtypes = [c_void_p, c_char_p]
 
+libsdfgen.sdfgen_sddf_pinctrl.restype = c_void_p
+libsdfgen.sdfgen_sddf_pinctrl.argtypes = [c_void_p, c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_pinctrl_destroy.restype = None
+libsdfgen.sdfgen_sddf_pinctrl_destroy.argtypes = [c_void_p]
+
+libsdfgen.sdfgen_sddf_pinctrl_connect.restype = c_bool
+libsdfgen.sdfgen_sddf_pinctrl_connect.argtypes = [c_void_p]
+libsdfgen.sdfgen_sddf_pinctrl_serialise_config.restype = c_bool
+libsdfgen.sdfgen_sddf_pinctrl_serialise_config.argtypes = [c_void_p, c_char_p]
+
 libsdfgen.sdfgen_sddf_i2c.restype = c_void_p
 libsdfgen.sdfgen_sddf_i2c.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p]
 libsdfgen.sdfgen_sddf_i2c_destroy.restype = None
@@ -1061,6 +1071,32 @@ class Sddf:
 
         def __del__(self):
             libsdfgen.sdfgen_sddf_gpu_destroy(self._obj)
+
+    class Pinctrl:
+        _obj: c_void_p
+
+        def __init__(
+            self,
+            sdf: SystemDescription,
+            device: Optional[DeviceTree.Node],
+            driver: SystemDescription.ProtectionDomain
+        ) -> None:
+            if device is None:
+                device_obj = None
+            else:
+                device_obj = device._obj
+
+            self._obj: c_void_p = libsdfgen.sdfgen_sddf_pinctrl(sdf._obj, device_obj, driver._obj)
+
+        def connect(self) -> bool:
+            return libsdfgen.sdfgen_sddf_pinctrl_connect(self._obj)
+
+        def serialise_config(self, output_dir: str) -> bool:
+            c_output_dir = c_char_p(output_dir.encode("utf-8"))
+            return libsdfgen.sdfgen_sddf_pinctrl_serialise_config(self._obj, c_output_dir)
+
+        def __del__(self):
+            libsdfgen.sdfgen_sddf_pinctrl_destroy(self._obj)
 
     class Lwip:
         _obj: c_void_p
