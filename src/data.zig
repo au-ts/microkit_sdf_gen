@@ -338,6 +338,15 @@ pub const Resources = struct {
         };
     };
 
+    pub const Pinctrl = struct {
+        const MAGIC: [5]u8 = MAGIC_START ++ .{0x8};
+
+        pub const Client = extern struct {
+            magic: [5]u8 = MAGIC,
+            driver_id: u8,
+        };
+    };
+
     pub const Fs = extern struct {
         const MAGIC: [8]u8 = LIONS_MAGIC_START ++ .{0x1};
 
