@@ -12,6 +12,7 @@ pub const Lwip = @import("net.zig").Lwip;
 pub const Gpu = @import("gpu.zig").Gpu;
 pub const Serial = @import("serial.zig").Serial;
 pub const Gpio = @import("gpio.zig").Gpio;
+pub const Pinctrl = @import("pinctrl.zig").Pinctrl;
 
 const fs = std.fs;
 const assert = std.debug.assert;
@@ -300,6 +301,7 @@ pub const Config = struct {
             i2c,
             gpu,
             gpio,
+            pinctrl,
 
             pub fn fromStr(str: []const u8) ?Class {
                 inline for (std.meta.fields(Class)) |field| {
@@ -320,6 +322,7 @@ pub const Config = struct {
                     .i2c => &.{"i2c"},
                     .gpu => &.{"gpu"},
                     .gpio => &.{"gpio"},
+                    .pinctrl => &.{"pinctrl"},
                 };
             }
         };
