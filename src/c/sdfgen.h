@@ -76,7 +76,8 @@ typedef enum {
 void *sdfgen_irq_create(uint32_t number, sdfgen_irq_trigger_t *trigger, uint8_t *id);
 
 void *sdfgen_mr_create(char *name, uint64_t size);
-void *sdfgen_mr_create_physical(char *name, uint64_t size, uint64_t paddr);
+void *sdfgen_mr_create_physical(void *sdf, char *name, uint64_t size, uint64_t *paddr);
+uint64_t sdfgen_mr_get_size(void *mr);
 bool sdgen_mr_get_paddr(void *mr, uint64_t *paddr);
 void sdfgen_mr_destroy(void *mr);
 

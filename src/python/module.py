@@ -85,7 +85,9 @@ libsdfgen.sdfgen_map_destroy.argtypes = [c_void_p]
 libsdfgen.sdfgen_mr_create.restype = c_void_p
 libsdfgen.sdfgen_mr_create.argtypes = [c_char_p, c_uint64]
 libsdfgen.sdfgen_mr_create_physical.restype = c_void_p
-libsdfgen.sdfgen_mr_create_physical.argtypes = [c_char_p, c_uint64, c_uint64]
+libsdfgen.sdfgen_mr_create_physical.argtypes = [c_void_p, c_char_p, c_uint64, POINTER(c_uint64)]
+libsdfgen.sdfgen_mr_get_size.restype = c_uint64
+libsdfgen.sdfgen_mr_get_size.argtypes = [c_void_p]
 libsdfgen.sdfgen_mr_get_paddr.restype = c_bool
 libsdfgen.sdfgen_mr_get_paddr.argtypes = [c_void_p, POINTER(c_uint64)]
 
@@ -597,6 +599,11 @@ class SystemDescription:
                 self._obj = libsdfgen.sdfgen_mr_create_physical(sdf._obj, c_name, size, ffi_uint64_ptr(paddr))
             else:
                 self._obj = libsdfgen.sdfgen_mr_create(c_name, size)
+            self._size = size
+        
+        @property
+        def size(self):
+            return libsdfgen.sdfgen_mr_get_size(self._obj)
 
         @property
         def paddr(self):

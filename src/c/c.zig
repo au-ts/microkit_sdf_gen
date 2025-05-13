@@ -328,6 +328,11 @@ export fn sdfgen_mr_create_physical(c_sdf: *align(8) anyopaque, name: [*c]u8, si
     return mr;
 }
 
+export fn sdfgen_mr_get_size(c_mr: *align(8) anyopaque) u64 {
+    const mr: *Mr = @ptrCast(c_mr);
+    return mr.size;
+}
+
 export fn sdfgen_mr_get_paddr(c_mr: *align(8) anyopaque, paddr: *u64) bool {
     const mr: *Mr = @ptrCast(c_mr);
     if (mr.paddr) |paddr_val| {
