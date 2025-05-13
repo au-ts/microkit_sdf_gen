@@ -96,7 +96,7 @@ pub const SystemDescription = struct {
             page_size: ?PageSize = null,
         };
 
-        const OptionsPhysical = struct {
+        pub const OptionsPhysical = struct {
             paddr: ?u64 = null,
             page_size: ?PageSize = null,
         };

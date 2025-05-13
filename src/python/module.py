@@ -331,6 +331,17 @@ def ffi_uint32_ptr(n: Optional[int]):
     return pointer(c_uint32(n))
 
 
+def ffi_uint64_ptr(n: Optional[int]):
+    """
+    Convert an int value to a uint64_t pointer for FFI.
+    If 'n' is None then we return None (which acts as a null pointer)
+    """
+    if n is None:
+        return None
+
+    return pointer(c_uint64(n))
+
+
 def ffi_bool_ptr(val: Optional[bool]):
     """
     Convert a bool value to a bool pointer for FFI.
@@ -566,14 +577,16 @@ class SystemDescription:
         # TODO: handle more options
         def __init__(
             self,
+            sdf: SystemDescription,
             name: str,
             size: int,
             *,
+            physical: Optional[bool] = None,
             paddr: Optional[int] = None
         ) -> None:
             c_name = c_char_p(name.encode("utf-8"))
-            if paddr:
-                self._obj = libsdfgen.sdfgen_mr_create_physical(c_name, size, paddr)
+            if physical:
+                self._obj = libsdfgen.sdfgen_mr_create_physical(sdf._obj, c_name, size, ffi_uint64_ptr(paddr))
             else:
                 self._obj = libsdfgen.sdfgen_mr_create(c_name, size)
 

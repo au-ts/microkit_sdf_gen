@@ -309,10 +309,14 @@ export fn sdfgen_mr_create(name: [*c]u8, size: u64) *anyopaque {
     return mr;
 }
 
-export fn sdfgen_mr_create_physical(name: [*c]u8, size: u64, paddr: u64) *anyopaque {
+export fn sdfgen_mr_create_physical(c_sdf: *align(8) anyopaque, name: [*c]u8, size: u64, paddr: [*c]u64) *anyopaque {
+    const sdf: *SystemDescription = @ptrCast(c_sdf);
     const mr = allocator.create(Mr) catch @panic("OOM");
-    mr.* = Mr.create(allocator, std.mem.span(name), size, .{});
-    mr.paddr = paddr;
+    var options: Mr.OptionsPhysical = .{};
+    if (paddr != null) {
+        options.paddr = paddr.*;
+    }
+    mr.* = Mr.physical(allocator, sdf, std.mem.span(name), size, options);
 
     return mr;
 }
