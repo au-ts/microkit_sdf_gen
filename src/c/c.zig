@@ -609,20 +609,26 @@ export fn sdfgen_sddf_blk_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
-export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: *align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: *align(8) anyopaque) *anyopaque {
+export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: *align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: *align(8) anyopaque, c_rx_dma_mr: ?*align(8) anyopaque) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const net = allocator.create(sddf.Net) catch @panic("OOM");
-    net.* = sddf.Net.init(allocator, sdf, @ptrCast(c_device), @ptrCast(driver), @ptrCast(virt_tx), @ptrCast(virt_rx), .{});
+    const rx_dma_mr: ?*Mr = if (c_rx_dma_mr) |p| @ptrCast(p) else null;
+    const options: sddf.Net.Options = .{
+        .rx_dma_mr = rx_dma_mr,
+    };
+    net.* = sddf.Net.init(allocator, sdf, @ptrCast(c_device), @ptrCast(driver), @ptrCast(virt_tx), @ptrCast(virt_rx), options);
 
     return net;
 }
 
-export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, client: *align(8) anyopaque, copier: *align(8) anyopaque, mac_addr: [*c]u8) bindings.sdfgen_sddf_status_t {
+export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, client: *align(8) anyopaque, copier: *align(8) anyopaque, mac_addr: [*c]u8, rx: bool, tx: bool) bindings.sdfgen_sddf_status_t {
     const net: *sddf.Net = @ptrCast(system);
     var options: sddf.Net.ClientOptions = .{};
     if (mac_addr) |a| {
         options.mac_addr = std.mem.span(a);
     }
+    options.rx = rx;
+    options.tx = tx;
     net.addClientWithCopier(@ptrCast(client), @ptrCast(copier), options) catch |e| {
         switch (e) {
             sddf.Net.Error.DuplicateClient => return 1,
@@ -630,6 +636,7 @@ export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, cl
             sddf.Net.Error.DuplicateCopier => return 100,
             sddf.Net.Error.DuplicateMacAddr => return 101,
             sddf.Net.Error.InvalidMacAddr => return 102,
+            sddf.Net.Error.InvalidOptions => return 103,
             // Should never happen when adding a client
             sddf.Net.Error.NotConnected => @panic("internal error"),
         }
