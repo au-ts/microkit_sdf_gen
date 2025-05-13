@@ -147,6 +147,13 @@ export fn sdfgen_pd_add_child(c_pd: *align(8) anyopaque, c_child_pd: *align(8) a
     return @intCast(id);
 }
 
+export fn sdfgen_pd_get_map_vaddr(c_pd: *align(8) anyopaque, c_mr: *align(8) anyopaque) u64 {
+    const pd: *Pd = @ptrCast(c_pd);
+    const mr: *Mr = @ptrCast(c_mr);
+
+    return pd.getMapVaddr(mr);
+}
+
 export fn sdfgen_pd_add_map(c_pd: *align(8) anyopaque, c_map: *align(8) anyopaque) void {
     const pd: *Pd = @ptrCast(c_pd);
     const map: *Map = @ptrCast(c_map);

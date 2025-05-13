@@ -124,6 +124,8 @@ libsdfgen.sdfgen_pd_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_pd_add_child.restype = c_int8
 libsdfgen.sdfgen_pd_add_child.argtypes = [c_void_p, c_void_p, POINTER(c_uint8)]
+libsdfgen.sdfgen_pd_get_map_vaddr.restype = c_uint64
+libsdfgen.sdfgen_pd_get_map_vaddr.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_pd_add_map.restype = None
 libsdfgen.sdfgen_pd_add_map.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_pd_add_irq.restype = c_int8
@@ -478,6 +480,12 @@ class SystemDescription:
                 raise Exception(f"failed to add child to PD '{self.name}'")
 
             return id
+
+        def get_map_vaddr(self, mr: SystemDescription.MemoryRegion) -> int:
+            """
+            Returns next available vaddr for memory region map.
+            """
+            return libsdfgen.sdfgen_pd_get_map_vaddr(self._obj, mr._obj)
 
         def add_map(self, map: SystemDescription.Map):
             libsdfgen.sdfgen_pd_add_map(self._obj, map._obj)

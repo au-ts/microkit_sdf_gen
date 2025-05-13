@@ -46,6 +46,7 @@ void sdfgen_pd_destroy(void *pd);
 
 /* Can specifiy a fixed ID  */
 int8_t sdfgen_pd_add_child(void *sdf, void *child_pd, uint8_t *child_id);
+uint64_t sdfgen_pd_get_map_vaddr(void *pd, void *map);
 void sdfgen_pd_add_map(void *pd, void *map);
 void sdfgen_pd_set_priority(void *pd, uint8_t priority);
 void sdfgen_pd_set_budget(void *pd, uint32_t budget);
