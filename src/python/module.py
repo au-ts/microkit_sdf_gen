@@ -437,6 +437,7 @@ class SystemDescription:
 
     class ProtectionDomain:
         _name: str
+        _program_image: str
         _obj: c_void_p
 
         def __init__(
@@ -451,6 +452,7 @@ class SystemDescription:
             cpu: Optional[int] = None,
         ) -> None:
             self._name = name
+            self._program_image = program_image
             c_name = c_char_p(name.encode("utf-8"))
             c_program_image = c_char_p(program_image.encode("utf-8"))
             self._obj = libsdfgen.sdfgen_pd_create(c_name, c_program_image)
@@ -470,6 +472,10 @@ class SystemDescription:
         @property
         def name(self) -> str:
             return self._name
+
+        @property
+        def elf(self) -> str:
+            return self._program_image
 
         def add_child_pd(self, child_pd: SystemDescription.ProtectionDomain, child_id=None) -> int:
             """
