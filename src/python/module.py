@@ -79,6 +79,8 @@ libsdfgen.sdfgen_channel_get_pd_b_id.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_map_create.restype = c_void_p
 libsdfgen.sdfgen_map_create.argtypes = [c_void_p, c_uint64, MapPermsType, c_bool]
+libsdfgen.sdfgen_map_get_vaddr.restype = c_uint64
+libsdfgen.sdfgen_map_get_vaddr.argtypes = [c_void_p]
 libsdfgen.sdfgen_map_destroy.restype = None
 libsdfgen.sdfgen_map_destroy.argtypes = [c_void_p]
 
@@ -586,6 +588,10 @@ class SystemDescription:
             self._obj = libsdfgen.sdfgen_map_create(mr._obj, vaddr, c_perms, cached)
             if self._obj is None:
                 raise Exception("failed to create mapping")
+
+        @property
+        def vaddr(self):
+            return libsdfgen.sdfgen_map_get_vaddr(self._obj)
 
     class MemoryRegion:
         _obj: c_void_p

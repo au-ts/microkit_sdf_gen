@@ -368,6 +368,11 @@ export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bind
     return map;
 }
 
+export fn sdfgen_map_get_vaddr(c_map: *align(8) anyopaque) u64 {
+    const map: *Map = @ptrCast(c_map);
+    return map.vaddr;
+}
+
 export fn sdfgen_map_destroy(c_map: *align(8) anyopaque) void {
     const map: *Map = @ptrCast(c_map);
     allocator.destroy(map);
