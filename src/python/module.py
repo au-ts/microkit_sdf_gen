@@ -146,9 +146,6 @@ libsdfgen.sdfgen_sddf_pinctrl.argtypes = [c_void_p, c_void_p, c_void_p]
 libsdfgen.sdfgen_sddf_pinctrl_destroy.restype = None
 libsdfgen.sdfgen_sddf_pinctrl_destroy.argtypes = [c_void_p]
 
-libsdfgen.sdfgen_sddf_pinctrl_add_client.restype = c_uint32
-libsdfgen.sdfgen_sddf_pinctrl_add_client.argtypes = [c_void_p, c_void_p]
-
 libsdfgen.sdfgen_sddf_pinctrl_connect.restype = c_bool
 libsdfgen.sdfgen_sddf_pinctrl_connect.argtypes = [c_void_p]
 libsdfgen.sdfgen_sddf_pinctrl_serialise_config.restype = c_bool
@@ -1024,17 +1021,6 @@ class Sddf:
                 device_obj = device._obj
 
             self._obj: c_void_p = libsdfgen.sdfgen_sddf_pinctrl(sdf._obj, device_obj, driver._obj)
-
-        def add_client(self, client: SystemDescription.ProtectionDomain):
-            ret = libsdfgen.sdfgen_sddf_pinctrl_add_client(self._obj, client._obj)
-            if ret == SddfStatus.OK:
-                return
-            elif ret == SddfStatus.DUPLICATE_CLIENT:
-                raise Exception(f"duplicate client given '{client}'")
-            elif ret == SddfStatus.INVALID_CLIENT:
-                raise Exception(f"invalid client given '{client}'")
-            else:
-                raise Exception(f"internal error: {ret}")
 
         def connect(self) -> bool:
             return libsdfgen.sdfgen_sddf_pinctrl_connect(self._obj)

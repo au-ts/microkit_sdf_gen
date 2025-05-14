@@ -713,20 +713,6 @@ export fn sdfgen_sddf_pinctrl_destroy(system: *align(8) anyopaque) void {
     allocator.destroy(pinctrl);
 }
 
-export fn sdfgen_sddf_pinctrl_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque) bindings.sdfgen_sddf_status_t {
-    const pinctrl: *sddf.Pinctrl = @ptrCast(system);
-    pinctrl.addClient(@ptrCast(client)) catch |e| {
-        switch (e) {
-            sddf.Pinctrl.Error.DuplicateClient => return 1,
-            sddf.Pinctrl.Error.InvalidClient => return 2,
-            // Should never happen when adding a client
-            sddf.Pinctrl.Error.NotConnected => @panic("internal error"),
-        }
-    };
-
-    return 0;
-}
-
 export fn sdfgen_sddf_pinctrl_connect(system: *align(8) anyopaque) bool {
     const pinctrl: *sddf.Pinctrl = @ptrCast(system);
     pinctrl.connect() catch return false;
