@@ -282,6 +282,7 @@ pub const Config = struct {
             blk,
             i2c,
             gpu,
+            pinctrl,
 
             pub fn fromStr(str: []const u8) ?Class {
                 inline for (std.meta.fields(Class)) |field| {
@@ -301,6 +302,7 @@ pub const Config = struct {
                     .blk => &.{ "blk", "blk/mmc" },
                     .i2c => &.{"i2c"},
                     .gpu => &.{"gpu"},
+                    .pinctrl => &.{"pinctrl"},
                 };
             }
         };
@@ -1630,6 +1632,59 @@ pub const Gpu = struct {
             const client_data = fmt(allocator, "gpu_client_{s}", .{system.clients.items[i].name});
             try data.serialize(allocator, config, prefix, client_data);
         }
+
+        system.serialised = true;
+    }
+};
+
+pub const Pinctrl = struct {
+    allocator: Allocator,
+    sdf: *SystemDescription,
+    /// Protection Domain that will act as the driver for the pinmux device
+    driver: *Pd,
+    /// Device Tree node for the pinctrl device
+    device: *dtb.Node,
+    device_res: ConfigResources.Device,
+    serialised: bool = false,
+    connected: bool = false,
+
+    pub const Error = SystemError;
+
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, device: *dtb.Node, driver: *Pd) Pinctrl {
+        // First we have to set some properties on the driver. It is currently our policy that every pinctrl
+        // driver should be passive.
+        driver.passive = true;
+
+        return .{
+            .allocator = allocator,
+            .sdf = sdf,
+            .driver = driver,
+            .device = device,
+            .device_res = std.mem.zeroInit(ConfigResources.Device, .{}),
+        };
+    }
+
+    pub fn deinit(system: *Pinctrl) void {
+        // In the future when we add clients we would need to free associated resources here
+        _ = system;
+        return;
+    }
+
+    pub fn connect(system: *Pinctrl) !void {
+        // The driver must be passive
+        assert(system.driver.passive.?);
+
+        try createDriver(system.sdf, system.driver, system.device, .pinctrl, &system.device_res);
+        system.connected = true;
+    }
+
+    pub fn serialiseConfig(system: *Pinctrl, prefix: []const u8) !void {
+        if (!system.connected) return Error.NotConnected;
+
+        const allocator = system.allocator;
+
+        const device_res_data_name = fmt(allocator, "{s}_device_resources", .{system.driver.name});
+        try data.serialize(allocator, system.device_res, prefix, device_res_data_name);
 
         system.serialised = true;
     }
