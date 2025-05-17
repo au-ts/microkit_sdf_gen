@@ -607,6 +607,8 @@ class SystemDescription:
             paddr: Optional[int] = None
         ) -> None:
             c_name = c_char_p(name.encode("utf-8"))
+            if paddr:
+                physical = True
             if physical:
                 self._obj = libsdfgen.sdfgen_mr_create_physical(sdf._obj, c_name, size, ffi_uint64_ptr(paddr))
             else:
