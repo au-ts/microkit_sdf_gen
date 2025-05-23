@@ -5,11 +5,13 @@
     <memory_region name="i2c_client_request_i2c_reactor_client" size="0x1000" />
     <memory_region name="i2c_client_response_i2c_reactor_client" size="0x1000" />
     <memory_region name="i2c_client_data_i2c_reactor_client" size="0x1000" />
+    <memory_region name="i2c_client_meta_i2c_reactor_client" size="0x10000" />
     <protection_domain name="i2c_reactor_client" priority="198">
         <program_image path="reactor_client.elf" />
         <map mr="i2c_client_request_i2c_reactor_client" vaddr="0x20000000" perms="rw" />
         <map mr="i2c_client_response_i2c_reactor_client" vaddr="0x20001000" perms="rw" />
         <map mr="i2c_client_data_i2c_reactor_client" vaddr="0x20002000" perms="rw" />
+        <map mr="i2c_client_meta_i2c_reactor_client" vaddr="0x20003000" perms="rw" cached="false" />
     </protection_domain>
     <protection_domain name="i2c_virt" priority="199" passive="true">
         <program_image path="i2c_virt.elf" />
@@ -23,6 +25,7 @@
         <map mr="i2c_driver_request" vaddr="0x20000000" perms="rw" />
         <map mr="i2c_driver_response" vaddr="0x20001000" perms="rw" />
         <map mr="i2c_client_data_i2c_reactor_client" vaddr="0x20002000" perms="rw" />
+        <map mr="i2c_client_meta_i2c_reactor_client" vaddr="0x20003000" perms="rw" cached="false" />
     </protection_domain>
     <channel>
         <end pd="i2c_reactor_driver" id="0" />
