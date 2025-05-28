@@ -223,6 +223,47 @@ pub const Resources = struct {
         };
     };
 
+    pub const Spi = struct {
+        const MAGIC: [5]u8 = MAGIC_START ++ .{0x9};
+
+        // SDDF Queue connection between PDs
+        pub const Connection = extern struct {
+            req_queue: Region,
+            resp_queue: Region,
+            num_buffers: u16,
+            id: u8,
+        };
+
+        pub const Virt = extern struct {
+            pub const Client = extern struct {
+                conn: Connection,
+                data_size: usize,
+                meta_size: usize,
+                driver_data_vaddr: u64,
+                driver_meta_vaddr: u64, // vaddr as mapped into driver
+                client_data_vaddr: u64,
+                client_meta_vaddr: u64,
+            };
+
+            magic: [5]u8 = MAGIC,
+            num_clients: u64,
+            driver: Connection,
+            clients: [MAX_NUM_CLIENTS]Virt.Client,
+        };
+
+        pub const Driver = extern struct {
+            magic: [5]u8 = MAGIC,
+            virt: Connection,
+        };
+
+        pub const Client = extern struct {
+            magic: [5]u8 = MAGIC,
+            virt: Connection,
+            data: Region,
+            meta: Region,
+        };
+    };
+
     pub const Net = struct {
         const MAGIC: [5]u8 = MAGIC_START ++ .{0x5};
 
