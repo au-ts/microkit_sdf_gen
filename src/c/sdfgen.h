@@ -112,6 +112,12 @@ sdfgen_sddf_status_t sdfgen_sddf_i2c_add_client(void *system, void *client);
 bool sdfgen_sddf_i2c_connect(void *system);
 bool sdfgen_sddf_i2c_serialise_config(void *system, char *output_dir);
 
+void *sdfgen_sddf_spi(void *sdf, void *device, void *driver, void *virt);
+void sdfgen_sddf_spi_destroy(void *system);
+sdfgen_sddf_status_t sdfgen_sddf_spi_add_client(void *system, void *client);
+bool sdfgen_sddf_spi_connect(void *system);
+bool sdfgen_sddf_spi_serialise_config(void *system, char *output_dir);
+
 void *sdfgen_sddf_blk(void *sdf, void *device, void *driver, void *virt);
 void sdfgen_sddf_blk_destroy(void *system);
 sdfgen_sddf_status_t sdfgen_sddf_blk_add_client(void *system, void *client, uint32_t partition);

@@ -552,6 +552,47 @@ export fn sdfgen_sddf_i2c_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
+export fn sdfgen_sddf_spi(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt: *align(8) anyopaque) *anyopaque {
+    const sdf: *SystemDescription = @ptrCast(c_sdf);
+    const spi = allocator.create(sddf.Spi) catch @panic("OOM");
+    spi.* = sddf.Spi.init(allocator, sdf, @ptrCast(c_device), @ptrCast(driver), @ptrCast(virt), .{});
+
+    return spi;
+}
+
+export fn sdfgen_sddf_spi_destroy(system: *align(8) anyopaque) void {
+    const spi: *sddf.Spi = @ptrCast(system);
+    spi.deinit();
+    allocator.destroy(spi);
+}
+
+export fn sdfgen_sddf_spi_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque) bindings.sdfgen_sddf_status_t {
+    const spi: *sddf.Spi = @ptrCast(system);
+    spi.addClient(@ptrCast(client)) catch |e| {
+        switch (e) {
+            sddf.Spi.Error.DuplicateClient => return 1,
+            sddf.Spi.Error.InvalidClient => return 2,
+            // Should never happen when adding a client
+            sddf.Spi.Error.NotConnected => @panic("internal error"),
+        }
+    };
+
+    return 0;
+}
+
+export fn sdfgen_sddf_spi_connect(system: *align(8) anyopaque) bool {
+    const spi: *sddf.Spi = @ptrCast(system);
+    spi.connect() catch return false;
+
+    return true;
+}
+
+export fn sdfgen_sddf_spi_serialise_config(system: *align(8) anyopaque, output_dir: [*c]u8) bool {
+    const spi: *sddf.Spi = @ptrCast(system);
+    spi.serialiseConfig(std.mem.span(output_dir)) catch return false;
+    return true;
+}
+
 export fn sdfgen_sddf_blk(c_sdf: *align(8) anyopaque, c_device: *align(8) anyopaque, driver: *align(8) anyopaque, virt: *align(8) anyopaque) ?*anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const device: *dtb.Node = @ptrCast(c_device);
