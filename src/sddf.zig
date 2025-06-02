@@ -418,6 +418,7 @@ pub const I2c = struct {
     region_req_size: usize,
     region_resp_size: usize,
     region_data_size: usize,
+    region_meta_size: usize,
     driver_config: ConfigResources.I2c.Driver,
     virt_config: ConfigResources.I2c.Virt,
     client_configs: std.ArrayList(ConfigResources.I2c.Client),
@@ -431,6 +432,7 @@ pub const I2c = struct {
         region_req_size: usize = 0x1000,
         region_resp_size: usize = 0x1000,
         region_data_size: usize = 0x1000,
+        region_meta_size: usize = 0x10000,
     };
 
     pub fn init(allocator: Allocator, sdf: *SystemDescription, device: ?*dtb.Node, driver: *Pd, virt: *Pd, options: Options) I2c {
@@ -445,11 +447,11 @@ pub const I2c = struct {
             .region_req_size = options.region_req_size,
             .region_resp_size = options.region_resp_size,
             .region_data_size = options.region_data_size,
+            .region_meta_size = options.region_meta_size,
             .driver_config = std.mem.zeroInit(ConfigResources.I2c.Driver, .{}),
             .virt_config = std.mem.zeroInit(ConfigResources.I2c.Virt, .{}),
             .client_configs = std.ArrayList(ConfigResources.I2c.Client).init(allocator),
-            // TODO: handle properly
-            .num_buffers = 128,
+            .num_buffers = 64,
         };
     }
 
@@ -505,8 +507,6 @@ pub const I2c = struct {
 
         system.driver_config = .{
             .virt = .{
-                // Will be set in connectClient
-                .data = undefined,
                 .req_queue = .createFromMap(driver_map_req),
                 .resp_queue = .createFromMap(driver_map_resp),
                 .num_buffers = system.num_buffers,
@@ -515,8 +515,6 @@ pub const I2c = struct {
         };
 
         system.virt_config.driver = .{
-            // Will be set in connectClient
-            .data = undefined,
             .req_queue = .createFromMap(virt_map_req),
             .resp_queue = .createFromMap(virt_map_resp),
             .num_buffers = system.num_buffers,
@@ -535,13 +533,19 @@ pub const I2c = struct {
         const mr_req = Mr.create(allocator, fmt(allocator, "i2c_client_request_{s}", .{client.name}), system.region_req_size, .{});
         const mr_resp = Mr.create(allocator, fmt(allocator, "i2c_client_response_{s}", .{client.name}), system.region_resp_size, .{});
         const mr_data = Mr.create(allocator, fmt(allocator, "i2c_client_data_{s}", .{client.name}), system.region_data_size, .{});
+        const mr_meta = Mr.create(allocator, fmt(allocator, "i2c_client_meta_{s}", .{client.name}), system.region_meta_size, .{});
 
         sdf.addMemoryRegion(mr_req);
         sdf.addMemoryRegion(mr_resp);
         sdf.addMemoryRegion(mr_data);
+        sdf.addMemoryRegion(mr_meta);
 
         const driver_map_data = Map.create(mr_data, system.driver.getMapVaddr(&mr_data), .rw, .{});
         driver.addMap(driver_map_data);
+
+        // The meta region backs buffers in the data region. Accessed only by driver and client.
+        const driver_map_meta = Map.create(mr_meta, system.driver.getMapVaddr(&mr_meta), .rw, .{ .cached = false });
+        driver.addMap(driver_map_meta);
 
         const virt_map_req = Map.create(mr_req, system.virt.getMapVaddr(&mr_req), .rw, .{});
         virt.addMap(virt_map_req);
@@ -552,38 +556,46 @@ pub const I2c = struct {
         client.addMap(client_map_req);
         const client_map_resp = Map.create(mr_resp, client.getMapVaddr(&mr_resp), .rw, .{});
         client.addMap(client_map_resp);
+
         const client_map_data = Map.create(mr_data, client.getMapVaddr(&mr_data), .rw, .{});
         client.addMap(client_map_data);
+        const client_map_meta = Map.create(mr_meta, client.getMapVaddr(&mr_meta), .rw, .{ .cached = false });
+        client.addMap(client_map_meta);
 
         // Create a channel between the virtualiser and client
         const ch = Channel.create(virt, client, .{ .pp = .b }) catch unreachable;
         sdf.addChannel(ch);
 
+        // The below section originally passed the virt a region structure with no vaddr for the
+        // data region. Instead of doing this, just pass the size of the region.
         system.virt_config.clients[i] = .{
             .conn = .{
-                .data = .{
-                    // TODO: absolute hack
-                    .vaddr = 0,
-                    .size = system.region_data_size,
-                },
                 .req_queue = .createFromMap(virt_map_req),
                 .resp_queue = .createFromMap(virt_map_resp),
                 .num_buffers = system.num_buffers,
                 .id = ch.pd_a_id,
             },
-            .driver_data_offset = i * system.region_data_size,
+            .data_size = system.region_data_size,
+            .meta_size = system.region_meta_size,
+            // vaddrs used to convert offsets in cmd / meta buffers to a pointer used by the driver
+            // .driver_data_vaddr = i * driver_map_data.vaddr,
+            // .driver_meta_vaddr = i * driver_map_meta.vaddr,
+            .driver_data_vaddr = driver_map_data.vaddr,
+            .driver_meta_vaddr = driver_map_meta.vaddr,
+            .client_data_vaddr = client_map_data.vaddr,
+            .client_meta_vaddr = client_map_meta.vaddr,
         };
-        if (i == 0) {
-            system.driver_config.virt.data = .createFromMap(driver_map_data);
-        }
 
-        system.client_configs.items[i] = .{ .virt = .{
+        system.client_configs.items[i] = .{
+            .virt = .{
+                .req_queue = .createFromMap(client_map_req),
+                .resp_queue = .createFromMap(client_map_resp),
+                .num_buffers = system.num_buffers,
+                .id = ch.pd_b_id,
+            },
             .data = .createFromMap(client_map_data),
-            .req_queue = .createFromMap(client_map_req),
-            .resp_queue = .createFromMap(client_map_resp),
-            .num_buffers = system.num_buffers,
-            .id = ch.pd_b_id,
-        } };
+            .meta = .createFromMap(client_map_meta),
+        };
     }
 
     pub fn connect(system: *I2c) !void {
@@ -596,7 +608,7 @@ pub const I2c = struct {
         // 2. Connect the driver to the virtualiser
         system.connectDriver();
 
-        // 3. Connect each client to the virtualiser
+        // 3. Connect each client to the virtualiser (and connect the meta region to the driver)
         for (system.clients.items, 0..) |client, i| {
             system.connectClient(client, i);
         }
