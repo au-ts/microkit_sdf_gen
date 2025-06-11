@@ -423,6 +423,7 @@ pub const SystemDescription = struct {
         arm_smc: ?bool,
         /// If this PD is a child of another PD, this ID identifies it to its parent PD
         child_id: ?u8,
+        child_pts: ?bool,
         /// CPU core
         cpu: ?u8,
 
@@ -442,6 +443,7 @@ pub const SystemDescription = struct {
             period: ?u32 = null,
             stack_size: ?u32 = null,
             arm_smc: ?bool = null,
+            child_pts: ?bool = null,
             cpu: ?u8 = null,
         };
 
@@ -464,6 +466,7 @@ pub const SystemDescription = struct {
                 .budget = options.budget,
                 .period = options.period,
                 .arm_smc = options.arm_smc,
+                .child_pts = options.child_pts,
                 .stack_size = options.stack_size,
                 .child_id = null,
                 .cpu = options.cpu,
@@ -623,6 +626,14 @@ pub const SystemDescription = struct {
                 }
 
                 try std.fmt.format(writer, " smc=\"{}\"", .{smc});
+            }
+
+            if (pd.child_pts) |child_pts| {
+                if (pd.child_pds.items.len == 0) {
+                    log.err("attempted to enable child_pts mapping in a node with no children\n", .{});
+                    return error.InvalidChildPts;
+                }
+                try std.fmt.format(writer, " child_pts=\"{}\"", .{child_pts});
             }
 
             if (pd.cpu) |cpu| {

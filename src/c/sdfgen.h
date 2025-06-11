@@ -53,6 +53,7 @@ void sdfgen_pd_set_budget(void *pd, uint32_t budget);
 void sdfgen_pd_set_period(void *pd, uint32_t period);
 void sdfgen_pd_set_stack_size(void *pd, uint32_t stack_size);
 void sdfgen_pd_set_cpu(void *pd, uint8_t cpu);
+void sdfgen_pd_set_child_pts(void *pd, bool child_pts);
 void sdfgen_pd_set_passive(void *pd, bool passive);
 bool sdfgen_pd_set_virtual_machine(void *pd, void *vm);
 
