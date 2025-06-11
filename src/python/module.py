@@ -451,6 +451,7 @@ class SystemDescription:
             period: Optional[int] = None,
             passive: Optional[bool] = None,
             stack_size: Optional[int] = None,
+            child_pts: Optional[bool] = None,
             cpu: Optional[int] = None,
         ) -> None:
             self._name = name
@@ -470,6 +471,8 @@ class SystemDescription:
                 libsdfgen.sdfgen_pd_set_stack_size(self._obj, stack_size)
             if cpu is not None:
                 libsdfgen.sdfgen_pd_set_cpu(self._obj, cpu)
+            if child_pts is not None:
+                libsdfgen.sdfgen_pd_set_child_pts(self._obj, child_pts)
 
         @property
         def name(self) -> str:
