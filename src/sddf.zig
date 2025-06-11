@@ -650,8 +650,8 @@ pub const Spi = struct {
     clients: std.ArrayList(*Pd),
     region_req_size: usize,
     region_resp_size: usize,
-    region_data_size: usize,
-    region_meta_size: usize,
+    region_control_size: usize,
+    region_buffer_size: usize,
     driver_config: ConfigResources.Spi.Driver,
     virt_config: ConfigResources.Spi.Virt,
     client_configs: std.ArrayList(ConfigResources.Spi.Client),
@@ -664,8 +664,8 @@ pub const Spi = struct {
     pub const Options = struct {
         region_req_size: usize = 0x1000,
         region_resp_size: usize = 0x1000,
-        region_data_size: usize = 0x1000,
-        region_meta_size: usize = 0x10000,
+        region_control_size: usize = 0x1000,
+        region_buffer_size: usize = 0x10000,
     };
 
     pub fn init(allocator: Allocator, sdf: *SystemDescription, device: ?*dtb.Node, driver: *Pd, virt: *Pd, options: Options) Spi {
@@ -679,8 +679,8 @@ pub const Spi = struct {
             .virt = virt,
             .region_req_size = options.region_req_size,
             .region_resp_size = options.region_resp_size,
-            .region_data_size = options.region_data_size,
-            .region_meta_size = options.region_meta_size,
+            .region_control_size = options.region_control_size,
+            .region_buffer_size = options.region_buffer_size,
             .driver_config = std.mem.zeroInit(ConfigResources.Spi.Driver, .{}),
             .virt_config = std.mem.zeroInit(ConfigResources.Spi.Virt, .{}),
             .client_configs = std.ArrayList(ConfigResources.Spi.Client).init(allocator),
@@ -765,20 +765,20 @@ pub const Spi = struct {
 
         const mr_req = Mr.create(allocator, fmt(allocator, "spi_client_request_{s}", .{client.name}), system.region_req_size, .{});
         const mr_resp = Mr.create(allocator, fmt(allocator, "spi_client_response_{s}", .{client.name}), system.region_resp_size, .{});
-        const mr_data = Mr.create(allocator, fmt(allocator, "spi_client_data_{s}", .{client.name}), system.region_data_size, .{});
-        const mr_meta = Mr.create(allocator, fmt(allocator, "spi_client_meta_{s}", .{client.name}), system.region_meta_size, .{});
+        const mr_control = Mr.create(allocator, fmt(allocator, "spi_client_control_{s}", .{client.name}), system.region_control_size, .{});
+        const mr_buffer = Mr.create(allocator, fmt(allocator, "spi_client_buffer_{s}", .{client.name}), system.region_buffer_size, .{});
 
         sdf.addMemoryRegion(mr_req);
         sdf.addMemoryRegion(mr_resp);
-        sdf.addMemoryRegion(mr_data);
-        sdf.addMemoryRegion(mr_meta);
+        sdf.addMemoryRegion(mr_control);
+        sdf.addMemoryRegion(mr_buffer);
 
-        const driver_map_data = Map.create(mr_data, system.driver.getMapVaddr(&mr_data), .rw, .{});
-        driver.addMap(driver_map_data);
+        const driver_map_control = Map.create(mr_control, system.driver.getMapVaddr(&mr_control), .rw, .{});
+        driver.addMap(driver_map_control);
 
-        // The meta region backs buffers in the data region. Accessed only by driver and client.
-        const driver_map_meta = Map.create(mr_meta, system.driver.getMapVaddr(&mr_meta), .rw, .{ .cached = false });
-        driver.addMap(driver_map_meta);
+        // The buffer region backs buffers in the control region. Accessed only by driver and client.
+        const driver_map_buffer = Map.create(mr_buffer, system.driver.getMapVaddr(&mr_buffer), .rw, .{ .cached = false });
+        driver.addMap(driver_map_buffer);
 
         const virt_map_req = Map.create(mr_req, system.virt.getMapVaddr(&mr_req), .rw, .{});
         virt.addMap(virt_map_req);
@@ -790,17 +790,17 @@ pub const Spi = struct {
         const client_map_resp = Map.create(mr_resp, client.getMapVaddr(&mr_resp), .rw, .{});
         client.addMap(client_map_resp);
 
-        const client_map_data = Map.create(mr_data, client.getMapVaddr(&mr_data), .rw, .{});
-        client.addMap(client_map_data);
-        const client_map_meta = Map.create(mr_meta, client.getMapVaddr(&mr_meta), .rw, .{ .cached = false });
-        client.addMap(client_map_meta);
+        const client_map_control = Map.create(mr_control, client.getMapVaddr(&mr_control), .rw, .{});
+        client.addMap(client_map_control);
+        const client_map_buffer = Map.create(mr_buffer, client.getMapVaddr(&mr_buffer), .rw, .{ .cached = false });
+        client.addMap(client_map_buffer);
 
         // Create a channel between the virtualiser and client
         const ch = Channel.create(virt, client, .{ .pp = .b }) catch unreachable;
         sdf.addChannel(ch);
 
         // The below section originally passed the virt a region structure with no vaddr for the
-        // data region. Instead of doing this, just pass the size of the region.
+        // control region. Instead of doing this, just pass the size of the region.
         system.virt_config.clients[i] = .{
             .conn = .{
                 .req_queue = .createFromMap(virt_map_req),
@@ -808,15 +808,15 @@ pub const Spi = struct {
                 .num_buffers = system.num_buffers,
                 .id = ch.pd_a_id,
             },
-            .data_size = system.region_data_size,
-            .meta_size = system.region_meta_size,
-            // vaddrs used to convert offsets in cmd / meta buffers to a pointer used by the driver
-            // .driver_data_vaddr = i * driver_map_data.vaddr,
-            // .driver_meta_vaddr = i * driver_map_meta.vaddr,
-            .driver_data_vaddr = driver_map_data.vaddr,
-            .driver_meta_vaddr = driver_map_meta.vaddr,
-            .client_data_vaddr = client_map_data.vaddr,
-            .client_meta_vaddr = client_map_meta.vaddr,
+            .control_size = system.region_control_size,
+            .buffer_size = system.region_buffer_size,
+            // vaddrs used to convert offsets in cmd / buffer buffers to a pointer used by the driver
+            // .driver_control_vaddr = i * driver_map_control.vaddr,
+            // .driver_buffer_vaddr = i * driver_map_buffer.vaddr,
+            .driver_control_vaddr = driver_map_control.vaddr,
+            .driver_buffer_vaddr = driver_map_buffer.vaddr,
+            .client_control_vaddr = client_map_control.vaddr,
+            .client_buffer_vaddr = client_map_buffer.vaddr,
         };
 
         system.client_configs.items[i] = .{
@@ -826,8 +826,8 @@ pub const Spi = struct {
                 .num_buffers = system.num_buffers,
                 .id = ch.pd_b_id,
             },
-            .data = .createFromMap(client_map_data),
-            .meta = .createFromMap(client_map_meta),
+            .control = .createFromMap(client_map_control),
+            .buffer = .createFromMap(client_map_buffer),
         };
     }
 
@@ -841,7 +841,7 @@ pub const Spi = struct {
         // 2. Connect the driver to the virtualiser
         system.connectDriver();
 
-        // 3. Connect each client to the virtualiser (and connect the meta region to the driver)
+        // 3. Connect each client to the virtualiser (and connect the buffer region to the driver)
         for (system.clients.items, 0..) |client, i| {
             system.connectClient(client, i);
         }

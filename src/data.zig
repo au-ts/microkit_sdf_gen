@@ -237,12 +237,12 @@ pub const Resources = struct {
         pub const Virt = extern struct {
             pub const Client = extern struct {
                 conn: Connection,
-                data_size: usize,
-                meta_size: usize,
-                driver_data_vaddr: u64,
-                driver_meta_vaddr: u64, // vaddr as mapped into driver
-                client_data_vaddr: u64,
-                client_meta_vaddr: u64,
+                control_size: usize,
+                buffer_size: usize,
+                driver_control_vaddr: u64,
+                driver_buffer_vaddr: u64, // vaddr as mapped into driver
+                client_control_vaddr: u64,
+                client_buffer_vaddr: u64,
             };
 
             magic: [5]u8 = MAGIC,
@@ -259,8 +259,8 @@ pub const Resources = struct {
         pub const Client = extern struct {
             magic: [5]u8 = MAGIC,
             virt: Connection,
-            data: Region,
-            meta: Region,
+            control: Region,
+            buffer: Region,
         };
     };
 
