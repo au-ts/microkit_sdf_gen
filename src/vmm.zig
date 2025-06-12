@@ -176,7 +176,7 @@ pub fn addPassthroughDeviceIrq(system: *Self, interrupt: []u32) !void {
     const irq_id = try system.vmm.addIrq(irq);
     system.data.irqs[system.data.num_irqs] = .{
         .id = irq_id,
-        .irq = irq.irq,
+        .irq = irq.getNumber(),
     };
     system.data.num_irqs += 1;
 }
@@ -259,7 +259,7 @@ fn addVirtioMmioDevice(system: *Self, device: *dtb.Node, t: Data.VirtioMmioDevic
         .type = @intFromEnum(t),
         .addr = device_paddr,
         .size = @intCast(device_size),
-        .irq = irq.irq,
+        .irq = irq.getNumber(),
     };
     system.data.num_virtio_mmio_devices += 1;
 }
@@ -283,7 +283,7 @@ pub fn addPassthroughIrq(system: *Self, irq: Irq) !void {
     const irq_id = try system.vmm.addIrq(irq);
     system.data.irqs[system.data.num_irqs] = .{
         .id = irq_id,
-        .irq = irq.irq,
+        .irq = irq.getNumber(),
     };
     system.data.num_irqs += 1;
 }
