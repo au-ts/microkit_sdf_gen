@@ -725,34 +725,137 @@ pub const SystemDescription = struct {
     };
 
     pub const Irq = struct {
-        /// IRQ number that will be registered with seL4. That means that this
-        /// number needs to map onto what seL4 observes (e.g the numbers in the
-        /// device tree do not necessarily map onto what seL4 sees on ARM).
-        irq: u32,
-        trigger: ?Trigger,
-        id: ?u8,
-
         pub const Trigger = enum(u8) {
             edge,
             level,
         };
 
-        pub const Options = struct {
-            trigger: ?Trigger = null,
-            id: ?u8 = null,
+        pub const IoapicPolarity = enum(u8) {
+            activeHigh,
+            activeLow,
         };
 
-        pub fn create(irq: u32, options: Options) Irq {
-            return .{ .irq = irq, .trigger = options.trigger, .id = options.id };
+        const Kind = union(enum) {
+            Simple: struct {
+                irq:     u32,
+                trigger: ?Trigger,
+            },
+
+            //  @billn: double check which one is optional
+            IOAPIC: struct {
+                ioapic:   u64,
+                pin:      u64,
+                trigger:  ?Trigger,
+                polarity: u64,
+                vector:   u64,
+            },
+
+            MSI: struct {
+                pci_bus:  u8, // 8 bits
+                pci_dev:  u8, // 5 bits
+                pci_func: u8, // 3 bits
+                handle:   u64, // @billn double check type, and wtf does this do anyways?? double check in Mat's uKit tool
+                vector:   u64,
+            },
+        };
+
+        arch: Arch,
+        kind: Kind,
+
+        /// IRQ on all architectures need to map to a channel
+        id: ?u8,
+
+        pub fn getNumber(irq: *const Irq) u32 {
+            switch (irq.kind) {
+                .Simple => |s_irq| {
+                    return s_irq.irq;
+                },
+                else => {
+                    @panic("Irq.getNumber() called on non-conventional IRQ.\n");
+                }
+            }
         }
 
-        pub fn render(irq: *const Irq, writer: ArrayList(u8).Writer, separator: []const u8) !void {
-            // By the time we get here, something should have populated the 'id' field.
-            std.debug.assert(irq.id != null);
+        pub fn getTrigger(irq: *const Irq) ?Trigger {
+            switch (irq.kind) {
+                .Simple => |s_irq| {
+                    return s_irq.trigger;
+                },
+                .IOAPIC => |i_irq| {
+                    return i_irq.trigger;
+                },
+                else => {
+                    @panic("Irq.getTrigger() called on MSI.\n");
+                }
+            }
+        }
 
-            try std.fmt.format(writer, "{s}<irq irq=\"{}\" id=\"{}\"", .{ separator, irq.irq, irq.id.? });
-            if (irq.trigger) |trigger| {
-                try std.fmt.format(writer, " trigger=\"{s}\"", .{@tagName(trigger)});
+        pub const Options = struct {
+            trigger: ?Trigger = null,
+            ch_id: ?u8 = null,
+        };
+
+        pub fn create(irq: u32, arch: Arch, options: Options) !Irq {
+            if (Arch.isX86(arch)) {
+                log.err("failed to create simple irq {} as it is not supported on x86 architectures\n", .{irq});
+                return error.InvalidIrq;
+            }
+            return .{
+                .arch = arch,
+                .id   = options.ch_id,
+                .kind = .{
+                    .Simple = .{
+                        .irq = irq,
+                        .trigger = options.trigger,
+                    },
+                },
+            };
+        }
+
+        // pub const IoapicOptions = struct {
+        //     ioapic_id: ?u64 = null,
+        //     polarity: ?IoapicPolarity = null,
+        //     trigger: ?Trigger = null,
+        //     ch_id: ?u8 = null,
+        // };
+
+        // pub fn createIoapic(pin: u64, vector: u8, arch: Arch, options: IoapicOptions) !Irq {
+        //     if (Arch.isX86(arch)) {
+        //         log.err("failed to create IOAPIC irq at pin {} with vector {} as it is not supported on non-x86 architectures\n", .{pin, vector});
+        //         return error.InvalidIrq;
+        //     }
+        //     return .{ .arch = arch, .type = IrqType.ioapic, .trigger = options.trigger, .ioapic_id = options.ioapic_id, .ioapic_pin = pin, .ioapic_polarity = options.polarity, .vector = vector, .id = options.ch_id };
+        // }
+
+        // pub const MsiOptions = struct {
+        //     ch_id: ?u8 = null,
+        // };
+
+        // pub fn createMsi(msi_pci_bus: u8, msi_pci_device: u8, msi_pci_func: u8, vector: u64, handle: u64, arch: Arch, options: MsiOptions) !Irq {
+        //     // @billn: double check does MSI exist on arm and riscv??
+        //     return .{ .arch = arch, .type = IrqType.msi, .msi_pci_bus = msi_pci_bus, .msi_pci_device = msi_pci_device, .msi_pci_func = msi_pci_func, .vector = vector, .msi_handle = handle, .id = options.ch_id };
+        // }
+
+        pub fn render(irq: *const Irq, writer: ArrayList(u8).Writer, separator: []const u8) !void {
+            // // By the time we get here, something should have populated the 'id' field.
+            // std.debug.assert(irq.id != null);
+
+            try std.fmt.format(writer, "{s}<irq ", .{separator});
+
+            switch (irq.kind) {
+                .Simple => |s| {
+                    try std.fmt.format(writer, "irq=\"{}\" id=\"{}\"", .{ s.irq, irq.id.? });
+                    if (s.trigger) |trigger| {
+                        try std.fmt.format(writer, " trigger=\"{s}\"", .{@tagName(trigger)});
+                    }
+                },
+                .IOAPIC => |i| {
+                    _ = i; // @billn todo
+                },
+                .MSI => |m| {
+                    _ = m;
+                    // try std.fmt.format(writer, "pcidev=\"{}:{}.{}\" handle=\"{}\" vector=\"{}\" id=\"{}\"", .{ m.msi_pci_bus, m.msi_pci_device, m.msi_pci_func, m.msi_handle, m.vector, m.id.? });
+                }
             }
 
             _ = try writer.write(" />\n");

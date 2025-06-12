@@ -347,6 +347,12 @@ fn findDriver(compatibles: []const []const u8, class: Config.Driver.Class) ?Conf
 /// all the resources that need to be added to the system description.
 pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: *dtb.Node, class: Config.Driver.Class, device_res: *ConfigResources.Device) !void {
     if (!probed) return error.CalledBeforeProbe;
+
+    if (SystemDescription.Arch.isX86(sdf.arch)) {
+        // No DTB on x86.
+        return;
+    }
+
     // First thing to do is find the driver configuration for the device given.
     // The way we do that is by searching for the compatible string described in the DTB node.
     const compatible = device.prop(.Compatible).?;
@@ -482,11 +488,14 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: *dtb.Node, class: 
         const dt_irq = dt_irqs[driver_irq.dt_index];
 
         const irq = try dtb.parseIrq(sdf.arch, dt_irq);
-        const irq_id = try pd.addIrq(.{
-            .irq = irq.irq,
-            .trigger = irq.trigger,
-            .id = driver_irq.channel_id,
-        });
+        const irq_id = try pd.addIrq(try Irq.create(
+            irq.getNumber(),
+            sdf.arch,
+            .{
+                .ch_id = driver_irq.channel_id,
+                .trigger = irq.getTrigger()
+            }
+        ));
 
         device_res.irqs[device_res.num_irqs] = .{
             .id = irq_id,
