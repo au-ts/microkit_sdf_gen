@@ -82,9 +82,9 @@ libsdfgen.sdfgen_map_destroy.restype = None
 libsdfgen.sdfgen_map_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_mr_create.restype = c_void_p
-libsdfgen.sdfgen_mr_create.argtypes = [c_char_p, c_uint64]
+libsdfgen.sdfgen_mr_create.argtypes = [c_char_p, c_uint64, POINTER(c_uint64)]
 libsdfgen.sdfgen_mr_create_physical.restype = c_void_p
-libsdfgen.sdfgen_mr_create_physical.argtypes = [c_char_p, c_uint64, c_uint64]
+libsdfgen.sdfgen_mr_create_physical.argtypes = [c_char_p, c_uint64, c_uint64, POINTER(c_uint64)]
 libsdfgen.sdfgen_mr_get_paddr.restype = c_bool
 libsdfgen.sdfgen_mr_get_paddr.argtypes = [c_void_p, POINTER(c_uint64)]
 
@@ -327,6 +327,15 @@ def ffi_uint32_ptr(n: Optional[int]):
 
     return pointer(c_uint32(n))
 
+def ffi_uint64_ptr(n: Optional[int]):
+    """
+    Convert an int value to a uint64_t pointer for FFI.
+    If 'n' is None then we return None (which acts as a null pointer)
+    """
+    if n is None:
+        return None
+
+    return pointer(c_uint64(n))
 
 def ffi_bool_ptr(val: Optional[bool]):
     """
@@ -570,19 +579,25 @@ class SystemDescription:
     class MemoryRegion:
         _obj: c_void_p
 
+        # TODO: handle different page sizes
+        class PageSize(IntEnum):
+            SmallPage = 0x1000,
+            LargePage = 0x200000,
+
         # TODO: handle more options
         def __init__(
             self,
             name: str,
             size: int,
+            page_size: Optional[PageSize] = None,
             *,
             paddr: Optional[int] = None
         ) -> None:
             c_name = c_char_p(name.encode("utf-8"))
             if paddr:
-                self._obj = libsdfgen.sdfgen_mr_create_physical(c_name, size, paddr)
+                self._obj = libsdfgen.sdfgen_mr_create_physical(c_name, size, paddr, ffi_uint64_ptr(page_size))
             else:
-                self._obj = libsdfgen.sdfgen_mr_create(c_name, size)
+                self._obj = libsdfgen.sdfgen_mr_create(c_name, size, ffi_uint64_ptr(page_size))
 
         @property
         def paddr(self):

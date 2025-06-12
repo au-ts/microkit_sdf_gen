@@ -306,16 +306,44 @@ export fn sdfgen_irq_destroy(c_irq: *align(8) anyopaque) void {
     allocator.destroy(irq);
 }
 
-export fn sdfgen_mr_create(name: [*c]u8, size: u64) *anyopaque {
+export fn sdfgen_mr_create(name: [*c]u8, size: u64, page_size: [*c]u64) ?*anyopaque {
     const mr = allocator.create(Mr) catch @panic("OOM");
-    mr.* = Mr.create(allocator, std.mem.span(name), size, .{});
+
+    var options: Mr.Options = .{};
+    if (page_size != null) {
+        const page_size_enum: Mr.PageSize = switch (page_size.*) {
+            0x1000 => .small,
+            0x200000 => .large,
+            else => {
+                log.err("Could not create page with size: {}", .{page_size.*});
+                return null;
+            },
+        };
+        options.page_size = page_size_enum;
+    }
+
+    mr.* = Mr.create(allocator, std.mem.span(name), size, options);
 
     return mr;
 }
 
-export fn sdfgen_mr_create_physical(name: [*c]u8, size: u64, paddr: u64) *anyopaque {
+export fn sdfgen_mr_create_physical(name: [*c]u8, size: u64, paddr: u64, page_size: [*c]u64) ?*anyopaque {
     const mr = allocator.create(Mr) catch @panic("OOM");
-    mr.* = Mr.create(allocator, std.mem.span(name), size, .{});
+
+    var options: Mr.Options = .{};
+    if (page_size != null) {
+        const page_size_enum: Mr.PageSize = switch (page_size.*) {
+            0x1000 => .small,
+            0x200000 => .large,
+            else => {
+                log.err("Could not create page with size: {}", .{page_size.*});
+                return null;
+            },
+        };
+        options.page_size = page_size_enum;
+    }
+
+    mr.* = Mr.create(allocator, std.mem.span(name), size, options);
     mr.paddr = paddr;
 
     return mr;
