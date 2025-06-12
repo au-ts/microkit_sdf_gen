@@ -166,7 +166,9 @@ export fn sdfgen_pd_add_irq(c_pd: *align(8) anyopaque, c_irq: *align(8) anyopaqu
     const irq: *Irq = @ptrCast(c_irq);
 
     const id = pd.addIrq(irq.*) catch |e| {
-        log.err("failed to add IRQ '{}' to PD '{s}': {}", .{ irq.irq, pd.name, e });
+        // @billn: account for multiple types of IRQ
+        log.err("failed to add IRQ to PD '{s}': {}", .{ pd.name, e });
+        // log.err("failed to add IRQ '{}' to PD '{s}': {}", .{ irq.irq, pd.name, e });
         return -1;
     };
 
@@ -281,7 +283,7 @@ export fn sdfgen_sddf_init(path: [*c]u8) bool {
     return true;
 }
 
-export fn sdfgen_irq_create(number: u32, c_trigger: [*c]bindings.sdfgen_irq_trigger_t, c_id: [*c]u8) ?*anyopaque {
+export fn sdfgen_irq_create(number: u32, c_arch: bindings.sdfgen_arch_t, c_trigger: [*c]bindings.sdfgen_irq_trigger_t, c_id: [*c]u8) ?*anyopaque {
     const irq = allocator.create(Irq) catch @panic("OOM");
     var options: Irq.Options = .{};
     if (c_trigger != null) {
@@ -296,10 +298,26 @@ export fn sdfgen_irq_create(number: u32, c_trigger: [*c]bindings.sdfgen_irq_trig
         options.trigger = trigger;
     }
     if (c_id != null) {
-        options.id = c_id.*;
+        options.ch_id = c_id.*;
     }
 
-    irq.* = Irq.create(number, options);
+    // @billn: put this in a helper function rather than copy pasta
+    const arch: Arch = @enumFromInt(c_arch);
+    // Double check that there is a one-to-one mapping between the architecture for
+    // the C enum and the Zig enum.
+    switch (arch) {
+        .aarch32 => std.debug.assert(c_arch == 0),
+        .aarch64 => std.debug.assert(c_arch == 1),
+        .riscv32 => std.debug.assert(c_arch == 2),
+        .riscv64 => std.debug.assert(c_arch == 3),
+        .x86 => std.debug.assert(c_arch == 4),
+        .x86_64 => std.debug.assert(c_arch == 5),
+    }
+
+    irq.* = Irq.create(number, arch, options) catch |e| {
+        log.err("failed to create conventional IRQ number {}: {any}", .{ number, e });
+        return null;
+    };
 
     return irq;
 }
@@ -783,7 +801,7 @@ export fn sdfgen_vmm_add_passthrough_irq(c_vmm: *align(8) anyopaque, c_irq: *ali
     const vmm: *Vmm = @ptrCast(c_vmm);
     const irq: *Irq = @ptrCast(c_irq);
     vmm.addPassthroughIrq(irq.*) catch |e| {
-        log.err("failed to add passthrough IRQ '{}' to VMM '{s}': {any}", .{ irq.irq, vmm.vmm.name, e });
+        log.err("failed to add passthrough IRQ '{}' to VMM '{s}': {any}", .{ irq.getNumber(), vmm.vmm.name, e });
         return false;
     };
 
