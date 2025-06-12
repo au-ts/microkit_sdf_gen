@@ -114,28 +114,28 @@ pub const FileSystem = struct {
             }
         };
 
-        const server_command_map = Map.create(fs_command_queue, options.command_vaddr orelse fs.getMapVaddr(&fs_command_queue), .rw, .{ .cached = options.cached });
+        const server_command_map = Map.create(allocator, fs_command_queue, options.command_vaddr orelse fs.getMapVaddr(&fs_command_queue), .rw, .{ .cached = options.cached });
         system.server_config.client.command_queue = .createFromMap(server_command_map);
         createMapping(fs, server_command_map);
 
-        const server_completion_map = Map.create(fs_completion_queue, options.completion_vaddr orelse fs.getMapVaddr(&fs_completion_queue), .rw, .{ .cached = options.cached });
+        const server_completion_map = Map.create(allocator, fs_completion_queue, options.completion_vaddr orelse fs.getMapVaddr(&fs_completion_queue), .rw, .{ .cached = options.cached });
         system.server_config.client.completion_queue = .createFromMap(server_completion_map);
         createMapping(fs, server_completion_map);
 
-        const server_share_map = Map.create(fs_share, options.share_vaddr orelse fs.getMapVaddr(&fs_share), .rw, .{ .cached = options.cached });
+        const server_share_map = Map.create(allocator, fs_share, options.share_vaddr orelse fs.getMapVaddr(&fs_share), .rw, .{ .cached = options.cached });
         system.server_config.client.share = .createFromMap(server_share_map);
         createMapping(fs, server_share_map);
 
-        const client_command_map = Map.create(fs_command_queue, client.getMapVaddr(&fs_command_queue), .rw, .{ .cached = options.cached });
+        const client_command_map = Map.create(allocator, fs_command_queue, client.getMapVaddr(&fs_command_queue), .rw, .{ .cached = options.cached });
         system.client.addMap(client_command_map);
         system.client_config.server.command_queue = .createFromMap(client_command_map);
 
-        const client_completion_map = Map.create(fs_completion_queue, client.getMapVaddr(&fs_completion_queue), .rw, .{ .cached = options.cached });
+        const client_completion_map = Map.create(allocator, fs_completion_queue, client.getMapVaddr(&fs_completion_queue), .rw, .{ .cached = options.cached });
 
         system.client.addMap(client_completion_map);
         system.client_config.server.completion_queue = .createFromMap(client_completion_map);
 
-        const client_share_map = Map.create(fs_share, client.getMapVaddr(&fs_share), .rw, .{ .cached = options.cached });
+        const client_share_map = Map.create(allocator, fs_share, client.getMapVaddr(&fs_share), .rw, .{ .cached = options.cached });
         system.client.addMap(client_share_map);
         system.client_config.server.share = .createFromMap(client_share_map);
 
@@ -258,10 +258,10 @@ pub const FileSystem = struct {
             sdf.addMemoryRegion(stack2);
             sdf.addMemoryRegion(stack3);
             sdf.addMemoryRegion(stack4);
-            fs_pd.addMap(.create(stack1, 0xA0_000_000, .rw, .{ .setvar_vaddr = "worker_thread_stack_one" }));
-            fs_pd.addMap(.create(stack2, 0xB0_000_000, .rw, .{ .setvar_vaddr = "worker_thread_stack_two" }));
-            fs_pd.addMap(.create(stack3, 0xC0_000_000, .rw, .{ .setvar_vaddr = "worker_thread_stack_three" }));
-            fs_pd.addMap(.create(stack4, 0xD0_000_000, .rw, .{ .setvar_vaddr = "worker_thread_stack_four" }));
+            fs_pd.addMap(.create(allocator, stack1, 0xA0_000_000, .rw, .{ .setvar_vaddr = "worker_thread_stack_one" }));
+            fs_pd.addMap(.create(allocator, stack2, 0xB0_000_000, .rw, .{ .setvar_vaddr = "worker_thread_stack_two" }));
+            fs_pd.addMap(.create(allocator, stack3, 0xC0_000_000, .rw, .{ .setvar_vaddr = "worker_thread_stack_three" }));
+            fs_pd.addMap(.create(allocator, stack4, 0xD0_000_000, .rw, .{ .setvar_vaddr = "worker_thread_stack_four" }));
         }
 
         pub fn serialiseConfig(fat: *Fat, prefix: []const u8) !void {
@@ -363,11 +363,11 @@ pub const FileSystem = struct {
             vmfs.fs_vm_sys.sdf.addMemoryRegion(config_share_region);
 
             // Finally map everything in
-            const guest_config_share_map = Map.create(config_share_region, config_share_guest_paddr, .rw, .{ .cached = false });
+            const guest_config_share_map = Map.create(allocator, config_share_region, config_share_guest_paddr, .rw, .{ .cached = false });
             vmfs.fs_vm_sys.guest.addMap(guest_config_share_map);
 
             const vmm_config_share_map_vaddr = vmfs.fs_vm_sys.vmm.getMapVaddr(&config_share_region);
-            const vmm_config_share_map = Map.create(config_share_region, vmm_config_share_map_vaddr, .rw, .{ .cached = false });
+            const vmm_config_share_map = Map.create(allocator, config_share_region, vmm_config_share_map_vaddr, .rw, .{ .cached = false });
             vmfs.fs_vm_sys.vmm.addMap(vmm_config_share_map);
 
             // Update the UIO book keeping data in the VM system. This is why config serialisation must be deferred until everything is set up.
