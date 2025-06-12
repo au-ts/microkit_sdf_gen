@@ -277,19 +277,29 @@ pub const SystemDescription = struct {
         };
 
         // TODO: make vaddr optional so its easier to allocate it automatically
-        pub fn create(mr: MemoryRegion, vaddr: u64, perms: Perms, options: Options) Map {
+        pub fn create(allocator: Allocator, mr: MemoryRegion, vaddr: u64, perms: Perms, options: Options) Map {
             if (!perms.valid()) {
                 log.err("error creating mapping for '{s}': invalid permissions given", .{mr.name});
                 @panic("todo");
             }
 
-            return Map{
-                .mr = mr,
-                .vaddr = vaddr,
-                .perms = perms,
-                .cached = options.cached,
-                .setvar_vaddr = options.setvar_vaddr,
-            };
+            if (options.setvar_vaddr) |setvar_vaddr| {
+                return Map{
+                    .mr = mr,
+                    .vaddr = vaddr,
+                    .perms = perms,
+                    .cached = options.cached,
+                    .setvar_vaddr = allocator.dupe(u8, setvar_vaddr) catch @panic("Could not allocate options.setvar_vaddr for Map"),
+                };
+            } else {
+                return Map{
+                    .mr = mr,
+                    .vaddr = vaddr,
+                    .perms = perms,
+                    .cached = options.cached,
+                    .setvar_vaddr = options.setvar_vaddr,
+                };
+            }
         }
 
         pub fn render(map: *const Map, writer: ArrayList(u8).Writer, separator: []const u8) !void {
