@@ -414,6 +414,8 @@ pub const SystemDescription = struct {
         child_pds: ArrayList(*ProtectionDomain),
         /// The length of this array is bound by the maximum number of IRQs a PD can have.
         irqs: ArrayList(Irq),
+        /// The length of this array is bound by the maximum number of I/O Ports a PD can have.
+        ioports: ArrayList(IoPort),
         vm: ?*VirtualMachine,
         /// Keeping track of what IDs are available for channels, IRQs, etc
         channel_ids: std.bit_set.StaticBitSet(MAX_IDS),
@@ -431,6 +433,7 @@ pub const SystemDescription = struct {
         // Matches Microkit implementation
         const MAX_IDS: u8 = 62;
         const MAX_IRQS: u8 = MAX_IDS;
+        const MAX_IOPORTS: u8 = MAX_IDS;
         const MAX_CHILD_PDS: u8 = MAX_IDS;
 
         pub const DEFAULT_PRIORITY: u8 = 100;
@@ -455,6 +458,7 @@ pub const SystemDescription = struct {
                 .maps = ArrayList(Map).init(allocator),
                 .child_pds = ArrayList(*ProtectionDomain).initCapacity(allocator, MAX_CHILD_PDS) catch @panic("Could not allocate child_pds"),
                 .irqs = ArrayList(Irq).initCapacity(allocator, MAX_IRQS) catch @panic("Could not allocate irqs"),
+                .ioports = ArrayList(IoPort).initCapacity(allocator, MAX_IOPORTS) catch @panic("Could not allocate I/O Ports"),
                 .vm = null,
                 .channel_ids = std.bit_set.StaticBitSet(MAX_IDS).initEmpty(),
                 .child_ids = std.bit_set.StaticBitSet(MAX_IDS).initEmpty(),
@@ -480,7 +484,7 @@ pub const SystemDescription = struct {
             pd.irqs.deinit();
         }
 
-        /// There may be times where PD resources with an ID, such as a channel
+        /// There may be times where a PD resources is attached with an ID, such as a channel
         /// or IRQ require a fixed ID while others do not. One example might be
         /// that an IRQ needs to be at a particular ID while the channel numbers
         /// do not matter.
@@ -528,6 +532,19 @@ pub const SystemDescription = struct {
                 irq_with_id.id = try allocateId(&pd.channel_ids, null);
                 try pd.irqs.append(irq_with_id);
                 return irq_with_id.id.?;
+            }
+        }
+
+        pub fn addIoPort(pd: *ProtectionDomain, ioport: IoPort) !u8 {
+            if (ioport.ch_id) |id| {
+                _ = try allocateId(&pd.channel_ids, id);
+                try pd.ioports.append(ioport);
+                return id;
+            } else {
+                var ioport_with_id = ioport;
+                ioport_with_id.ch_id = try allocateId(&pd.channel_ids, null);
+                try pd.ioports.append(ioport_with_id);
+                return ioport_with_id.ch_id.?;
             }
         }
 
@@ -731,8 +748,8 @@ pub const SystemDescription = struct {
         };
 
         pub const IoapicPolarity = enum(u8) {
-            activeHigh,
             activeLow,
+            activeHigh,
         };
 
         const Kind = union(enum) {
@@ -883,6 +900,38 @@ pub const SystemDescription = struct {
             }
 
             _ = try writer.write(" />\n");
+        }
+    };
+
+    pub const IoPort = struct {
+        // Valid for x86 arch only!
+
+        addr: u16,
+        size: u16,
+        ch_id: ?u8,
+
+        pub const Options = struct {
+            ch_id: ?u8 = null,
+        };
+
+        pub fn create(addr: u16, size: u16, arch: Arch, options: Options) !IoPort {
+            if (!Arch.isX86(arch)) {
+                log.err("failed to create I/O Port @ {} as it is unsupported on non-x86 architectures\n", .{addr});
+                return error.InvalidIrq;
+            }
+            return .{
+                .addr = addr,
+                .size = size,
+                .ch_id = options.ch_id,
+            };
+        }
+
+        pub fn render(ioport: *const IoPort, writer: ArrayList(u8).Writer, separator: []const u8) !void {
+            // By the time we get here, something should have populated the 'id' field.
+            std.debug.assert(ioport.id != null);
+
+            try std.fmt.format(writer, "{s}<ioport id=\"{}\" addr=\"{}\" size=\"{}\" />\n", .{separator, ioport.id, ioport.addr, ioport.size});
+
         }
     };
 
