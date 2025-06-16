@@ -907,7 +907,7 @@ pub const Serial = struct {
     data_size: usize,
     queue_size: usize,
     driver: *Pd,
-    device: *dtb.Node,
+    device: ?*dtb.Node,
     device_res: ConfigResources.Device,
     virt_rx: ?*Pd,
     virt_tx: *Pd,
@@ -938,7 +938,7 @@ pub const Serial = struct {
         begin_str: [:0]const u8 = DEFAULT_BEGIN_STR,
     };
 
-    pub fn init(allocator: Allocator, sdf: *SystemDescription, device: *dtb.Node, driver: *Pd, virt_tx: *Pd, options: Options) Error!Serial {
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, device: ?*dtb.Node, driver: *Pd, virt_tx: *Pd, options: Options) Error!Serial {
         if (std.mem.eql(u8, driver.name, virt_tx.name)) {
             log.err("invalid serial tx virtualiser, same name as driver '{s}", .{virt_tx.name});
             return Error.InvalidVirt;
@@ -1003,7 +1003,7 @@ pub const Serial = struct {
     }
 
     fn createConnection(system: *Serial, server: *Pd, client: *Pd, server_conn: *ConfigResources.Serial.Connection, client_conn: *ConfigResources.Serial.Connection) void {
-        const queue_mr_name = fmt(system.allocator, "{s}/serial/queue/{s}/{s}", .{ system.device.name, server.name, client.name });
+        const queue_mr_name = fmt(system.allocator, "{s}/serial/queue/{s}/{s}", .{ if (system.device) |dtb_node| dtb_node.name else "generic_serial", server.name, client.name });
         const queue_mr = Mr.create(system.allocator, queue_mr_name, system.queue_size, .{});
         system.sdf.addMemoryRegion(queue_mr);
 
@@ -1015,7 +1015,7 @@ pub const Serial = struct {
         client.addMap(queue_mr_client_map);
         client_conn.queue = .createFromMap(queue_mr_client_map);
 
-        const data_mr_name = fmt(system.allocator, "{s}/serial/data/{s}/{s}", .{ system.device.name, server.name, client.name });
+        const data_mr_name = fmt(system.allocator, "{s}/serial/data/{s}/{s}", .{ if (system.device) |dtb_node| dtb_node.name else "generic_serial", server.name, client.name });
         const data_mr = Mr.create(system.allocator, data_mr_name, system.data_size, .{});
         system.sdf.addMemoryRegion(data_mr);
 
@@ -1035,7 +1035,9 @@ pub const Serial = struct {
     }
 
     pub fn connect(system: *Serial) !void {
-        try createDriver(system.sdf, system.driver, system.device, .serial, &system.device_res);
+        if (system.device) |dtb_node| {
+            try createDriver(system.sdf, system.driver, dtb_node, .serial, &system.device_res);
+        }
 
         system.driver_config.default_baud = 115200;
 
