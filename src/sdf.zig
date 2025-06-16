@@ -666,6 +666,9 @@ pub const SystemDescription = struct {
             for (pd.irqs.items) |irq| {
                 try irq.render(writer, child_separator);
             }
+            for (pd.ioports.items) |ioport| {
+                try ioport.render(writer, child_separator);
+            }
             for (pd.setvars.items) |setvar| {
                 try setvar.render(writer, child_separator);
             }
@@ -928,9 +931,9 @@ pub const SystemDescription = struct {
 
         pub fn render(ioport: *const IoPort, writer: ArrayList(u8).Writer, separator: []const u8) !void {
             // By the time we get here, something should have populated the 'id' field.
-            std.debug.assert(ioport.id != null);
+            std.debug.assert(ioport.ch_id != null);
 
-            try std.fmt.format(writer, "{s}<ioport id=\"{}\" addr=\"{}\" size=\"{}\" />\n", .{separator, ioport.id, ioport.addr, ioport.size});
+            try std.fmt.format(writer, "{s}<ioport id=\"{}\" addr=\"{}\" size=\"{}\" />\n", .{separator, ioport.ch_id.?, ioport.addr, ioport.size});
 
         }
     };
