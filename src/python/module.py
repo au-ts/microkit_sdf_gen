@@ -78,7 +78,7 @@ libsdfgen.sdfgen_channel_get_pd_b_id.restype = c_uint8
 libsdfgen.sdfgen_channel_get_pd_b_id.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_map_create.restype = c_void_p
-libsdfgen.sdfgen_map_create.argtypes = [c_void_p, c_uint64, MapPermsType, c_bool]
+libsdfgen.sdfgen_map_create.argtypes = [c_void_p, c_uint64, MapPermsType, c_bool, c_char_p]
 libsdfgen.sdfgen_map_get_vaddr.restype = c_uint64
 libsdfgen.sdfgen_map_get_vaddr.argtypes = [c_void_p]
 libsdfgen.sdfgen_map_destroy.restype = None
@@ -367,6 +367,15 @@ def ffi_bool_ptr(val: Optional[bool]):
 
     return pointer(c_bool(val))
 
+def ffi_char_ptr(val: Optional[str]):
+    """
+    Convert a str value to a char pointer for FFI.
+    If 'val' is None then we return None (which acts as a null pointer)
+    """
+    if val is None:
+        return None
+
+    return c_char_p(val.encode("utf-8"))
 
 class DeviceTree:
     """
@@ -593,11 +602,12 @@ class SystemDescription:
             mr: SystemDescription.MemoryRegion,
             vaddr: int,
             perms: str,
+            setvar_vaddr: Optional[str],
             *,
             cached: bool = True,
         ) -> None:
             c_perms = SystemDescription.Map._perms_to_c_bindings(perms)
-            self._obj = libsdfgen.sdfgen_map_create(mr._obj, vaddr, c_perms, cached)
+            self._obj = libsdfgen.sdfgen_map_create(mr._obj, vaddr, c_perms, cached, ffi_char_ptr(setvar_vaddr))
             if self._obj is None:
                 raise Exception("failed to create mapping")
 
