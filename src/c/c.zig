@@ -16,6 +16,7 @@ const Vmm = modsdf.Vmm;
 const SystemDescription = modsdf.sdf.SystemDescription;
 const Pd = SystemDescription.ProtectionDomain;
 const Irq = SystemDescription.Irq;
+const IoPort = SystemDescription.IoPort;
 const Vm = SystemDescription.VirtualMachine;
 const Channel = SystemDescription.Channel;
 const Mr = SystemDescription.MemoryRegion;
@@ -179,6 +180,18 @@ export fn sdfgen_pd_add_irq(c_pd: *align(8) anyopaque, c_irq: *align(8) anyopaqu
     return @intCast(id);
 }
 
+export fn sdfgen_pd_add_ioport(c_pd: *align(8) anyopaque, c_ioport: *align(8) anyopaque) i8 {
+    const pd: *Pd = @ptrCast(c_pd);
+    const ioport: *IoPort = @ptrCast(c_ioport);
+
+    const id = pd.addIoPort(ioport.*) catch |e| {
+        log.err("failed to add I/O Port to PD '{s}': {}", .{ pd.name, e });
+        return -1;
+    };
+
+    return @intCast(id);
+}
+
 export fn sdfgen_pd_set_priority(c_pd: *align(8) anyopaque, priority: u8) void {
     const pd: *Pd = @ptrCast(c_pd);
     pd.priority = priority;
@@ -287,7 +300,6 @@ export fn sdfgen_sddf_init(path: [*c]u8) bool {
     return true;
 }
 
-// @billn: why does trigger and id have to be a pointer? this seems unnecessarily complicated
 export fn sdfgen_irq_create(c_arch: bindings.sdfgen_arch_t, number: u32, c_trigger: [*c]bindings.sdfgen_irq_trigger_t, c_id: [*c]u8) ?*anyopaque {
     const irq = allocator.create(Irq) catch @panic("OOM");
     var options: Irq.Options = .{};
@@ -376,6 +388,27 @@ export fn sdfgen_irq_msi_create(c_arch: bindings.sdfgen_arch_t, pci_bus: u8, pci
 export fn sdfgen_irq_destroy(c_irq: *align(8) anyopaque) void {
     const irq: *Irq = @ptrCast(c_irq);
     allocator.destroy(irq);
+}
+
+export fn sdfgen_ioport_create(c_arch: bindings.sdfgen_arch_t, addr: u16, size: u16, c_id: [*c]u8) ?*anyopaque {
+    const ioport = allocator.create(IoPort) catch @panic("OOM");
+    var options: IoPort.Options = .{};
+    if (c_id != null) {
+        options.ch_id = c_id.*;
+    }
+
+    ioport.* = IoPort.create(addr, size, helper_c_arch_to_enum(c_arch), options) catch |e| {
+        log.err("failed to create I/O Port at {}: {any}", .{ addr, e });
+        allocator.destroy(ioport);
+        return null;
+    };
+
+    return ioport;
+}
+
+export fn sdfgen_ioport_destroy(c_ioport: *align(8) anyopaque) void {
+    const ioport: *IoPort = @ptrCast(c_ioport);
+    allocator.destroy(ioport);
 }
 
 export fn sdfgen_mr_create(name: [*c]u8, size: u64) *anyopaque {
