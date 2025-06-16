@@ -740,14 +740,14 @@ export fn sdfgen_sddf_blk_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
-export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: *align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: *align(8) anyopaque, c_rx_dma_mr: ?*align(8) anyopaque) *anyopaque {
+export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: *align(8) anyopaque, c_rx_dma_mr: ?*align(8) anyopaque) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const net = allocator.create(sddf.Net) catch @panic("OOM");
     const rx_dma_mr: ?*Mr = if (c_rx_dma_mr) |p| @ptrCast(p) else null;
     const options: sddf.Net.Options = .{
         .rx_dma_mr = rx_dma_mr,
     };
-    net.* = sddf.Net.init(allocator, sdf, @ptrCast(c_device), @ptrCast(driver), @ptrCast(virt_tx), @ptrCast(virt_rx), options);
+    net.* = sddf.Net.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt_tx), @ptrCast(virt_rx), options);
 
     return net;
 }
