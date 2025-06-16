@@ -48,6 +48,8 @@ void sdfgen_pd_destroy(void *pd);
 int8_t sdfgen_pd_add_child(void *sdf, void *child_pd, uint8_t *child_id);
 uint64_t sdfgen_pd_get_map_vaddr(void *pd, void *map);
 void sdfgen_pd_add_map(void *pd, void *map);
+uint8_t sdfgen_pd_add_irq(void *pd, void *irq);
+uint8_t sdfgen_pd_add_ioport(void *pd, void *ioport);
 void sdfgen_pd_set_priority(void *pd, uint8_t priority);
 void sdfgen_pd_set_budget(void *pd, uint32_t budget);
 void sdfgen_pd_set_period(void *pd, uint32_t period);
@@ -74,14 +76,17 @@ typedef enum {
 } sdfgen_irq_trigger_t;
 
 typedef enum {
-    IRQ_IOAPIC_POLARITY_ACTIVE_HIGH = 0,
-    IRQ_IOAPIC_POLARITY_ACTIVE_LOW = 1,
+    IRQ_IOAPIC_POLARITY_ACTIVE_LOW = 0,
+    IRQ_IOAPIC_POLARITY_ACTIVE_HIGH = 1,
 } sdfgen_irq_ioapic_polarity_t;
 
 void *sdfgen_irq_create(sdfgen_arch_t arch, uint32_t number, sdfgen_irq_trigger_t *trigger, uint8_t *id);
 void *sdfgen_irq_ioapic_create(sdfgen_arch_t arch, uint64_t ioapic_id, uint64_t pin, sdfgen_irq_trigger_t *trigger, sdfgen_irq_ioapic_polarity_t *polarity, uint8_t *id);
 void *sdfgen_irq_msi_create(sdfgen_arch_t arch, uint8_t pci_bus, uint8_t pci_device, uint8_t pci_func, uint64_t vector, uint64_t handle, uint8_t *id);
-void *sdfgen_irq_destroy(void *irq);
+void sdfgen_irq_destroy(void *irq);
+
+void *sdfgen_ioport_create(sdfgen_arch_t arch, uint16_t addr, uint16_t size, uint8_t *id);
+void sdfgen_ioport_destroy(void *ioport);
 
 void *sdfgen_mr_create(char *name, uint64_t size);
 void *sdfgen_mr_create_physical(void *sdf, char *name, uint64_t size, uint64_t *paddr);
