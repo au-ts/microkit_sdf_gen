@@ -22,9 +22,7 @@ const Mr = SystemDescription.MemoryRegion;
 const Map = SystemDescription.Map;
 const Arch = SystemDescription.Arch;
 
-// TODO: handle passing options to sDDF systems
-
-export fn sdfgen_create(c_arch: bindings.sdfgen_arch_t, paddr_top: u64) *anyopaque {
+fn helper_c_arch_to_enum(c_arch: bindings.sdfgen_arch_t) Arch {
     const arch: Arch = @enumFromInt(c_arch);
     // Double check that there is a one-to-one mapping between the architecture for
     // the C enum and the Zig enum.
@@ -36,8 +34,14 @@ export fn sdfgen_create(c_arch: bindings.sdfgen_arch_t, paddr_top: u64) *anyopaq
         .x86 => std.debug.assert(c_arch == 4),
         .x86_64 => std.debug.assert(c_arch == 5),
     }
+    return arch;
+}
+
+// TODO: handle passing options to sDDF systems
+
+export fn sdfgen_create(c_arch: bindings.sdfgen_arch_t, paddr_top: u64) *anyopaque {
     const sdf = allocator.create(SystemDescription) catch @panic("OOM");
-    sdf.* = SystemDescription.create(allocator, arch, paddr_top);
+    sdf.* = SystemDescription.create(allocator, helper_c_arch_to_enum(c_arch), paddr_top);
 
     return sdf;
 }
@@ -283,7 +287,8 @@ export fn sdfgen_sddf_init(path: [*c]u8) bool {
     return true;
 }
 
-export fn sdfgen_irq_create(number: u32, c_arch: bindings.sdfgen_arch_t, c_trigger: [*c]bindings.sdfgen_irq_trigger_t, c_id: [*c]u8) ?*anyopaque {
+// @billn: why does trigger and id have to be a pointer? this seems unnecessarily complicated
+export fn sdfgen_irq_create(c_arch: bindings.sdfgen_arch_t, number: u32, c_trigger: [*c]bindings.sdfgen_irq_trigger_t, c_id: [*c]u8) ?*anyopaque {
     const irq = allocator.create(Irq) catch @panic("OOM");
     var options: Irq.Options = .{};
     if (c_trigger != null) {
@@ -292,6 +297,7 @@ export fn sdfgen_irq_create(number: u32, c_arch: bindings.sdfgen_arch_t, c_trigg
             1 => .level,
             else => {
                 log.err("failed to create IRQ '{}': invalid trigger '{}'", .{ number, c_trigger.* });
+                allocator.destroy(irq);
                 return null;
             },
         };
@@ -301,21 +307,66 @@ export fn sdfgen_irq_create(number: u32, c_arch: bindings.sdfgen_arch_t, c_trigg
         options.ch_id = c_id.*;
     }
 
-    // @billn: put this in a helper function rather than copy pasta
-    const arch: Arch = @enumFromInt(c_arch);
-    // Double check that there is a one-to-one mapping between the architecture for
-    // the C enum and the Zig enum.
-    switch (arch) {
-        .aarch32 => std.debug.assert(c_arch == 0),
-        .aarch64 => std.debug.assert(c_arch == 1),
-        .riscv32 => std.debug.assert(c_arch == 2),
-        .riscv64 => std.debug.assert(c_arch == 3),
-        .x86 => std.debug.assert(c_arch == 4),
-        .x86_64 => std.debug.assert(c_arch == 5),
+    irq.* = Irq.create(number, helper_c_arch_to_enum(c_arch), options) catch |e| {
+        log.err("failed to create conventional IRQ number {}: {any}", .{ number, e });
+        allocator.destroy(irq);
+        return null;
+    };
+
+    return irq;
+}
+
+export fn sdfgen_irq_ioapic_create(c_arch: bindings.sdfgen_arch_t, ioapic_id: u64, pin: u64, c_trigger: [*c]bindings.sdfgen_irq_trigger_t, c_polarity: [*c]bindings.sdfgen_irq_ioapic_polarity_t, vector: u64, c_id: [*c]u8) ?*anyopaque {
+    const irq = allocator.create(Irq) catch @panic("OOM");
+    var options: Irq.IoapicOptions = .{};
+    if (c_polarity != null) {
+        const polarity: Irq.IoapicPolarity = switch (c_polarity.*) {
+            0 => .activeHigh,
+            1 => .activeLow,
+            else => {
+                log.err("failed to create IOAPIC IRQ at chip {}, pin {}, vector {}: invalid polarity '{}'", .{ ioapic_id, pin, vector, c_polarity.* });
+                allocator.destroy(irq);
+                return null;
+            }
+        };
+        options.polarity = polarity;
+    }
+    if (c_trigger != null) {
+        const trigger: Irq.Trigger = switch (c_trigger.*) {
+            0 => .edge,
+            1 => .level,
+            else => {
+                log.err("failed to create IOAPIC IRQ at chip {}, pin {}, vector {}: invalid trigger '{}'", .{ ioapic_id, pin, vector, c_trigger.* });
+                allocator.destroy(irq);
+                return null;
+            },
+        };
+        options.trigger = trigger;
+    }
+    if (c_id != null) {
+        options.ch_id = c_id.*;
+    }
+    options.ioapic_id = ioapic_id;
+
+    irq.* = Irq.createIoapic(pin, vector, helper_c_arch_to_enum(c_arch), options) catch |e| {
+        log.err("failed to create IOAPIC IRQ at chip {}, pin {}, vector {}: {any}", .{ ioapic_id, pin, vector, e });
+        allocator.destroy(irq);
+        return null;
+    };
+
+    return irq;
+}
+
+export fn sdfgen_irq_msi_create(c_arch: bindings.sdfgen_arch_t, pci_bus: u8, pci_device: u8, pci_func: u8, vector: u64, handle: u64, c_id: [*c]u8) ?*anyopaque {
+    const irq = allocator.create(Irq) catch @panic("OOM");
+    var options: Irq.MsiOptions = .{};
+    if (c_id != null) {
+        options.ch_id = c_id.*;
     }
 
-    irq.* = Irq.create(number, arch, options) catch |e| {
-        log.err("failed to create conventional IRQ number {}: {any}", .{ number, e });
+    irq.* = Irq.createMsi(pci_bus, pci_device, pci_func, vector, handle, helper_c_arch_to_enum(c_arch), options) catch |e| {
+        log.err("failed to create MSI IRQ at PCI address {}:{}.{}, vector {}, handle {}: {any}", .{ pci_bus, pci_device, pci_func, vector, handle, e });
+        allocator.destroy(irq);
         return null;
     };
 
@@ -458,7 +509,12 @@ export fn sdfgen_channel_add(c_sdf: *align(8) anyopaque, c_ch: *align(8) anyopaq
 export fn sdfgen_sddf_timer(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const timer = allocator.create(sddf.Timer) catch @panic("OOM");
-    timer.* = sddf.Timer.init(allocator, sdf, @ptrCast(c_device), @ptrCast(driver));
+    timer.* = sddf.Timer.init(
+        allocator,
+        sdf,
+        if (c_device) |raw| @ptrCast(raw) else null,
+        @ptrCast(driver)
+    );
 
     return timer;
 }
