@@ -6,7 +6,7 @@ from ctypes import (
 )
 from typing import Optional, List, Tuple
 from enum import IntEnum
-
+from abc import ABC, abstractmethod
 
 class SddfStatus(IntEnum):
     OK = 0,
@@ -97,7 +97,11 @@ libsdfgen.sdfgen_mr_destroy.restype = None
 libsdfgen.sdfgen_mr_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_irq_create.restype = c_void_p
-libsdfgen.sdfgen_irq_create.argtypes = [c_uint32, POINTER(c_uint32), POINTER(c_uint8)]
+libsdfgen.sdfgen_irq_create.argtypes = [c_uint32, c_uint32, POINTER(c_uint32), POINTER(c_uint8)]
+libsdfgen.sdfgen_irq_ioapic_create.restype = c_void_p
+libsdfgen.sdfgen_irq_ioapic_create.argtypes = [c_uint32, c_uint64, c_uint64, POINTER(c_uint32), POINTER(c_uint32), POINTER(c_uint8)]
+libsdfgen.sdfgen_irq_ioapic_create.restype = c_void_p
+libsdfgen.sdfgen_irq_ioapic_create.argtypes = [c_uint32, c_uint8, c_uint8, c_uint8, c_uint64, c_uint64, POINTER(c_uint8)]
 libsdfgen.sdfgen_irq_destroy.restype = None
 libsdfgen.sdfgen_irq_destroy.argtypes = [c_void_p]
 
@@ -637,26 +641,71 @@ class SystemDescription:
             if hasattr(self, "_obj"):
                 libsdfgen.sdfgen_mr_destroy(self._obj)
 
-    class Irq:
+    class Irq(ABC):
         _obj: c_void_p
 
+    class IrqConventional(Irq):
         class Trigger(IntEnum):
             EDGE = 0,
             LEVEL = 1,
 
         def __init__(
             self,
+            arch: SystemDescription.Arch,
             irq: int,
             trigger: Optional[Trigger] = None,
             id: Optional[int] = None,
         ):
-            self._obj = libsdfgen.sdfgen_irq_create(irq, ffi_uint32_ptr(trigger), ffi_uint8_ptr(id))
+            self._obj = libsdfgen.sdfgen_irq_create(arch.value, irq, ffi_uint32_ptr(trigger), ffi_uint8_ptr(id))
             if self._obj is None:
                 raise Exception("failed to create IRQ")
 
         def __del__(self):
             if hasattr(self, "_obj"):
                 libsdfgen.sdfgen_irq_destroy(self._obj)
+
+    class IrqIoapic(Irq):
+        class Trigger(IntEnum):
+            EDGE = 0,
+            LEVEL = 1,
+
+        class Polarity(IntEnum):
+            ACTIVEHIGH = 0,
+            ACTIVELOW = 1,
+
+        def __init__(
+            self,
+            arch: SystemDescription.Arch,
+            ioapic_id: int,
+            pin: int,
+            trigger: Optional[Trigger] = None,
+            polarity: Optional[Polarity] = None,
+            id: Optional[int] = None,
+        ):
+            self._obj = libsdfgen.sdfgen_irq_ioapic_create(arch.value, ioapic_id, pin, ffi_uint32_ptr(trigger), ffi_uint32_ptr(polarity), ffi_uint8_ptr(id))
+            if self._obj is None:
+                raise Exception("failed to create IOAPIC IRQ")
+
+        def __del__(self):
+            libsdfgen.sdfgen_irq_destroy(self._obj)
+
+    class IrqMsi(Irq):
+        def __init__(
+            self,
+            arch: SystemDescription.Arch,
+            pci_bus: int,
+            pci_device: int,
+            pci_func: int,
+            vector: int,
+            handle: int,
+            id: Optional[int] = None,
+        ):
+            self._obj = libsdfgen.sdfgen_irq_msi_create(arch.value, pci_bus, pci_device, pci_func, vector, handle, ffi_uint8_ptr(id))
+            if self._obj is None:
+                raise Exception("failed to create MSI IRQ")
+
+        def __del__(self):
+            libsdfgen.sdfgen_irq_destroy(self._obj)
 
     class Channel:
         _obj: c_void_p
