@@ -16,14 +16,15 @@ const Vmm = modsdf.Vmm;
 const SystemDescription = modsdf.sdf.SystemDescription;
 const Pd = SystemDescription.ProtectionDomain;
 const Irq = SystemDescription.Irq;
-const IoPort = SystemDescription.IoPort;
 const Vm = SystemDescription.VirtualMachine;
 const Channel = SystemDescription.Channel;
 const Mr = SystemDescription.MemoryRegion;
 const Map = SystemDescription.Map;
 const Arch = SystemDescription.Arch;
 
-fn helper_c_arch_to_enum(c_arch: bindings.sdfgen_arch_t) Arch {
+// TODO: handle passing options to sDDF systems
+
+export fn sdfgen_create(c_arch: bindings.sdfgen_arch_t, paddr_top: u64) *anyopaque {
     const arch: Arch = @enumFromInt(c_arch);
     // Double check that there is a one-to-one mapping between the architecture for
     // the C enum and the Zig enum.
@@ -35,14 +36,8 @@ fn helper_c_arch_to_enum(c_arch: bindings.sdfgen_arch_t) Arch {
         .x86 => std.debug.assert(c_arch == 4),
         .x86_64 => std.debug.assert(c_arch == 5),
     }
-    return arch;
-}
-
-// TODO: handle passing options to sDDF systems
-
-export fn sdfgen_create(c_arch: bindings.sdfgen_arch_t, paddr_top: u64) *anyopaque {
     const sdf = allocator.create(SystemDescription) catch @panic("OOM");
-    sdf.* = SystemDescription.create(allocator, helper_c_arch_to_enum(c_arch), paddr_top);
+    sdf.* = SystemDescription.create(allocator, arch, paddr_top);
 
     return sdf;
 }
@@ -171,21 +166,7 @@ export fn sdfgen_pd_add_irq(c_pd: *align(8) anyopaque, c_irq: *align(8) anyopaqu
     const irq: *Irq = @ptrCast(c_irq);
 
     const id = pd.addIrq(irq.*) catch |e| {
-        // @billn: account for multiple types of IRQ
-        log.err("failed to add IRQ to PD '{s}': {}", .{ pd.name, e });
-        // log.err("failed to add IRQ '{}' to PD '{s}': {}", .{ irq.irq, pd.name, e });
-        return -1;
-    };
-
-    return @intCast(id);
-}
-
-export fn sdfgen_pd_add_ioport(c_pd: *align(8) anyopaque, c_ioport: *align(8) anyopaque) i8 {
-    const pd: *Pd = @ptrCast(c_pd);
-    const ioport: *IoPort = @ptrCast(c_ioport);
-
-    const id = pd.addIoPort(ioport.*) catch |e| {
-        log.err("failed to add I/O Port to PD '{s}': {}", .{ pd.name, e });
+        log.err("failed to add IRQ '{}' to PD '{s}': {}", .{ irq.irq, pd.name, e });
         return -1;
     };
 
@@ -309,7 +290,6 @@ export fn sdfgen_irq_create(number: u32, c_trigger: [*c]bindings.sdfgen_irq_trig
             1 => .level,
             else => {
                 log.err("failed to create IRQ '{}': invalid trigger '{}'", .{ number, c_trigger.* });
-                allocator.destroy(irq);
                 return null;
             },
         };
@@ -324,103 +304,52 @@ export fn sdfgen_irq_create(number: u32, c_trigger: [*c]bindings.sdfgen_irq_trig
     return irq;
 }
 
-export fn sdfgen_irq_ioapic_create(ioapic: u64, pin: u64, c_trigger: [*c]bindings.sdfgen_irq_trigger_t, c_polarity: [*c]bindings.sdfgen_irq_ioapic_polarity_t, vector: u64, c_id: [*c]u8) ?*anyopaque {
-    const irq = allocator.create(Irq) catch @panic("OOM");
-    var options: Irq.IoapicOptions = .{};
-    if (c_polarity != null) {
-        const polarity: Irq.IoapicPolarity = switch (c_polarity.*) {
-            0 => .high,
-            1 => .low,
-            else => {
-                log.err("failed to create IOAPIC IRQ at chip {}, pin {}, vector {}: invalid polarity '{}'", .{ ioapic, pin, vector, c_polarity.* });
-                allocator.destroy(irq);
-                return null;
-            }
-        };
-        options.polarity = polarity;
-    }
-    if (c_trigger != null) {
-        const trigger: Irq.Trigger = switch (c_trigger.*) {
-            0 => .edge,
-            1 => .level,
-            else => {
-                log.err("failed to create IOAPIC IRQ at chip {}, pin {}, vector {}: invalid trigger '{}'", .{ ioapic, pin, vector, c_trigger.* });
-                allocator.destroy(irq);
-                return null;
-            },
-        };
-        options.trigger = trigger;
-    }
-    if (c_id != null) {
-        options.id = c_id.*;
-    }
-    options.ioapic = ioapic;
-
-    irq.* = Irq.createIoapic(pin, vector, options) catch |e| {
-        log.err("failed to create IOAPIC IRQ at chip {}, pin {}, vector {}: {any}", .{ ioapic, pin, vector, e });
-        allocator.destroy(irq);
-        return null;
-    };
-
-    return irq;
-}
-
-export fn sdfgen_irq_msi_create(pci_bus: u8, pci_device: u8, pci_func: u8, vector: u64, handle: u64, c_id: [*c]u8) ?*anyopaque {
-    const irq = allocator.create(Irq) catch @panic("OOM");
-    var options: Irq.MsiOptions = .{};
-    if (c_id != null) {
-        options.id = c_id.*;
-    }
-
-    irq.* = Irq.createMsi(pci_bus, pci_device, pci_func, vector, handle, options) catch |e| {
-        log.err("failed to create MSI IRQ at PCI address {}:{}.{}, vector {}, handle {}: {any}", .{ pci_bus, pci_device, pci_func, vector, handle, e });
-        allocator.destroy(irq);
-        return null;
-    };
-
-    return irq;
-}
-
 export fn sdfgen_irq_destroy(c_irq: *align(8) anyopaque) void {
     const irq: *Irq = @ptrCast(c_irq);
     allocator.destroy(irq);
 }
 
-export fn sdfgen_ioport_create(addr: u16, size: u16, c_id: [*c]u8) ?*anyopaque {
-    const ioport = allocator.create(IoPort) catch @panic("OOM");
-    var options: IoPort.Options = .{};
-    if (c_id != null) {
-        options.id = c_id.*;
+export fn sdfgen_mr_create(name: [*c]u8, size: u64, page_size: [*c]u64) ?*anyopaque {
+    const mr = allocator.create(Mr) catch @panic("OOM");
+
+    var options: Mr.Options = .{};
+    if (page_size != null) {
+        const page_size_enum: Mr.PageSize = switch (page_size.*) {
+            0x1000 => .small,
+            0x200000 => .large,
+            else => {
+                log.err("Could not create page with size: {}", .{page_size.*});
+                return null;
+            },
+        };
+        options.page_size = page_size_enum;
     }
 
-    ioport.* = IoPort.create(addr, size, options) catch |e| {
-        log.err("failed to create I/O Port at {}: {any}", .{ addr, e });
-        allocator.destroy(ioport);
-        return null;
-    };
-
-    return ioport;
-}
-
-export fn sdfgen_ioport_destroy(c_ioport: *align(8) anyopaque) void {
-    const ioport: *IoPort = @ptrCast(c_ioport);
-    allocator.destroy(ioport);
-}
-
-export fn sdfgen_mr_create(name: [*c]u8, size: u64) *anyopaque {
-    const mr = allocator.create(Mr) catch @panic("OOM");
-    mr.* = Mr.create(allocator, std.mem.span(name), size, .{});
+    mr.* = Mr.create(allocator, std.mem.span(name), size, options);
 
     return mr;
 }
 
-export fn sdfgen_mr_create_physical(c_sdf: *align(8) anyopaque, name: [*c]u8, size: u64, paddr: [*c]u64) *anyopaque {
+export fn sdfgen_mr_create_physical(c_sdf: *align(8) anyopaque, name: [*c]u8, size: u64, paddr: [*c]u64, page_size: [*c]u64) ?*anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const mr = allocator.create(Mr) catch @panic("OOM");
+
     var options: Mr.OptionsPhysical = .{};
     if (paddr != null) {
         options.paddr = paddr.*;
     }
+    if (page_size != null) {
+        const page_size_enum: Mr.PageSize = switch (page_size.*) {
+            0x1000 => .small,
+            0x200000 => .large,
+            else => {
+                log.err("Could not create page with size: {}", .{page_size.*});
+                return null;
+            },
+        };
+        options.page_size = page_size_enum;
+    }
+
     mr.* = Mr.physical(allocator, sdf, std.mem.span(name), size, options);
 
     return mr;
@@ -538,12 +467,7 @@ export fn sdfgen_channel_add(c_sdf: *align(8) anyopaque, c_ch: *align(8) anyopaq
 export fn sdfgen_sddf_timer(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const timer = allocator.create(sddf.Timer) catch @panic("OOM");
-    timer.* = sddf.Timer.init(
-        allocator,
-        sdf,
-        if (c_device) |raw| @ptrCast(raw) else null,
-        @ptrCast(driver)
-    );
+    timer.* = sddf.Timer.init(allocator, sdf, @ptrCast(c_device), @ptrCast(driver));
 
     return timer;
 }
@@ -584,6 +508,7 @@ export fn sdfgen_sddf_timer_serialise_config(system: *align(8) anyopaque, output
 
 export fn sdfgen_sddf_serial(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: ?*align(8) anyopaque, enable_color: bool, baud_rate: u32, begin_str: [*c]u8) ?*anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
+    const device: *dtb.Node = @ptrCast(c_device);
     var options: sddf.Serial.Options = .{
         .virt_rx = @ptrCast(virt_rx),
         .enable_color = enable_color,
@@ -595,8 +520,8 @@ export fn sdfgen_sddf_serial(c_sdf: *align(8) anyopaque, c_device: ?*align(8) an
         options.begin_str = std.mem.span(begin_str);
     }
     const serial = allocator.create(sddf.Serial) catch @panic("OOM");
-    serial.* = sddf.Serial.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt_tx), options) catch |e| {
-        log.err("failed to initialiase serial system: {any}", .{ e });
+    serial.* = sddf.Serial.init(allocator, sdf, device, @ptrCast(driver), @ptrCast(virt_tx), options) catch |e| {
+        log.err("failed to initialiase serial system for device '{s}': {any}", .{ device.name, e });
         allocator.destroy(serial);
         return null;
     };
@@ -678,60 +603,12 @@ export fn sdfgen_sddf_i2c_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
-export fn sdfgen_sddf_gpio(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque) *anyopaque {
+export fn sdfgen_sddf_blk(c_sdf: *align(8) anyopaque, c_device: *align(8) anyopaque, driver: *align(8) anyopaque, virt: *align(8) anyopaque) ?*anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const device: *dtb.Node = @ptrCast(c_device);
-    const gpio = allocator.create(sddf.Gpio) catch @panic("OOM");
-    gpio.* = sddf.Gpio.init(allocator, sdf, device, @ptrCast(driver));
-
-    return gpio;
-}
-
-export fn sdfgen_sddf_gpio_destroy(system: *align(8) anyopaque) void {
-    const gpio: *sddf.Gpio = @ptrCast(system);
-    gpio.deinit();
-    allocator.destroy(gpio);
-}
-
-export fn sdfgen_sddf_gpio_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque, driver_channel_ids: [*c]u8, num_driver_channel_ids: u8) bindings.sdfgen_sddf_status_t {
-    var options: sddf.Gpio.ClientOptions = .{};
-    if (driver_channel_ids != null) {
-        const len: usize = @intCast(num_driver_channel_ids);
-        options.driver_channel_ids = driver_channel_ids[0..len];
-    }
-    const gpio: *sddf.Gpio = @ptrCast(system);
-    gpio.addClient(@ptrCast(client), options) catch |e| {
-        switch (e) {
-            sddf.Gpio.Error.DuplicateClient => return 1,
-            sddf.Gpio.Error.InvalidClient => return 2,
-            sddf.Gpio.Error.InvalidOptions => return 203,
-            // Should never happen when adding a client
-            sddf.Gpio.Error.NotConnected => @panic("internal error"),
-        }
-    };
-
-    return 0;
-}
-
-export fn sdfgen_sddf_gpio_connect(system: *align(8) anyopaque) bool {
-    const gpio: *sddf.Gpio = @ptrCast(system);
-    gpio.connect() catch return false;
-
-    return true;
-}
-
-export fn sdfgen_sddf_gpio_serialise_config(system: *align(8) anyopaque, output_dir: [*c]u8) bool {
-    const gpio: *sddf.Gpio = @ptrCast(system);
-    gpio.serialiseConfig(std.mem.span(output_dir)) catch return false;
-    return true;
-}
-
-
-export fn sdfgen_sddf_blk(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt: *align(8) anyopaque) ?*anyopaque {
-    const sdf: *SystemDescription = @ptrCast(c_sdf);
     const blk = allocator.create(sddf.Blk) catch @panic("OOM");
-    blk.* = sddf.Blk.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt), .{}) catch |e| {
-        log.err("failed to initialiase blk system: {any}", .{ e });
+    blk.* = sddf.Blk.init(allocator, sdf, device, @ptrCast(driver), @ptrCast(virt), .{}) catch |e| {
+        log.err("failed to initialiase blk system for device '{s}': {any}", .{ device.name, e });
         allocator.destroy(blk);
         return null;
     };
@@ -783,14 +660,14 @@ export fn sdfgen_sddf_blk_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
-export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: *align(8) anyopaque, c_rx_dma_mr: ?*align(8) anyopaque) *anyopaque {
+export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: *align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: *align(8) anyopaque, c_rx_dma_mr: ?*align(8) anyopaque) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const net = allocator.create(sddf.Net) catch @panic("OOM");
     const rx_dma_mr: ?*Mr = if (c_rx_dma_mr) |p| @ptrCast(p) else null;
     const options: sddf.Net.Options = .{
         .rx_dma_mr = rx_dma_mr,
     };
-    net.* = sddf.Net.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt_tx), @ptrCast(virt_rx), options);
+    net.* = sddf.Net.init(allocator, sdf, @ptrCast(c_device), @ptrCast(driver), @ptrCast(virt_tx), @ptrCast(virt_rx), options);
 
     return net;
 }
@@ -933,7 +810,7 @@ export fn sdfgen_vmm_add_passthrough_irq(c_vmm: *align(8) anyopaque, c_irq: *ali
     const vmm: *Vmm = @ptrCast(c_vmm);
     const irq: *Irq = @ptrCast(c_irq);
     vmm.addPassthroughIrq(irq.*) catch |e| {
-        log.err("failed to add passthrough IRQ '{}' to VMM '{s}': {any}", .{ irq.number().?, vmm.vmm.name, e });
+        log.err("failed to add passthrough IRQ '{}' to VMM '{s}': {any}", .{ irq.irq, vmm.vmm.name, e });
         return false;
     };
 
