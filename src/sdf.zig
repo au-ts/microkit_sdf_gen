@@ -743,11 +743,11 @@ pub const SystemDescription = struct {
 
             //  @billn: double check which one is optional
             IOAPIC: struct {
-                ioapic:   u64,
-                pin:      u64,
-                trigger:  ?Trigger,
-                polarity: u64,
-                vector:   u64,
+                ioapic_id: ?u64,
+                pin:       u64,
+                trigger:   ?Trigger,
+                polarity:  ?IoapicPolarity,
+                vector:    u64,
             },
 
             MSI: struct {
@@ -797,7 +797,7 @@ pub const SystemDescription = struct {
 
         pub fn create(irq: u32, arch: Arch, options: Options) !Irq {
             if (Arch.isX86(arch)) {
-                log.err("failed to create simple irq {} as it is not supported on x86 architectures\n", .{irq});
+                log.err("failed to create simple irq {} as it is unsupported on x86 architectures\n", .{irq});
                 return error.InvalidIrq;
             }
             return .{
@@ -812,49 +812,73 @@ pub const SystemDescription = struct {
             };
         }
 
-        // pub const IoapicOptions = struct {
-        //     ioapic_id: ?u64 = null,
-        //     polarity: ?IoapicPolarity = null,
-        //     trigger: ?Trigger = null,
-        //     ch_id: ?u8 = null,
-        // };
+        pub const IoapicOptions = struct {
+            ioapic_id: ?u64 = null,
+            polarity: ?IoapicPolarity = null,
+            trigger: ?Trigger = null,
+            ch_id: ?u8 = null,
+        };
 
-        // pub fn createIoapic(pin: u64, vector: u8, arch: Arch, options: IoapicOptions) !Irq {
-        //     if (Arch.isX86(arch)) {
-        //         log.err("failed to create IOAPIC irq at pin {} with vector {} as it is not supported on non-x86 architectures\n", .{pin, vector});
-        //         return error.InvalidIrq;
-        //     }
-        //     return .{ .arch = arch, .type = IrqType.ioapic, .trigger = options.trigger, .ioapic_id = options.ioapic_id, .ioapic_pin = pin, .ioapic_polarity = options.polarity, .vector = vector, .id = options.ch_id };
-        // }
+        pub fn createIoapic(pin: u64, vector: u64, arch: Arch, options: IoapicOptions) !Irq {
+            if (!Arch.isX86(arch)) {
+                log.err("failed to create IOAPIC irq at pin {} with vector {} because it is unsupported on non-x86 architectures\n", .{pin, vector});
+                return error.InvalidIrq;
+            }
+            return .{
+                .arch = arch,
+                .id   = options.ch_id,
+                .kind = .{
+                    .IOAPIC = .{
+                        .ioapic_id = options.ioapic_id,
+                        .pin = pin,
+                        .trigger = options.trigger,
+                        .polarity = options.polarity,
+                        .vector = vector,
+                    },
+                },
+            };
+        }
 
-        // pub const MsiOptions = struct {
-        //     ch_id: ?u8 = null,
-        // };
+        pub const MsiOptions = struct {
+            ch_id: ?u8 = null,
+        };
 
-        // pub fn createMsi(msi_pci_bus: u8, msi_pci_device: u8, msi_pci_func: u8, vector: u64, handle: u64, arch: Arch, options: MsiOptions) !Irq {
-        //     // @billn: double check does MSI exist on arm and riscv??
-        //     return .{ .arch = arch, .type = IrqType.msi, .msi_pci_bus = msi_pci_bus, .msi_pci_device = msi_pci_device, .msi_pci_func = msi_pci_func, .vector = vector, .msi_handle = handle, .id = options.ch_id };
-        // }
+        pub fn createMsi(pci_bus: u8, pci_device: u8, pci_func: u8, vector: u64, handle: u64, arch: Arch, options: MsiOptions) !Irq {
+            // @billn: double check does MSI work in the same manner on arm and riscv?
+            return .{
+                .arch = arch,
+                .id   = options.ch_id,
+                .kind = .{
+                    .MSI = .{
+                        .pci_bus = pci_bus,
+                        .pci_dev = pci_device,
+                        .pci_func = pci_func,
+                        .vector = vector,
+                        .handle = handle,
+                    },
+                },
+            };
+        }
 
         pub fn render(irq: *const Irq, writer: ArrayList(u8).Writer, separator: []const u8) !void {
-            // // By the time we get here, something should have populated the 'id' field.
-            // std.debug.assert(irq.id != null);
+            // By the time we get here, something should have populated the 'id' field.
+            std.debug.assert(irq.id != null);
 
             try std.fmt.format(writer, "{s}<irq ", .{separator});
 
             switch (irq.kind) {
-                .Simple => |s| {
-                    try std.fmt.format(writer, "irq=\"{}\" id=\"{}\"", .{ s.irq, irq.id.? });
-                    if (s.trigger) |trigger| {
+                .Simple => |s_irq| {
+                    try std.fmt.format(writer, "irq=\"{}\" id=\"{}\"", .{ s_irq.irq, irq.id.? });
+                    if (s_irq.trigger) |trigger| {
                         try std.fmt.format(writer, " trigger=\"{s}\"", .{@tagName(trigger)});
                     }
                 },
                 .IOAPIC => |i| {
                     _ = i; // @billn todo
+                    std.debug.assert(false);
                 },
-                .MSI => |m| {
-                    _ = m;
-                    // try std.fmt.format(writer, "pcidev=\"{}:{}.{}\" handle=\"{}\" vector=\"{}\" id=\"{}\"", .{ m.msi_pci_bus, m.msi_pci_device, m.msi_pci_func, m.msi_handle, m.vector, m.id.? });
+                .MSI => |m_irq| {
+                    try std.fmt.format(writer, "pcidev=\"{}:{}.{}\" handle=\"{}\" vector=\"{}\" id=\"{}\"", .{ m_irq.pci_bus, m_irq.pci_dev, m_irq.pci_func, m_irq.handle, m_irq.vector, irq.id.? });
                 }
             }
 
@@ -862,7 +886,7 @@ pub const SystemDescription = struct {
         }
     };
 
-    pub fn create(allocator: Allocator, arch: Arch, paddr_top: u64) SystemDescription {
+    pub fn create(allocator: Allocator, arch: Arch, paddr_top: u64) SystemDescription { 
         var xml_data = ArrayList(u8).init(allocator);
         return SystemDescription{
             .allocator = allocator,

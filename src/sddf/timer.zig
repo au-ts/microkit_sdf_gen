@@ -25,7 +25,7 @@ pub const Timer = struct {
     /// Protection Domain that will act as the driver for the timer
     driver: *Pd,
     /// Device Tree node for the timer device
-    device: *dtb.Node,
+    device: ?*dtb.Node,
     device_res: ConfigResources.Device,
     /// Client PDs serviced by the timer driver
     clients: std.array_list.Managed(*Pd),
@@ -35,7 +35,7 @@ pub const Timer = struct {
 
     pub const Error = SystemError;
 
-    pub fn init(allocator: Allocator, sdf: *SystemDescription, device: *dtb.Node, driver: *Pd) Timer {
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, device: ?*dtb.Node, driver: *Pd) Timer {
         // First we have to set some properties on the driver. It is currently our policy that every timer
         // driver should be passive.
         driver.passive = true;
@@ -81,7 +81,9 @@ pub const Timer = struct {
         // The driver must be passive
         std.debug.assert(system.driver.passive.?);
 
-        try sddf.createDriver(system.sdf, system.driver, system.device, .timer, &system.device_res);
+        if (system.device) | dtb_node | {
+            try sddf.createDriver(system.sdf, system.driver, dtb_node, .timer, &system.device_res);
+        }
         for (system.clients.items, 0..) |client, i| {
             const ch = Channel.create(system.driver, client, .{
                 // Client needs to be able to PPC into driver
