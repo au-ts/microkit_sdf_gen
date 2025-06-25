@@ -573,6 +573,47 @@ export fn sdfgen_sddf_i2c_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
+export fn sdfgen_sddf_gpio(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque) *anyopaque {
+    const sdf: *SystemDescription = @ptrCast(c_sdf);
+    const gpio = allocator.create(sddf.Gpio) catch @panic("OOM");
+    gpio.* = sddf.Gpio.init(allocator, sdf, @ptrCast(c_device), @ptrCast(driver));
+
+    return gpio;
+}
+
+export fn sdfgen_sddf_gpio_destroy(system: *align(8) anyopaque) void {
+    const gpio: *sddf.Gpio = @ptrCast(system);
+    gpio.deinit();
+    allocator.destroy(gpio);
+}
+
+export fn sdfgen_sddf_gpio_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque) bindings.sdfgen_sddf_status_t {
+    const gpio: *sddf.Gpio = @ptrCast(system);
+    gpio.addClient(@ptrCast(client)) catch |e| {
+        switch (e) {
+            sddf.Gpio.Error.DuplicateClient => return 1,
+            sddf.Gpio.Error.InvalidClient => return 2,
+            // Should never happen when adding a client
+            sddf.Gpio.Error.NotConnected => @panic("internal error"),
+        }
+    };
+
+    return 0;
+}
+
+export fn sdfgen_sddf_gpio_connect(system: *align(8) anyopaque) bool {
+    const gpio: *sddf.Gpio = @ptrCast(system);
+    gpio.connect() catch return false;
+
+    return true;
+}
+
+export fn sdfgen_sddf_gpio_serialise_config(system: *align(8) anyopaque, output_dir: [*c]u8) bool {
+    const gpio: *sddf.Gpio = @ptrCast(system);
+    gpio.serialiseConfig(std.mem.span(output_dir)) catch return false;
+    return true;
+}
+
 export fn sdfgen_sddf_blk(c_sdf: *align(8) anyopaque, c_device: *align(8) anyopaque, driver: *align(8) anyopaque, virt: *align(8) anyopaque) ?*anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const device: *dtb.Node = @ptrCast(c_device);
