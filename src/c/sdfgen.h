@@ -94,7 +94,8 @@ typedef enum {
     SDDF_ERROR_NET_DUPLICATE_COPIER = 100,
     SDDF_ERROR_NET_DUPLICATE_MAC_ADDR = 101,
     SDDF_ERROR_NET_INVALID_MAC_ADDR = 102,
-    SDDF_ERROR_NET_INVALID_OPTIONS = 103
+    SDDF_ERROR_NET_INVALID_OPTIONS = 103,
+    SDDF_ERROR_GPIO_INVALID_OPTIONS = 203
 } sdfgen_sddf_status_t;
 
 void *sdfgen_sddf_init(char *path);
@@ -118,7 +119,7 @@ bool sdfgen_sddf_i2c_serialise_config(void *system, char *output_dir);
 
 void *sdfgen_sddf_gpio(void *sdf, void *device, void *driver);
 void sdfgen_sddf_gpio_destroy(void *system);
-sdfgen_sddf_status_t sdfgen_sddf_gpio_add_client(void *system, void *client);
+sdfgen_sddf_status_t sdfgen_sddf_gpio_add_client(void *system, void *client, uint8_t *driver_ids, uint8_t num_driver_ids);
 bool sdfgen_sddf_gpio_connect(void *system);
 bool sdfgen_sddf_gpio_serialise_config(void *system, char *output_dir);
 

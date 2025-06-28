@@ -15,6 +15,7 @@ class SddfStatus(IntEnum):
     NET_DUPLICATE_COPIER = 100,
     NET_DUPLICATE_MAC_ADDR = 101,
     NET_INVALID_OPTIONS = 103,
+    GPIO_INVALID_OPTIONS = 203,
 
 
 # TOOD: double check
@@ -167,7 +168,7 @@ libsdfgen.sdfgen_sddf_gpio_destroy.restype = None
 libsdfgen.sdfgen_sddf_gpio_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_sddf_gpio_add_client.restype = c_uint32
-libsdfgen.sdfgen_sddf_gpio_add_client.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_gpio_add_client.argtypes = [c_void_p, c_void_p, c_char_p, c_uint8]
 
 libsdfgen.sdfgen_sddf_gpio_connect.restype = c_bool
 libsdfgen.sdfgen_sddf_gpio_connect.argtypes = [c_void_p]
@@ -1036,7 +1037,7 @@ class Sddf:
 
         def __del__(self):
             libsdfgen.sdfgen_sddf_timer_destroy(self._obj)
-            
+
     class Gpio:
         _obj: c_void_p
 
@@ -1053,14 +1054,31 @@ class Sddf:
 
             self._obj: c_void_p = libsdfgen.sdfgen_sddf_gpio(sdf._obj, device_obj, driver._obj)
 
-        def add_client(self, client: SystemDescription.ProtectionDomain):
-            ret = libsdfgen.sdfgen_sddf_gpio_add_client(self._obj, client._obj)
+        # @ Tristan: fix this because it needs to add options
+        def add_client(
+            self,
+            client: SystemDescription.ProtectionDomain,
+            *,
+            driver_ids: Optional[str] = None,
+            num_driver_ids: int 
+        ):
+             """
+            :param driver_ids: must contain unique driver channel ids that no other client requests.
+            :param num_driver_ids: must be greater than 0 ids.
+            """
+            c_driver_ids = c_char_p(0)
+            if driver_ids:
+                c_driver_ids = c_char_p(driver_ids.encode("utf-8"))
+
+            ret = libsdfgen.sdfgen_sddf_gpio_add_client(self._obj, client._obj, c_driver_ids, num_driver_ids)
             if ret == SddfStatus.OK:
                 return
             elif ret == SddfStatus.DUPLICATE_CLIENT:
                 raise Exception(f"duplicate client given '{client}'")
             elif ret == SddfStatus.INVALID_CLIENT:
                 raise Exception(f"invalid client given '{client}'")
+            elif ret == SddfStatus.GPIO_INVALID_OPTIONS:
+                raise Exception(f"invalid options given '{client}'")
             else:
                 raise Exception(f"internal error: {ret}")
 

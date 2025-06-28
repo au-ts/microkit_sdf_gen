@@ -338,6 +338,17 @@ pub const Resources = struct {
         };
     };
 
+    pub const Gpio = struct {
+        const MAGIC: [5]u8 = MAGIC_START ++ .{0x8};
+
+        pub const Client = extern struct {
+            magic: [5]u8 = MAGIC,
+            // @ Tristan: this driver_ids buffer is currently being shared.
+            // This might be a problem? Could just do driver_ids: [62]u8,
+            driver_ids: []u8,
+        };
+    };
+
     pub const Fs = extern struct {
         const MAGIC: [8]u8 = LIONS_MAGIC_START ++ .{0x1};
 

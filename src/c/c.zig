@@ -575,8 +575,9 @@ export fn sdfgen_sddf_i2c_serialise_config(system: *align(8) anyopaque, output_d
 
 export fn sdfgen_sddf_gpio(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
+    const device: *dtb.Node = @ptrCast(c_device);
     const gpio = allocator.create(sddf.Gpio) catch @panic("OOM");
-    gpio.* = sddf.Gpio.init(allocator, sdf, @ptrCast(c_device), @ptrCast(driver));
+    gpio.* = sddf.Gpio.init(allocator, sdf, device, @ptrCast(driver));
 
     return gpio;
 }
@@ -587,12 +588,17 @@ export fn sdfgen_sddf_gpio_destroy(system: *align(8) anyopaque) void {
     allocator.destroy(gpio);
 }
 
-export fn sdfgen_sddf_gpio_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque) bindings.sdfgen_sddf_status_t {
+export fn sdfgen_sddf_gpio_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque, driver_ids: [*c]const u8, num_driver_ids: u8) bindings.sdfgen_sddf_status_t {
+    var options: sddf.Gpio.ClientOptions = .{};
+    if (driver_ids != null) {
+        options.driver_ids = driver_ids[0..@intCast(usize, num_driver_ids)];
+    }
     const gpio: *sddf.Gpio = @ptrCast(system);
-    gpio.addClient(@ptrCast(client)) catch |e| {
+    gpio.addClient(@ptrCast(client), options) catch |e| {
         switch (e) {
             sddf.Gpio.Error.DuplicateClient => return 1,
             sddf.Gpio.Error.InvalidClient => return 2,
+            sddf.Gpio.Error.InvalidOptions => return 203,
             // Should never happen when adding a client
             sddf.Gpio.Error.NotConnected => @panic("internal error"),
         }
