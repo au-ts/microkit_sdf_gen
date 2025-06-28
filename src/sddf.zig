@@ -539,6 +539,9 @@ pub const Gpio = struct {
                 }) catch unreachable;
                 system.sdf.addChannel(ch);
             }
+            // @Tristan : we are not deep copying here: this may be a problem?
+            // will have to check this later because ifs not inline (like a stack allocated one)
+            // the copying into clients address space might be cooked
             system.client_configs.items[i].driver_ids = system.client_info.items[i].driver_ids;
         }
 
