@@ -419,13 +419,15 @@ pub const Gpio = struct {
     connected: bool = false,
     serialised: bool = false,
 
+    const MAX_CHANNELS = 62;
+
     pub const Client = struct {
         pd: *Pd,
-        driver_ids: []u8,
+        driver_channel_ids: []u8,
     };
 
     pub const ClientOptions = struct {
-        driver_ids: ?[]const u8 = null,
+        driver_channel_ids: ?[]const u8 = null,
     };
 
     pub const Error = SystemError || error{
@@ -450,7 +452,7 @@ pub const Gpio = struct {
 
     pub fn deinit(system: *Gpio) void {
         for (system.clients.items) |c| {
-            system.allocator.free(c.driver_ids);
+            system.allocator.free(c.driver_channel_ids);
         }
         system.clients.deinit();
         system.client_configs.deinit();
@@ -473,35 +475,35 @@ pub const Gpio = struct {
             log.err("invalid gpio client '{s}', driver '{s}' must have greater priority than client", .{ client.name, system.driver.name });
             return Error.InvalidClient;
         }
-        if (options.driver_ids == null) {
-            log.err("cannot pass null for driver_ids option in driver for client '{s}'", .{client.name});
+        if (options.driver_channel_ids == null) {
+            log.err("cannot pass null for driver_channel_ids option in driver for client '{s}'", .{client.name});
             return Error.InvalidOptions;
         }
-        if (options.driver_ids.ptr == null) {
-            log.err("cannot pass null for driver_ids.ptr option in driver for client '{s}'", .{client.name});
+        if (options.driver_channel_ids.ptr == null) {
+            log.err("cannot pass null for driver_channel_ids.ptr option in driver for client '{s}'", .{client.name});
             return Error.InvalidOptions;
         }
-        if (options.driver_ids.len == 0) {
+        if (options.driver_channel_ids.len == 0) {
             log.err("must request at least one GPIO channel inside option in driver for client '{s}'", .{client.name});
             return Error.InvalidOptions;
         }
-        if (options.driver_ids.len > 62) {
+        if (options.driver_channel_ids.len > MAX_CHANNELS) {
             log.err("requesting too many GPIO channels inside option in driver for client '{s}'", .{client.name});
             return Error.InvalidOptions;
         }
 
         // make sure the channel numbers are valid
-        for (options.driver_ids, 0..) |driver_id, i| {
-            if (driver_id > 62) {
-                log.err("invalid driver_id at index '{d}' options.driver_ids in driver for client '{s}'", .{ i, client.name });
+        for (options.driver_channel_ids, 0..) |driver_id, i| {
+            if (driver_id > MAX_CHANNELS) {
+                log.err("invalid driver_id at index '{d}' options.driver_channel_ids in driver for client '{s}'", .{ i, client.name });
                 return Error.InvalidOptions;
             }
         }
 
         // check that there are no duplicates in other clients
         for (system.clients.items) |existing_client| {
-            for (existing_client.driver_ids) |existing_id| {
-                for (options.driver_ids) |new_id| {
+            for (existing_client.driver_channel_ids) |existing_id| {
+                for (options.driver_channel_ids) |new_id| {
                     if (existing_id == new_id) {
                         log.err("driver_id {d} already assigned to another client ('{s}'), cannot reassign to '{s}'", .{ new_id, existing_client.pd.name, client.name });
                         return Error.InvalidOptions;
@@ -510,10 +512,10 @@ pub const Gpio = struct {
             }
         }
 
-        const new_driver_ids_buf = system.allocator.dupe(u8, options.driver_ids) catch @panic("OOM allocating GPIO driver_ids");
+        const new_driver_channel_ids_buf = system.allocator.dupe(u8, options.driver_channel_ids) catch @panic("OOM allocating GPIO driver_channel_ids");
         system.clients.append(.{
             .pd = client,
-            .driver_ids = new_driver_ids_buf,
+            .driver_channel_ids = new_driver_ids_buf,
         }) catch @panic("Could not add client to Gpio");
         system.client_configs.append(std.mem.zeroInit(ConfigResources.Gpio.Client, .{})) catch @panic("Could not add client to Gpio");
     }
@@ -527,7 +529,7 @@ pub const Gpio = struct {
         // For each client...
         for (system.clients.items, 0..) |client, i| {
             // for each requested channel
-            for (client.driver_ids.items, 0..) |id, j| {
+            for (client.driver_channel_ids.items, 0..) |id, j| {
                 const ch = Channel.create(system.driver, client, .{
                     // Client needs to be able to PPC into driver
                     .pp = .b,
@@ -538,11 +540,11 @@ pub const Gpio = struct {
                     .pd_a_id = id,
                 }) catch unreachable;
                 system.sdf.addChannel(ch);
+
+                // store the client side POV channel in client config
+                system.client_configs.items[i].driver_channel_ids[j] = ch.pd_b_id;
+                system.client_configs.items[i].num_driver_channel_ids += 1;
             }
-            // @Tristan : we are not deep copying here: this may be a problem?
-            // will have to check this later because ifs not inline (like a stack allocated one)
-            // the copying into clients address space might be cooked
-            system.client_configs.items[i].driver_ids = system.client_info.items[i].driver_ids;
         }
 
         system.connected = true;

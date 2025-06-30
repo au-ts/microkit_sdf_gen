@@ -168,7 +168,7 @@ libsdfgen.sdfgen_sddf_gpio_destroy.restype = None
 libsdfgen.sdfgen_sddf_gpio_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_sddf_gpio_add_client.restype = c_uint32
-libsdfgen.sdfgen_sddf_gpio_add_client.argtypes = [c_void_p, c_void_p, c_char_p, c_uint8]
+libsdfgen.sdfgen_sddf_gpio_add_client.argtypes = [c_void_p, c_void_p, POINTER(c_uint8), c_uint8]
 
 libsdfgen.sdfgen_sddf_gpio_connect.restype = c_bool
 libsdfgen.sdfgen_sddf_gpio_connect.argtypes = [c_void_p]
@@ -1054,23 +1054,24 @@ class Sddf:
 
             self._obj: c_void_p = libsdfgen.sdfgen_sddf_gpio(sdf._obj, device_obj, driver._obj)
 
-        # @ Tristan: fix this because it needs to add options
         def add_client(
             self,
             client: SystemDescription.ProtectionDomain,
             *,
-            driver_ids: Optional[str] = None,
-            num_driver_ids: int 
+            driver_channel_ids: Optional[list[int]] = None,
         ):
              """
-            :param driver_ids: must contain unique driver channel ids that no other client requests.
-            :param num_driver_ids: must be greater than 0 ids.
+            :param driver_channel_ids: must contain unique driver channel ids that no other client requests.
             """
-            c_driver_ids = c_char_p(0)
-            if driver_ids:
-                c_driver_ids = c_char_p(driver_ids.encode("utf-8"))
+            if driver_channel_ids is None or len(driver_channel_ids) == 0:
+                raise Exception(
+                    f"invalid driver_channel_ids for client '{client.name}', {driver_channel_ids}"
+                )
 
-            ret = libsdfgen.sdfgen_sddf_gpio_add_client(self._obj, client._obj, c_driver_ids, num_driver_ids)
+            array_type = c_uint8 * len(driver_channel_ids)
+            c_driver_ids_array = array_type(*driver_channel_ids)
+
+            ret = libsdfgen.sdfgen_sddf_gpio_add_client(self._obj, client._obj, c_driver_ids_array, len(driver_channel_ids))
             if ret == SddfStatus.OK:
                 return
             elif ret == SddfStatus.DUPLICATE_CLIENT:
