@@ -461,7 +461,7 @@ pub const Gpio = struct {
     pub fn addClient(system: *Gpio, client: *Pd, options: ClientOptions) Error!void {
         // Check that the client does not already exist
         for (system.clients.items) |existing_client| {
-            if (std.mem.eql(u8, existing_client.name, client.name)) {
+            if (std.mem.eql(u8, existing_client.pd.name, client.name)) {
                 return Error.DuplicateClient;
             }
         }
@@ -479,21 +479,20 @@ pub const Gpio = struct {
             log.err("cannot pass null for driver_channel_ids option in driver for client '{s}'", .{client.name});
             return Error.InvalidOptions;
         }
-        if (options.driver_channel_ids.ptr == null) {
-            log.err("cannot pass null for driver_channel_ids.ptr option in driver for client '{s}'", .{client.name});
-            return Error.InvalidOptions;
-        }
-        if (options.driver_channel_ids.len == 0) {
+
+        const ids = options.driver_channel_ids.?;
+
+        if (ids.len == 0) {
             log.err("must request at least one GPIO channel inside option in driver for client '{s}'", .{client.name});
             return Error.InvalidOptions;
         }
-        if (options.driver_channel_ids.len > MAX_CHANNELS) {
+        if (ids.len > MAX_CHANNELS) {
             log.err("requesting too many GPIO channels inside option in driver for client '{s}'", .{client.name});
             return Error.InvalidOptions;
         }
 
         // make sure the channel numbers are valid
-        for (options.driver_channel_ids, 0..) |driver_id, i| {
+        for (ids, 0..) |driver_id, i| {
             if (driver_id > MAX_CHANNELS) {
                 log.err("invalid driver_id at index '{d}' options.driver_channel_ids in driver for client '{s}'", .{ i, client.name });
                 return Error.InvalidOptions;
@@ -503,7 +502,7 @@ pub const Gpio = struct {
         // check that there are no duplicates in other clients
         for (system.clients.items) |existing_client| {
             for (existing_client.driver_channel_ids) |existing_id| {
-                for (options.driver_channel_ids) |new_id| {
+                for (ids) |new_id| {
                     if (existing_id == new_id) {
                         log.err("driver_id {d} already assigned to another client ('{s}'), cannot reassign to '{s}'", .{ new_id, existing_client.pd.name, client.name });
                         return Error.InvalidOptions;
@@ -512,10 +511,10 @@ pub const Gpio = struct {
             }
         }
 
-        const new_driver_channel_ids_buf = system.allocator.dupe(u8, options.driver_channel_ids) catch @panic("OOM allocating GPIO driver_channel_ids");
+        const new_driver_channel_ids_buf = system.allocator.dupe(u8, ids) catch @panic("OOM allocating GPIO driver_channel_ids");
         system.clients.append(.{
             .pd = client,
-            .driver_channel_ids = new_driver_ids_buf,
+            .driver_channel_ids = new_driver_channel_ids_buf,
         }) catch @panic("Could not add client to Gpio");
         system.client_configs.append(std.mem.zeroInit(ConfigResources.Gpio.Client, .{})) catch @panic("Could not add client to Gpio");
     }
@@ -529,8 +528,8 @@ pub const Gpio = struct {
         // For each client...
         for (system.clients.items, 0..) |client, i| {
             // for each requested channel
-            for (client.driver_channel_ids.items, 0..) |id, j| {
-                const ch = Channel.create(system.driver, client, .{
+            for (client.driver_channel_ids, 0..) |id, j| {
+                const ch = Channel.create(system.driver, client.pd, .{
                     // Client needs to be able to PPC into driver
                     .pp = .b,
                     // Client does not need to notify driver
@@ -559,7 +558,7 @@ pub const Gpio = struct {
         try data.serialize(allocator, system.device_res, prefix, device_res_data_name);
 
         for (system.clients.items, 0..) |client, i| {
-            const data_name = fmt(allocator, "gpio_client_{s}", .{client.name});
+            const data_name = fmt(allocator, "gpio_client_{s}", .{client.pd.name});
             try data.serialize(allocator, system.client_configs.items[i], prefix, data_name);
         }
 

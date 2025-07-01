@@ -591,7 +591,8 @@ export fn sdfgen_sddf_gpio_destroy(system: *align(8) anyopaque) void {
 export fn sdfgen_sddf_gpio_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque, driver_channel_ids: [*c]u8, num_driver_channel_ids: u8) bindings.sdfgen_sddf_status_t {
     var options: sddf.Gpio.ClientOptions = .{};
     if (driver_channel_ids != null) {
-        options.driver_channel_ids = driver_channel_ids[0..@intCast(usize, num_driver_channel_ids)];
+        const len: usize = @intCast(num_driver_channel_ids);
+        options.driver_channel_ids = driver_channel_ids[0..len];
     }
     const gpio: *sddf.Gpio = @ptrCast(system);
     gpio.addClient(@ptrCast(client), options) catch |e| {
