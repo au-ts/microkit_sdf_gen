@@ -1060,7 +1060,7 @@ class Sddf:
             *,
             driver_channel_ids: Optional[list[int]] = None,
         ):
-             """
+            """
             :param driver_channel_ids: must contain unique driver channel ids that no other client requests.
             """
             if driver_channel_ids is None or len(driver_channel_ids) == 0:
