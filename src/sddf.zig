@@ -745,6 +745,7 @@ pub const Spi = struct {
                 .num_buffers = system.num_buffers,
                 .id = ch.pd_a_id,
             },
+            .slice_size = system.region_slice_size,
         };
 
         system.virt_config.driver = .{

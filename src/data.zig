@@ -254,6 +254,7 @@ pub const Resources = struct {
         pub const Driver = extern struct {
             magic: [5]u8 = MAGIC,
             virt: Connection,
+            slice_size: usize
         };
 
         pub const Client = extern struct {
