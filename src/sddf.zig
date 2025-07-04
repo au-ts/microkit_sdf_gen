@@ -735,7 +735,7 @@ pub const Spi = struct {
         const virt_map_resp = Map.create(mr_resp, virt.getMapVaddr(&mr_resp), .rw, .{});
         virt.addMap(virt_map_resp);
 
-        const ch = Channel.create(system.driver, system.virt, .{}) catch unreachable;
+        const ch = Channel.create(system.driver, system.virt, .{ .pp = .b }) catch unreachable;
         sdf.addChannel(ch);
 
         system.driver_config = .{
