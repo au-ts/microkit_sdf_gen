@@ -435,12 +435,9 @@ pub const Gpio = struct {
     };
 
     pub fn init(allocator: Allocator, sdf: *SystemDescription, device: *dtb.Node, driver: *Pd) Gpio {
-        // @ Tristan: i may be mistaken but i dont think this driver should be passive.
-        // There is too many MMIO operations that are potentially destructive if not commited in the correct order.
-        // Does making the driver active actually solve this though?
-        // When its passive can the driver stop executing halfway through protected entry point and
-        // if so can we guarantee it resumes where it left off or maybe not if another client uses the gpio
-        // driver in the meantime?
+        // First we have to set some properties on the driver. It is currently our policy that every gpio
+        // driver should be passive.
+        driver.passive = true;
 
         return .{
             .allocator = allocator,
@@ -523,6 +520,9 @@ pub const Gpio = struct {
     }
 
     pub fn connect(system: *Gpio) !void {
+        // The driver must be passive
+        assert(system.driver.passive.?);
+
         try createDriver(system.sdf, system.driver, system.device, .gpio, &system.device_res);
 
         // For each client...
