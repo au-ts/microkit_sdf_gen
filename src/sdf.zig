@@ -746,13 +746,13 @@ pub const SystemDescription = struct {
 
     pub const Irq = struct {
         pub const Trigger = enum(u8) {
-            edge,
-            level,
+            edge = 0,
+            level = 1,
         };
 
         pub const IoapicPolarity = enum(u8) {
-            activeLow,
-            activeHigh,
+            activeLow = 0,
+            activeHigh = 1,
         };
 
         const Kind = union(enum) {
@@ -893,9 +893,17 @@ pub const SystemDescription = struct {
                         try std.fmt.format(writer, " trigger=\"{s}\"", .{@tagName(trigger)});
                     }
                 },
-                .IOAPIC => |i| {
-                    _ = i; // @billn todo
-                    std.debug.assert(false);
+                .IOAPIC => |i_irq| {
+                    try std.fmt.format(writer, "pin=\"{}\" vector=\"{}\" id=\"{}\"", .{ i_irq.pin, i_irq.vector, irq.id.? });
+                    if (i_irq.ioapic_id) |ioapic_id| {
+                        try std.fmt.format(writer, " ioapic=\"{}\"", .{ioapic_id});
+                    }
+                    if (i_irq.trigger) |trigger| {
+                        try std.fmt.format(writer, " level=\"{}\"", .{trigger});
+                    }
+                    if (i_irq.polarity) |polarity| {
+                        try std.fmt.format(writer, " polarity=\"{}\"", .{polarity});
+                    }
                 },
                 .MSI => |m_irq| {
                     try std.fmt.format(writer, "pcidev=\"{}:{}.{}\" handle=\"{}\" vector=\"{}\" id=\"{}\"", .{ m_irq.pci_bus, m_irq.pci_dev, m_irq.pci_func, m_irq.handle, m_irq.vector, irq.id.? });
