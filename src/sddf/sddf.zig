@@ -303,7 +303,7 @@ pub const Config = struct {
 
             pub fn dirs(comptime self: Class) []const []const u8 {
                 return switch (self) {
-                    .network => &.{"network"},
+                    .network => &.{"network", "network/virtio"},
                     .serial => &.{"serial"},
                     .timer => &.{"timer"},
                     .blk => &.{ "blk", "blk/mmc" },
