@@ -99,9 +99,9 @@ libsdfgen.sdfgen_mr_destroy.argtypes = [c_void_p]
 libsdfgen.sdfgen_irq_create.restype = c_void_p
 libsdfgen.sdfgen_irq_create.argtypes = [c_uint32, c_uint32, POINTER(c_uint32), POINTER(c_uint8)]
 libsdfgen.sdfgen_irq_ioapic_create.restype = c_void_p
-libsdfgen.sdfgen_irq_ioapic_create.argtypes = [c_uint32, c_uint64, c_uint64, POINTER(c_uint32), POINTER(c_uint32), POINTER(c_uint8)]
-libsdfgen.sdfgen_irq_ioapic_create.restype = c_void_p
-libsdfgen.sdfgen_irq_ioapic_create.argtypes = [c_uint32, c_uint8, c_uint8, c_uint8, c_uint64, c_uint64, POINTER(c_uint8)]
+libsdfgen.sdfgen_irq_ioapic_create.argtypes = [c_uint32, c_uint64, c_uint64, POINTER(c_uint32), POINTER(c_uint32), c_uint64, POINTER(c_uint8)]
+libsdfgen.sdfgen_irq_msi_create.restype = c_void_p
+libsdfgen.sdfgen_irq_msi_create.argtypes = [c_uint32, c_uint8, c_uint8, c_uint8, c_uint64, c_uint64, POINTER(c_uint8)]
 libsdfgen.sdfgen_irq_destroy.restype = None
 libsdfgen.sdfgen_irq_destroy.argtypes = [c_void_p]
 
@@ -692,11 +692,12 @@ class SystemDescription:
             arch: SystemDescription.Arch,
             ioapic_id: int,
             pin: int,
+            vector: int,
             trigger: Optional[Trigger] = None,
             polarity: Optional[Polarity] = None,
             id: Optional[int] = None,
         ):
-            self._obj = libsdfgen.sdfgen_irq_ioapic_create(arch.value, ioapic_id, pin, ffi_uint32_ptr(trigger), ffi_uint32_ptr(polarity), ffi_uint8_ptr(id))
+            self._obj = libsdfgen.sdfgen_irq_ioapic_create(arch.value, ioapic_id, pin, ffi_uint32_ptr(trigger), ffi_uint32_ptr(polarity), vector, ffi_uint8_ptr(id))
             if self._obj is None:
                 raise Exception("failed to create IRQ - IOAPIC type")
 
