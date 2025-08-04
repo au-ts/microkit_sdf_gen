@@ -23,7 +23,8 @@ pub const DeviceTreeIndex = u8;
 
 ///
 /// Expected sDDF repository layout:
-///     -- network/ys///     -- serial/
+///     -- network/
+///     -- serial/
 ///     -- drivers/
 ///         -- network/
 ///         -- serial/
