@@ -602,7 +602,7 @@ class SystemDescription:
             mr: SystemDescription.MemoryRegion,
             vaddr: int,
             perms: str,
-            setvar_vaddr: Optional[str],
+            setvar_vaddr: Optional[str] = None,
             *,
             cached: bool = True,
         ) -> None:
