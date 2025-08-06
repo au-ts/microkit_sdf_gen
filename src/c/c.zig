@@ -335,7 +335,7 @@ export fn sdfgen_mr_create(name: [*c]u8, size: u64, page_size: [*c]u64) ?*anyopa
     return mr;
 }
 
-export fn sdfgen_mr_create_physical(c_sdf: *align(8) anyopaque, name: [*c]u8, size: u64, paddr: [*c]u64, page_size: [*c]u64) *anyopaque {
+export fn sdfgen_mr_create_physical(c_sdf: *align(8) anyopaque, name: [*c]u8, size: u64, paddr: [*c]u64, page_size: [*c]u64) ?*anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const mr = allocator.create(Mr) catch @panic("OOM");
     var options: Mr.OptionsPhysical = .{};
