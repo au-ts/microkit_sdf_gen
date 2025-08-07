@@ -12,6 +12,7 @@ class SddfStatus(IntEnum):
     OK = 0,
     DUPLICATE_CLIENT = 1,
     INVALID_CLIENT = 2,
+    INVALID_QUEUE_CAPACITY = 3,
     NET_DUPLICATE_COPIER = 100,
     NET_DUPLICATE_MAC_ADDR = 101,
 
@@ -162,7 +163,8 @@ libsdfgen.sdfgen_sddf_spi_destroy.restype = None
 libsdfgen.sdfgen_sddf_spi_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_sddf_spi_add_client.restype = c_uint32
-libsdfgen.sdfgen_sddf_spi_add_client.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_spi_add_client.argtypes = [c_void_p, c_void_p, c_uint8, POINTER(c_bool),
+    POINTER(c_bool), POINTER(c_uint64), POINTER(c_uint16), POINTER(c_uint32)]
 
 libsdfgen.sdfgen_sddf_spi_connect.restype = c_bool
 libsdfgen.sdfgen_sddf_spi_connect.argtypes = [c_void_p]
@@ -343,15 +345,26 @@ def ffi_uint16_ptr(n: Optional[int]):
     return pointer(c_uint16(n))
 
 
-def ffi_uint32_ptr(n: Optional[int]):
+def ffi_uint32_ptr(n: optional[int]):
     """
-    Convert an int value to a uint32_t pointer for FFI.
-    If 'n' is None then we return None (which acts as a null pointer)
+    convert an int value to a uint32_t pointer for ffi.
+    if 'n' is none then we return none (which acts as a null pointer)
     """
     if n is None:
         return None
 
     return pointer(c_uint32(n))
+
+
+def ffi_uint64_ptr(n: optional[int]):
+    """
+    convert an int value to a uint64_t pointer for ffi.
+    if 'n' is none then we return none (which acts as a null pointer)
+    """
+    if n is None:
+        return None
+
+    return pointer(c_uint64(n))
 
 
 def ffi_bool_ptr(val: Optional[bool]):
@@ -859,16 +872,38 @@ class Sddf:
             self._obj = libsdfgen.sdfgen_sddf_spi(
                 sdf._obj, device_obj, driver._obj, virt._obj)
 
-        def add_client(self, client: SystemDescription.ProtectionDomain):
-            ret = libsdfgen.sdfgen_sddf_spi_add_client(self._obj, client._obj)
-            if ret == SddfStatus.OK:
-                return
-            elif ret == SddfStatus.DUPLICATE_CLIENT:
-                raise Exception(f"duplicate client given '{client}'")
-            elif ret == SddfStatus.INVALID_CLIENT:
-                raise Exception(f"invalid client given '{client}'")
-            else:
-                raise Exception(f"internal error: {ret}")
+        def add_client(
+            self, 
+            client: SystemDescription.ProtectionDomain,
+            *,
+            cs: int,
+            cpha: Optional[bool] = None,
+            cpol: Optional[bool] = None,
+            freq_div: Optional[int] = None,
+            queue_capacity: Optional[int] = None,
+            data_size: Optional[int] = None
+        ):
+            ret = libsdfgen.sdfgen_sddf_spi_add_client(
+                self._obj, 
+                client._obj,
+                cs,
+                ffi_bool_ptr(cpha),
+                ffi_bool_ptr(cpol),
+                ffi_uint64_ptr(freq_div),
+                ffi_uint16_ptr(queue_capacity),
+                ffi_uint32_ptr(data_size)
+            )
+            match ret:
+                case SddfStatus.OK:
+                    return
+                case SddfStatus.DUPLICATE_CLIENT:
+                    raise Exception(f"duplicate client given '{client}'")
+                case SddfStatus.INVALID_CLIENT:
+                    raise Exception(f"invalid client given '{client}'")
+                case SddfStatus.INVALID_QUEUE_CAPACITY:
+                    raise Exception(f"invalid queue capacity given '{queue_capacity}'")
+                case _:
+                    raise Exception(f"internal error: {ret}")
 
         def connect(self) -> bool:
             return libsdfgen.sdfgen_sddf_spi_connect(self._obj)

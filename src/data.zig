@@ -226,42 +226,51 @@ pub const Resources = struct {
     pub const Spi = struct {
         const MAGIC: [5]u8 = MAGIC_START ++ .{0x9};
 
-        // SDDF Queue connection between PDs
-        pub const Connection = extern struct {
-            req_queue: Region,
-            resp_queue: Region,
-            num_buffers: u16,
-            id: u8,
+        pub const SPI_MAX_CS_LINES: u64 = MAX_NUM_CLIENTS;
+
+        pub const DeviceConfig = extern struct {
+            cpha: bool = false,
+            cpol: bool = false,
+            freq_div: u64 = 0,
         };
 
         pub const Virt = extern struct {
             pub const Client = extern struct {
-                conn: Connection,
-                control_size: usize,
-                slice_size: usize,
-                driver_control_vaddr: u64,
-                driver_slice_vaddr: u64, // vaddr as mapped into driver
-                client_control_vaddr: u64,
-                client_slice_vaddr: u64,
+                conn: Spi.Client.Connection,
+                data_size: u64,
+                cs: u8,
             };
-
             magic: [5]u8 = MAGIC,
-            num_clients: u64,
-            driver: Connection,
+            num_clients: u8,
             clients: [MAX_NUM_CLIENTS]Virt.Client,
+            driver: Driver.Connection,
         };
 
         pub const Driver = extern struct {
+            pub const Connection = extern struct {
+                cmd_queue: Region,
+                resp_queue: Region,
+                cmd_cs_queue: Region,
+                resp_cs_queue: Region,
+                id: u8,
+                queue_capacity_bits: u8,
+            };
             magic: [5]u8 = MAGIC,
             virt: Connection,
-            slice_size: usize
+            data: [SPI_MAX_CS_LINES]Region,
+            dev_conf: [SPI_MAX_CS_LINES]DeviceConfig,
         };
 
         pub const Client = extern struct {
+            pub const Connection = extern struct {
+                cmd_queue: Region,
+                resp_queue: Region,
+                id: u8,
+                queue_capacity_bits: u8,
+            };
             magic: [5]u8 = MAGIC,
             virt: Connection,
-            control: Region,
-            slice: Region,
+            data_region: Region,
         };
     };
 

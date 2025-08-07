@@ -15,6 +15,7 @@ const Pd = SystemDescription.ProtectionDomain;
 const Irq = SystemDescription.Irq;
 const Channel = SystemDescription.Channel;
 const SetVar = SystemDescription.SetVar;
+const Arch = SystemDescription.Arch;
 
 const ConfigResources = data.Resources;
 
@@ -647,59 +648,64 @@ pub const Spi = struct {
     device: ?*dtb.Node,
     device_res: ConfigResources.Device,
     virt: *Pd,
-    clients: std.ArrayList(*Pd),
-    region_req_size: usize,
-    region_resp_size: usize,
-    region_control_size: usize,
-    region_slice_size: usize,
-    driver_config: ConfigResources.Spi.Driver,
-    virt_config: ConfigResources.Spi.Virt,
-    client_configs: std.ArrayList(ConfigResources.Spi.Client),
-    num_buffers: u16,
+    clients: std.ArrayList(Client),
     connected: bool = false,
     serialised: bool = false,
+    config: Spi.Config,
 
-    pub const Error = SystemError;
-
-    pub const Options = struct {
-        region_req_size: usize = 0x1000,
-        region_resp_size: usize = 0x1000,
-        region_control_size: usize = 0x1000,
-        region_slice_size: usize = 0x10000,
+    const Client = struct {
+        pd: *Pd,
+        num_prev_occurances: u8,
+        cs: u8,
+        cpha: bool,
+        cpol: bool,
+        freq_div: u64,
+        queue_capacity: u16,
+        data_size: u32,
     };
 
-    pub fn init(allocator: Allocator, sdf: *SystemDescription, device: ?*dtb.Node, driver: *Pd, virt: *Pd, options: Options) Spi {
+    const Config = struct {
+        driver: ConfigResources.Spi.Driver = undefined,
+        virt: ConfigResources.Spi.Virt = undefined,
+        clients: std.ArrayList(ConfigResources.Spi.Client),
+    };
+
+    // TODO: move this up once config-time queue sizes are generally supported
+    pub const Error = SystemError || error {InvalidQueueCapacity};
+
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, device: ?*dtb.Node, driver: *Pd, virt: *Pd) Spi {
         return .{
             .allocator = allocator,
             .sdf = sdf,
-            .clients = std.ArrayList(*Pd).init(allocator),
+            .clients = .init(allocator),
             .driver = driver,
             .device = device,
             .device_res = std.mem.zeroInit(ConfigResources.Device, .{}),
             .virt = virt,
-            .region_req_size = options.region_req_size,
-            .region_resp_size = options.region_resp_size,
-            .region_control_size = options.region_control_size,
-            .region_slice_size = options.region_slice_size,
-            .driver_config = std.mem.zeroInit(ConfigResources.Spi.Driver, .{}),
-            .virt_config = std.mem.zeroInit(ConfigResources.Spi.Virt, .{}),
-            .client_configs = std.ArrayList(ConfigResources.Spi.Client).init(allocator),
-            .num_buffers = 64,
+            .config = .{
+                .driver = std.mem.zeroInit(ConfigResources.Spi.Driver, .{}),
+                .virt = std.mem.zeroInit(ConfigResources.Spi.Virt, .{}),
+                .clients = std.ArrayList(ConfigResources.Spi.Client).init(allocator),
+            },
         };
     }
 
     pub fn deinit(system: *Spi) void {
         system.clients.deinit();
-        system.client_configs.deinit();
+        system.config.clients.deinit();
     }
 
-    pub fn addClient(system: *Spi, client: *Pd) Error!void {
-        // Check that the client does not already exist
-        for (system.clients.items) |existing_client| {
-            if (std.mem.eql(u8, existing_client.name, client.name)) {
-                return Error.DuplicateClient;
-            }
-        }
+    pub const ClientOptions = struct {
+        cs: u8,
+        cpha: bool = false,
+        cpol: bool = false,
+        freq_div: u64 = 0,
+        queue_capacity: u16 = 128,
+        data_size: u32 = 0x10000,
+    };
+
+    pub fn addClient(system: *Spi, client: *Pd, options: ClientOptions) Error!void {
+        // Check that the Pd is not a virt or driver
         if (std.mem.eql(u8, client.name, system.driver.name)) {
             log.err("invalid spi client, same name as driver '{s}", .{client.name});
             return Error.InvalidClient;
@@ -708,8 +714,59 @@ pub const Spi = struct {
             log.err("invalid spi client, same name as virt '{s}", .{client.name});
             return Error.InvalidClient;
         }
-        system.clients.append(client) catch @panic("Could not add client to spi");
-        system.client_configs.append(std.mem.zeroInit(ConfigResources.Spi.Client, .{})) catch @panic("Could not add client to spi");
+        if (options.queue_capacity == 0) {
+            log.err("invalid queue capacity, it must be greater than 0", .{});
+            return Error.InvalidQueueCapacity;
+        }
+        // TODO: check if the queue capacity is too large
+
+        if (!std.math.isPowerOfTwo(options.queue_capacity)) {
+            log.err("invalid queue capacity, {d} is not a power of two", .{options.queue_capacity});
+            return Error.InvalidQueueCapacity;
+        }
+
+        var num_prev_occurances: u8 = 0;
+        for (system.clients.items) |existing_client| {
+            if (std.mem.eql(u8, existing_client.pd.name, client.name)) {
+                num_prev_occurances += 1;
+            }
+        }
+        system.clients.append(.{
+            .pd = client,
+            .num_prev_occurances = num_prev_occurances,
+            .cs = options.cs,
+            .cpha = options.cpha,
+            .cpol = options.cpol,
+            .freq_div = options.freq_div,
+            .queue_capacity = options.queue_capacity,
+            .data_size = options.data_size,
+        }) catch @panic("Could not add client to spi");
+        system.config.clients.append(std.mem.zeroInit(ConfigResources.Spi.Client, .{})) catch @panic("Could not add client to spi");
+    }
+
+    fn driverQueueCapacity(system: *Spi) u16 {
+        var total_capacity: u16 = 0;
+        for (system.clients.items) |client| {
+            total_capacity += client.queue_capacity;
+        }
+
+        return std.math.ceilPowerOfTwoAssert(u16, total_capacity);
+    }
+
+    fn driverCmdQueueMrSize(system: *Spi) u64 {
+        // TODO: 24 bytes is enough for each queue entry, but need to be
+        // better about how this is determined.
+        return Arch.roundUpToPage(system.sdf.arch, @as(u64, driverQueueCapacity(system)) * @as(u64, 32));
+    }
+    fn driverRespQueueMrSize(system: *Spi) u64 {
+        // TODO: 4 bytes is enough for each queue entry, but need to be
+        // better about how this is determined.
+        return Arch.roundUpToPage(system.sdf.arch, @as(u64, driverQueueCapacity(system)) * @as(u64, 4));
+    }
+    fn driverCsQueueMrSize(system: *Spi) u64 {
+        // TODO: 1 byte is enough for each queue entry, but need to be
+        // better about how this is determined.
+        return Arch.roundUpToPage(system.sdf.arch, @as(u64, driverQueueCapacity(system)));
     }
 
     pub fn connectDriver(system: *Spi) void {
@@ -719,116 +776,122 @@ pub const Spi = struct {
         var virt = system.virt;
 
         // Create all the MRs between the driver and virtualiser
-        const mr_req = Mr.create(allocator, "spi_driver_request", system.region_req_size, .{});
-        const mr_resp = Mr.create(allocator, "spi_driver_response", system.region_resp_size, .{});
+        const mr_cmd = Mr.create(allocator, "spi_driver_cmd", driverCmdQueueMrSize(system), .{});
+        const mr_resp = Mr.create(allocator, "spi_driver_resp", driverRespQueueMrSize(system), .{});
+        const mr_cmd_cs = Mr.create(allocator, "spi_driver_cmd_cs", driverCsQueueMrSize(system), .{});
+        const mr_resp_cs = Mr.create(allocator, "spi_driver_resp_cs", driverCsQueueMrSize(system), .{});
 
-        sdf.addMemoryRegion(mr_req);
+        sdf.addMemoryRegion(mr_cmd);
         sdf.addMemoryRegion(mr_resp);
+        sdf.addMemoryRegion(mr_cmd_cs);
+        sdf.addMemoryRegion(mr_resp_cs);
 
-        const driver_map_req = Map.create(mr_req, driver.getMapVaddr(&mr_req), .rw, .{});
-        driver.addMap(driver_map_req);
+        const driver_map_cmd = Map.create(mr_cmd, driver.getMapVaddr(&mr_cmd), .rw, .{});
+        driver.addMap(driver_map_cmd);
         const driver_map_resp = Map.create(mr_resp, driver.getMapVaddr(&mr_resp), .rw, .{});
         driver.addMap(driver_map_resp);
+        const driver_map_cmd_cs = Map.create(mr_cmd_cs, driver.getMapVaddr(&mr_cmd_cs), .rw, .{});
+        driver.addMap(driver_map_cmd_cs);
+        const driver_map_resp_cs = Map.create(mr_resp_cs, driver.getMapVaddr(&mr_resp_cs), .rw, .{});
+        driver.addMap(driver_map_resp_cs);
 
-        const virt_map_req = Map.create(mr_req, virt.getMapVaddr(&mr_req), .rw, .{});
-        virt.addMap(virt_map_req);
+        const virt_map_cmd = Map.create(mr_cmd, virt.getMapVaddr(&mr_cmd), .rw, .{});
+        virt.addMap(virt_map_cmd);
         const virt_map_resp = Map.create(mr_resp, virt.getMapVaddr(&mr_resp), .rw, .{});
         virt.addMap(virt_map_resp);
+        const virt_map_cmd_cs = Map.create(mr_cmd_cs, virt.getMapVaddr(&mr_cmd_cs), .rw, .{});
+        virt.addMap(virt_map_cmd_cs);
+        const virt_map_resp_cs = Map.create(mr_resp_cs, virt.getMapVaddr(&mr_resp_cs), .rw, .{});
+        virt.addMap(virt_map_resp_cs);
 
-        const ch = Channel.create(system.driver, system.virt, .{ .pp = .b }) catch unreachable;
+        const ch = Channel.create(system.driver, system.virt, .{}) catch unreachable;
         sdf.addChannel(ch);
 
-        system.driver_config = .{
-            .virt = .{
-                .req_queue = .createFromMap(driver_map_req),
-                .resp_queue = .createFromMap(driver_map_resp),
-                .num_buffers = system.num_buffers,
-                .id = ch.pd_a_id,
-            },
-            .slice_size = system.region_slice_size,
+        system.config.driver.virt = .{
+            .cmd_queue = .createFromMap(driver_map_cmd),
+            .resp_queue = .createFromMap(driver_map_resp),
+            .cmd_cs_queue = .createFromMap(driver_map_cmd_cs),
+            .resp_cs_queue = .createFromMap(driver_map_resp_cs),
+            .id = ch.pd_a_id,
+            .queue_capacity_bits = @intCast(std.math.log2(driverQueueCapacity(system))),
         };
 
-        system.virt_config.driver = .{
-            .req_queue = .createFromMap(virt_map_req),
+        system.config.virt.driver = .{
+            .cmd_queue = .createFromMap(virt_map_cmd),
             .resp_queue = .createFromMap(virt_map_resp),
-            .num_buffers = system.num_buffers,
+            .cmd_cs_queue = .createFromMap(virt_map_cmd_cs),
+            .resp_cs_queue = .createFromMap(virt_map_resp_cs),
             .id = ch.pd_b_id,
+            .queue_capacity_bits = @intCast(std.math.log2(driverQueueCapacity(system))),
         };
     }
 
-    pub fn connectClient(system: *Spi, client: *Pd, i: usize) void {
+    pub fn connectClient(system: *Spi, client: Client, i: usize) void {
         const allocator = system.allocator;
         var sdf = system.sdf;
         const virt = system.virt;
         var driver = system.driver;
 
-        system.virt_config.num_clients += 1;
+        system.config.virt.num_clients += 1;
 
-        const mr_req = Mr.create(allocator, fmt(allocator, "spi_client_request_{s}", .{client.name}), system.region_req_size, .{});
-        const mr_resp = Mr.create(allocator, fmt(allocator, "spi_client_response_{s}", .{client.name}), system.region_resp_size, .{});
-        const mr_control = Mr.create(allocator, fmt(allocator, "spi_client_control_{s}", .{client.name}), system.region_control_size, .{});
-        const mr_slice = Mr.create(allocator, fmt(allocator, "spi_client_slice_{s}", .{client.name}), system.region_slice_size, .{});
+        //TODO: unbodge the sizes
+        const mr_cmd = Mr.create(allocator, fmt(allocator, "spi_client_cmd_{s}-{d}", .{client.pd.name, client.num_prev_occurances}), Arch.roundUpToPage(system.sdf.arch, client.queue_capacity * 32), .{});
+        const mr_resp = Mr.create(allocator, fmt(allocator, "spi_client_resp_{s}-{d}", .{client.pd.name, client.num_prev_occurances}), Arch.roundUpToPage(system.sdf.arch, client.queue_capacity * 4), .{});
+        const mr_data = Mr.create(allocator, fmt(allocator, "spi_client_data_{s}-{d}", .{client.pd.name, client.num_prev_occurances}), Arch.roundUpToPage(system.sdf.arch, client.data_size), .{});
 
-        sdf.addMemoryRegion(mr_req);
+        sdf.addMemoryRegion(mr_cmd);
         sdf.addMemoryRegion(mr_resp);
-        sdf.addMemoryRegion(mr_control);
-        sdf.addMemoryRegion(mr_slice);
+        sdf.addMemoryRegion(mr_data);
 
-        const driver_map_control = Map.create(mr_control, system.driver.getMapVaddr(&mr_control), .rw, .{});
-        driver.addMap(driver_map_control);
+        const driver_map_data = Map.create(mr_data, system.driver.getMapVaddr(&mr_data), .rw, .{ .cached = false });
+        driver.addMap(driver_map_data);
 
-        // The slice region backs slices in the control region. Accessed only by driver and client.
-        const driver_map_slice = Map.create(mr_slice, system.driver.getMapVaddr(&mr_slice), .rw, .{ .cached = false });
-        driver.addMap(driver_map_slice);
-
-        const virt_map_req = Map.create(mr_req, system.virt.getMapVaddr(&mr_req), .rw, .{});
-        virt.addMap(virt_map_req);
+        const virt_map_cmd = Map.create(mr_cmd, system.virt.getMapVaddr(&mr_cmd), .rw, .{});
+        virt.addMap(virt_map_cmd);
         const virt_map_resp = Map.create(mr_resp, system.virt.getMapVaddr(&mr_resp), .rw, .{});
         virt.addMap(virt_map_resp);
 
-        const client_map_req = Map.create(mr_req, client.getMapVaddr(&mr_req), .rw, .{});
-        client.addMap(client_map_req);
-        const client_map_resp = Map.create(mr_resp, client.getMapVaddr(&mr_resp), .rw, .{});
-        client.addMap(client_map_resp);
+        const client_map_cmd = Map.create(mr_cmd, client.pd.getMapVaddr(&mr_cmd), .rw, .{});
+        client.pd.addMap(client_map_cmd);
+        const client_map_resp = Map.create(mr_resp, client.pd.getMapVaddr(&mr_resp), .rw, .{});
+        client.pd.addMap(client_map_resp);
 
-        const client_map_control = Map.create(mr_control, client.getMapVaddr(&mr_control), .rw, .{});
-        client.addMap(client_map_control);
-        const client_map_slice = Map.create(mr_slice, client.getMapVaddr(&mr_slice), .rw, .{ .cached = false });
-        client.addMap(client_map_slice);
+        const client_map_data = Map.create(mr_data, client.pd.getMapVaddr(&mr_data), .rw, .{ .cached = false });
+        client.pd.addMap(client_map_data);
 
         // Create a channel between the virtualiser and client
-        const ch = Channel.create(virt, client, .{ .pp = .b }) catch unreachable;
+        const ch = Channel.create(virt, client.pd, .{}) catch unreachable;
         sdf.addChannel(ch);
 
         // The below section originally passed the virt a region structure with no vaddr for the
         // control region. Instead of doing this, just pass the size of the region.
-        system.virt_config.clients[i] = .{
+        system.config.virt.clients[i] = .{
             .conn = .{
-                .req_queue = .createFromMap(virt_map_req),
+                .cmd_queue = .createFromMap(virt_map_cmd),
                 .resp_queue = .createFromMap(virt_map_resp),
-                .num_buffers = system.num_buffers,
                 .id = ch.pd_a_id,
+                .queue_capacity_bits = @intCast(std.math.log2(client.queue_capacity)),
             },
-            .control_size = system.region_control_size,
-            .slice_size = system.region_slice_size,
-            // vaddrs used to convert offsets in cmd / buffer buffers to a pointer used by the driver
-            // .driver_control_vaddr = i * driver_map_control.vaddr,
-            // .driver_buffer_vaddr = i * driver_map_buffer.vaddr,
-            .driver_control_vaddr = driver_map_control.vaddr,
-            .driver_slice_vaddr = driver_map_slice.vaddr,
-            .client_control_vaddr = client_map_control.vaddr,
-            .client_slice_vaddr = client_map_slice.vaddr,
+            .data_size = client.data_size,
+            .cs = client.cs,
         };
 
-        system.client_configs.items[i] = .{
+        system.config.clients.items[i] = .{
             .virt = .{
-                .req_queue = .createFromMap(client_map_req),
+                .cmd_queue = .createFromMap(client_map_cmd),
                 .resp_queue = .createFromMap(client_map_resp),
-                .num_buffers = system.num_buffers,
                 .id = ch.pd_b_id,
+                .queue_capacity_bits = @intCast(std.math.log2(client.queue_capacity)),
             },
-            .control = .createFromMap(client_map_control),
-            .slice = .createFromMap(client_map_slice),
+            .data_region = .createFromMap(client_map_data),
+        };
+
+        system.config.driver.data[client.cs] = .createFromMap(driver_map_data);
+
+        system.config.driver.dev_conf[client.cs] = .{
+            .cpha = client.cpha,
+            .cpol = client.cpol,
+            .freq_div = client.freq_div,
         };
     }
 
@@ -842,7 +905,7 @@ pub const Spi = struct {
         // 2. Connect the driver to the virtualiser
         system.connectDriver();
 
-        // 3. Connect each client to the virtualiser (and connect the slice region to the driver)
+        // 3. Connect each client to the virtualiser (and connect the data region to the driver)
         for (system.clients.items, 0..) |client, i| {
             system.connectClient(client, i);
         }
@@ -860,12 +923,12 @@ pub const Spi = struct {
 
         const device_res_data_name = fmt(system.allocator, "{s}_device_resources", .{system.driver.name});
         try data.serialize(allocator, system.device_res, prefix, device_res_data_name);
-        try data.serialize(allocator, system.driver_config, prefix, "spi_driver");
-        try data.serialize(allocator, system.virt_config, prefix, "spi_virt");
+        try data.serialize(allocator, system.config.driver, prefix, "spi_driver");
+        try data.serialize(allocator, system.config.virt, prefix, "spi_virt");
 
         for (system.clients.items, 0..) |client, i| {
-            const name = fmt(allocator, "spi_client_{s}", .{client.name});
-            try data.serialize(allocator, system.client_configs.items[i], prefix, name);
+            const name = fmt(allocator, "spi_client_{s}", .{client.pd.name});
+            try data.serialize(allocator, system.config.clients.items[i], prefix, name);
         }
 
         system.serialised = true;
@@ -969,6 +1032,7 @@ pub const Blk = struct {
         }) catch @panic("Could not add client to Blk");
     }
 
+    // TODO: make sure this is a power of 2!
     fn driverQueueCapacity(system: *Blk) u16 {
         var total_capacity: u16 = 0;
         for (system.clients.items) |client| {

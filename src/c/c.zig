@@ -555,7 +555,7 @@ export fn sdfgen_sddf_i2c_serialise_config(system: *align(8) anyopaque, output_d
 export fn sdfgen_sddf_spi(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt: *align(8) anyopaque) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const spi = allocator.create(sddf.Spi) catch @panic("OOM");
-    spi.* = sddf.Spi.init(allocator, sdf, @ptrCast(c_device), @ptrCast(driver), @ptrCast(virt), .{});
+    spi.* = sddf.Spi.init(allocator, sdf, @ptrCast(c_device), @ptrCast(driver), @ptrCast(virt));
 
     return spi;
 }
@@ -566,12 +566,33 @@ export fn sdfgen_sddf_spi_destroy(system: *align(8) anyopaque) void {
     allocator.destroy(spi);
 }
 
-export fn sdfgen_sddf_spi_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque) bindings.sdfgen_sddf_status_t {
+export fn sdfgen_sddf_spi_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque, cs: u8, cpha: [*c]bool, cpol: [*c]bool, freq_div: [*c]u64, queue_capacity: [*c]u16, data_size: [*c]u32) bindings.sdfgen_sddf_status_t {
     const spi: *sddf.Spi = @ptrCast(system);
-    spi.addClient(@ptrCast(client)) catch |e| {
+
+    var options: sddf.Spi.ClientOptions = .{
+        .cs = cs,
+    };
+    if (cpha != null) {
+        options.cpha = cpha.*;
+    }
+    if (cpol != null) {
+        options.cpol = cpol.*;
+    }
+    if (freq_div != null) {
+        options.freq_div = freq_div.*;
+    }
+    if (queue_capacity != null) {
+        options.queue_capacity = queue_capacity.*;
+    }
+    if (data_size != null) {
+        options.data_size = data_size.*;
+    }
+
+    spi.addClient(@ptrCast(client), options) catch |e| {
         switch (e) {
             sddf.Spi.Error.DuplicateClient => return 1,
             sddf.Spi.Error.InvalidClient => return 2,
+            sddf.Spi.Error.InvalidQueueCapacity => return 3,
             // Should never happen when adding a client
             sddf.Spi.Error.NotConnected => @panic("internal error"),
         }
