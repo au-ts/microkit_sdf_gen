@@ -751,8 +751,8 @@ pub const SystemDescription = struct {
         };
 
         pub const IoapicPolarity = enum(u8) {
-            activeLow = 0,
-            activeHigh = 1,
+            low = 0,
+            high = 1,
         };
 
         const Kind = union(enum) {
@@ -899,10 +899,10 @@ pub const SystemDescription = struct {
                         try std.fmt.format(writer, " ioapic=\"{}\"", .{ioapic_id});
                     }
                     if (i_irq.trigger) |trigger| {
-                        try std.fmt.format(writer, " level=\"{}\"", .{trigger});
+                        try std.fmt.format(writer, " level=\"{s}\"", .{@tagName(trigger)});
                     }
                     if (i_irq.polarity) |polarity| {
-                        try std.fmt.format(writer, " polarity=\"{}\"", .{polarity});
+                        try std.fmt.format(writer, " polarity=\"{s}\"", .{@tagName(polarity)});
                     }
                 },
                 .MSI => |m_irq| {

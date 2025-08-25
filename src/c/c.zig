@@ -333,8 +333,8 @@ export fn sdfgen_irq_ioapic_create(c_arch: bindings.sdfgen_arch_t, ioapic_id: u6
     var options: Irq.IoapicOptions = .{};
     if (c_polarity != null) {
         const polarity: Irq.IoapicPolarity = switch (c_polarity.*) {
-            0 => .activeHigh,
-            1 => .activeLow,
+            0 => .high,
+            1 => .low,
             else => {
                 log.err("failed to create IOAPIC IRQ at chip {}, pin {}, vector {}: invalid polarity '{}'", .{ ioapic_id, pin, vector, c_polarity.* });
                 allocator.destroy(irq);
