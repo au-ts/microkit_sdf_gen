@@ -33,7 +33,7 @@ pub const Pinctrl = struct {
     pub const Error = SystemError;
 
     pub fn init(allocator: Allocator, sdf: *SystemDescription, device: *dtb.Node, driver: *Pd) Pinctrl {
-        // First we have to set some properties on the driver. It is currently our policy that every pinctrl
+        // Set some properties on the driver. It is currently our policy that every pinctrl
         // driver should be passive.
         driver.passive = true;
 
@@ -55,6 +55,14 @@ pub const Pinctrl = struct {
     pub fn connect(system: *Pinctrl) !void {
         // The driver must be passive
         std.debug.assert(system.driver.passive.?);
+
+        // The driver must be at the highest priority exclusively
+        const pinctrl_pd_prio = system.driver.priority;
+        for (system.sdf.pds.items) |pd| {
+            if (pd != system.driver and pd.priority.? >= pinctrl_pd_prio.?) {
+                @panic("Pinctrl driver PD must be exclusively at the highest priority.");
+            }
+        }
 
         try sddf.createDriver(system.sdf, system.driver, system.device, .pinctrl, &system.device_res);
         system.connected = true;
