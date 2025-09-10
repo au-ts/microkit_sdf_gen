@@ -124,8 +124,16 @@ pub fn probe(allocator: Allocator, path: []const u8) !void {
         for (@as(Config.Driver.Class, @enumFromInt(device_class.value)).dirs()) |dir| {
             const driver_dir = fmt(allocator, "drivers/{s}", .{dir});
             var device_class_dir = sddf.openDir(driver_dir, .{ .iterate = true }) catch |e| {
-                log.info("failed to open sDDF driver directory '{s}': {}", .{ driver_dir, e });
-                continue;
+                if (e == std.fs.Dir.OpenError.FileNotFound) {
+                    // Rather than failing on a particular driver directory not being found, we instead
+                    // skip it.
+                    // This makes the tool more resilient to when we delevop new device classes that
+                    // have not been merged in yet.
+                    continue;
+                } else {
+                    log.err("failed to open sDDF driver directory '{s}': {}", .{ driver_dir, e });
+                    return e;
+                }
             };
             defer device_class_dir.close();
             var iter = device_class_dir.iterate();
@@ -305,7 +313,7 @@ pub const Config = struct {
 
             pub fn dirs(comptime self: Class) []const []const u8 {
                 return switch (self) {
-                    .network => &.{"network", "network/virtio"},
+                    .network => &.{ "network", "network/virtio" },
                     .serial => &.{"serial"},
                     .timer => &.{"timer"},
                     .blk => &.{ "blk", "blk/mmc", "blk/virtio" },
@@ -493,13 +501,10 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: *dtb.Node, class: 
         const dt_irq = dt_irqs[driver_irq.dt_index];
 
         const irq = try dtb.parseIrq(sdf.arch, dt_irq);
-        const irq_id = try pd.addIrq(Irq.create(
-            irq.number().?,
-            .{
-                .id = driver_irq.channel_id,
-                .trigger = irq.trigger(),
-            }
-        ));
+        const irq_id = try pd.addIrq(Irq.create(irq.number().?, .{
+            .id = driver_irq.channel_id,
+            .trigger = irq.trigger(),
+        }));
 
         device_res.irqs[device_res.num_irqs] = .{
             .id = irq_id,
