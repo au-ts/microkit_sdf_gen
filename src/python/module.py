@@ -381,7 +381,8 @@ class DeviceTree:
         assert self._obj is not None
 
     def __del__(self):
-        libsdfgen.sdfgen_dtb_destroy(self._obj)
+        if hasattr(self, "_obj"):
+            libsdfgen.sdfgen_dtb_destroy(self._obj)
 
     @property
     def size(self) -> int:
@@ -515,7 +516,8 @@ class SystemDescription:
                 raise Exception(f"ProtectionDomain '{self.name}' already has VirtualMachine")
 
         def __del__(self):
-            libsdfgen.sdfgen_pd_destroy(self._obj)
+            if hasattr(self, "_obj"):
+                libsdfgen.sdfgen_pd_destroy(self._obj)
 
         def __repr__(self) -> str:
             return f"ProtectionDomain({self.name})"
@@ -558,7 +560,8 @@ class SystemDescription:
             libsdfgen.sdfgen_vm_add_map(self._obj, map._obj)
 
         def __del__(self):
-            libsdfgen.sdfgen_vm_destroy(self._obj)
+            if hasattr(self, "_obj"):
+                libsdfgen.sdfgen_vm_destroy(self._obj)
 
         def __repr__(self) -> str:
             return f"VirtualMachine({self.name})"
@@ -631,7 +634,8 @@ class SystemDescription:
                 return None
 
         def __del__(self):
-            libsdfgen.sdfgen_mr_destroy(self._obj)
+            if hasattr(self, "_obj"):
+                libsdfgen.sdfgen_mr_destroy(self._obj)
 
     class Irq:
         _obj: c_void_p
@@ -651,7 +655,8 @@ class SystemDescription:
                 raise Exception("failed to create IRQ")
 
         def __del__(self):
-            libsdfgen.sdfgen_irq_destroy(self._obj)
+            if hasattr(self, "_obj"):
+                libsdfgen.sdfgen_irq_destroy(self._obj)
 
     class Channel:
         _obj: c_void_p
@@ -698,7 +703,8 @@ class SystemDescription:
             return libsdfgen.sdfgen_channel_get_pd_b_id(self._obj)
 
         def __del__(self):
-            libsdfgen.sdfgen_channel_destroy(self._obj)
+            if hasattr(self, "_obj"):
+                libsdfgen.sdfgen_channel_destroy(self._obj)
 
     def __init__(self, arch: Arch, paddr_top: int) -> None:
         """
@@ -707,7 +713,8 @@ class SystemDescription:
         self._obj = libsdfgen.sdfgen_create(arch.value, paddr_top)
 
     def __del__(self):
-        libsdfgen.sdfgen_destroy(self._obj)
+        if hasattr(self, "_obj"):
+            libsdfgen.sdfgen_destroy(self._obj)
 
     def add_pd(self, pd: ProtectionDomain):
         libsdfgen.sdfgen_add_pd(self._obj, pd._obj)
@@ -808,7 +815,8 @@ class Sddf:
             return libsdfgen.sdfgen_sddf_serial_serialise_config(self._obj, c_output_dir)
 
         def __del__(self):
-            libsdfgen.sdfgen_sddf_serial_destroy(self._obj)
+            if hasattr(self, "_obj"):
+                libsdfgen.sdfgen_sddf_serial_destroy(self._obj)
 
     class I2c:
         _obj: c_void_p
@@ -846,7 +854,8 @@ class Sddf:
             return libsdfgen.sdfgen_sddf_i2c_serialise_config(self._obj, c_output_dir)
 
         def __del__(self):
-            libsdfgen.sdfgen_sddf_i2c_destroy(self._obj)
+            if hasattr(self, "_obj"):
+                libsdfgen.sdfgen_sddf_i2c_destroy(self._obj)
 
     class Blk:
         _obj: c_void_p
@@ -899,7 +908,8 @@ class Sddf:
             return libsdfgen.sdfgen_sddf_blk_serialise_config(self._obj, c_output_dir)
 
         def __del__(self):
-            libsdfgen.sdfgen_sddf_blk_destroy(self._obj)
+            if hasattr(self, "_obj"):
+                libsdfgen.sdfgen_sddf_blk_destroy(self._obj)
 
     class Net:
         _obj: c_void_p
@@ -987,7 +997,8 @@ class Sddf:
             return libsdfgen.sdfgen_sddf_net_serialise_config(self._obj, c_output_dir)
 
         def __del__(self):
-            libsdfgen.sdfgen_sddf_net_destroy(self._obj)
+            if hasattr(self, "_obj"):
+                libsdfgen.sdfgen_sddf_net_destroy(self._obj)
 
     class Timer:
         _obj: c_void_p
@@ -1024,7 +1035,8 @@ class Sddf:
             return libsdfgen.sdfgen_sddf_timer_serialise_config(self._obj, c_output_dir)
 
         def __del__(self):
-            libsdfgen.sdfgen_sddf_timer_destroy(self._obj)
+            if hasattr(self, "_obj"):
+                libsdfgen.sdfgen_sddf_timer_destroy(self._obj)
 
     class Gpu:
         _obj: c_void_p
@@ -1062,7 +1074,8 @@ class Sddf:
             return libsdfgen.sdfgen_sddf_gpu_serialise_config(self._obj, c_output_dir)
 
         def __del__(self):
-            libsdfgen.sdfgen_sddf_gpu_destroy(self._obj)
+            if hasattr(self, "_obj"):
+                libsdfgen.sdfgen_sddf_gpu_destroy(self._obj)
 
     class Lwip:
         _obj: c_void_p
@@ -1240,7 +1253,8 @@ class LionsOs:
                 )
 
             def __del__(self):
-                libsdfgen.sdfgen_lionsos_fs_nfs_destroy(self._obj)
+                if hasattr(self, "_obj"):
+                    libsdfgen.sdfgen_lionsos_fs_nfs_destroy(self._obj)
 
             def connect(self) -> bool:
                 return libsdfgen.sdfgen_lionsos_fs_nfs_connect(self._obj)
