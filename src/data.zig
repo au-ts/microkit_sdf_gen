@@ -185,8 +185,8 @@ pub const Resources = struct {
     pub const I2c = struct {
         const MAGIC: [5]u8 = MAGIC_START ++ .{0x4};
 
+        // SDDF Queue connection between PDs
         pub const Connection = extern struct {
-            data: Region,
             req_queue: Region,
             resp_queue: Region,
             num_buffers: u16,
@@ -196,7 +196,9 @@ pub const Resources = struct {
         pub const Virt = extern struct {
             pub const Client = extern struct {
                 conn: Connection,
-                driver_data_offset: u64,
+                data_size: usize,
+                driver_data_vaddr: u64, // vaddr as mapped into driver
+                client_data_vaddr: u64,
             };
 
             magic: [5]u8 = MAGIC,
@@ -213,6 +215,7 @@ pub const Resources = struct {
         pub const Client = extern struct {
             magic: [5]u8 = MAGIC,
             virt: Connection,
+            data: Region,
         };
     };
 

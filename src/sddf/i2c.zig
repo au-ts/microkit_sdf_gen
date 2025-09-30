@@ -118,7 +118,6 @@ pub const I2c = struct {
         system.driver_config = .{
             .virt = .{
                 // Will be set in connectClient
-                .data = undefined,
                 .req_queue = .createFromMap(driver_map_req),
                 .resp_queue = .createFromMap(driver_map_resp),
                 .num_buffers = system.num_buffers,
@@ -127,8 +126,6 @@ pub const I2c = struct {
         };
 
         system.virt_config.driver = .{
-            // Will be set in connectClient
-            .data = undefined,
             .req_queue = .createFromMap(virt_map_req),
             .resp_queue = .createFromMap(virt_map_resp),
             .num_buffers = system.num_buffers,
@@ -173,29 +170,25 @@ pub const I2c = struct {
 
         system.virt_config.clients[i] = .{
             .conn = .{
-                .data = .{
-                    // TODO: absolute hack
-                    .vaddr = 0,
-                    .size = system.region_data_size,
-                },
                 .req_queue = .createFromMap(virt_map_req),
                 .resp_queue = .createFromMap(virt_map_resp),
                 .num_buffers = system.num_buffers,
                 .id = ch.pd_a_id,
             },
-            .driver_data_offset = i * system.region_data_size,
+            .data_size = system.region_data_size,
+            .driver_data_vaddr = driver_map_data.vaddr,
+            .client_data_vaddr = client_map_data.vaddr,
         };
-        if (i == 0) {
-            system.driver_config.virt.data = .createFromMap(driver_map_data);
-        }
 
-        system.client_configs.items[i] = .{ .virt = .{
+        system.client_configs.items[i] = .{
+            .virt = .{
+                .req_queue = .createFromMap(client_map_req),
+                .resp_queue = .createFromMap(client_map_resp),
+                .num_buffers = system.num_buffers,
+                .id = ch.pd_b_id,
+            },
             .data = .createFromMap(client_map_data),
-            .req_queue = .createFromMap(client_map_req),
-            .resp_queue = .createFromMap(client_map_resp),
-            .num_buffers = system.num_buffers,
-            .id = ch.pd_b_id,
-        } };
+        };
     }
 
     pub fn connect(system: *I2c) !void {
@@ -212,9 +205,6 @@ pub const I2c = struct {
         for (system.clients.items, 0..) |client, i| {
             system.connectClient(client, i);
         }
-
-        // To avoid cross-core IPC, we make the virtualiser passive
-        system.virt.passive = true;
 
         system.connected = true;
     }
