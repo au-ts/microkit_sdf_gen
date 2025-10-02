@@ -4,6 +4,7 @@ const dtb = @import("../dtb.zig");
 const data = @import("../data.zig");
 const log = @import("../log.zig");
 const sddf = @import("sddf.zig");
+const mod_vmm = @import("../vmm.zig");
 
 const fmt = sddf.fmt;
 
@@ -14,6 +15,8 @@ const Mr = SystemDescription.MemoryRegion;
 const Map = SystemDescription.Map;
 const Pd = SystemDescription.ProtectionDomain;
 const Channel = SystemDescription.Channel;
+const VirtualMachineSystem = mod_vmm;
+const LinuxUioRegion = mod_vmm.LinuxUioRegion;
 
 const ConfigResources = data.Resources;
 
@@ -22,7 +25,18 @@ const SystemError = sddf.SystemError;
 pub const Net = struct {
     const BUFFER_SIZE = 2048;
 
+    const NUM_UIO_REGIONS = 11;
+    const UIO_DATA_PASS_NAME = "data_passing";
+    const UIO_RX_FREE_NAME = "rx_free";
+    const UIO_TX_FREE_NAME = "tx_free";
+    const UIO_RX_ACTIVE_NAME = "rx_active";
+    const UIO_TX_ACTIVE_NAME = "tx_active";
+    const UIO_RX_DATA_NAME = "rx_data";
+    const UIO_TX_DATA_NAME = "tx_data";
+
     pub const Error = SystemError || error{
+        // VmSystemNotConnected,
+        // InvalidUio,
         InvalidClient,
         DuplicateCopier,
         DuplicateMacAddr,
@@ -33,6 +47,7 @@ pub const Net = struct {
     pub const Options = struct {
         rx_buffers: usize = 512,
         rx_dma_mr: ?*Mr = null,
+        driver_vm_system: ?*VirtualMachineSystem = null,
     };
 
     pub const ClientOptions = struct {
@@ -56,6 +71,7 @@ pub const Net = struct {
     device: *dtb.Node,
 
     driver: *Pd,
+    driver_vm_sys: ?*VirtualMachineSystem,
     virt_rx: *Pd,
     virt_tx: *Pd,
     copiers: std.array_list.Managed(?*Pd),
@@ -92,6 +108,7 @@ pub const Net = struct {
             .clients = std.array_list.Managed(*Pd).init(allocator),
             .copiers = std.array_list.Managed(?*Pd).init(allocator),
             .driver = driver,
+            .driver_vm_sys = options.driver_vm_system,
             .device = device,
             .device_res = std.mem.zeroInit(ConfigResources.Device, .{}),
             .virt_rx = virt_rx,
@@ -187,7 +204,13 @@ pub const Net = struct {
         system.client_info.items[client_idx].tx_buffers = options.tx_buffers;
     }
 
-    fn createConnection(system: *Net, server: *Pd, client: *Pd, server_conn: *ConfigResources.Net.Connection, client_conn: *ConfigResources.Net.Connection, num_buffers: u64) void {
+    const CreateConnectionOption = struct {
+        vm_sys: ?*VirtualMachineSystem = null,
+        free_uio_node: ?*LinuxUioRegion = null,
+        active_uio_node: ?*LinuxUioRegion = null,
+    };
+
+    fn createConnection(system: *Net, server: *Pd, client: *Pd, server_conn: *ConfigResources.Net.Connection, client_conn: *ConfigResources.Net.Connection, num_buffers: u64, options: CreateConnectionOption) void {
         const queue_mr_size = system.sdf.arch.roundUpToPage(8 + 16 * num_buffers);
 
         server_conn.num_buffers = @intCast(num_buffers);
@@ -197,8 +220,15 @@ pub const Net = struct {
         const free_mr = Mr.create(system.allocator, free_mr_name, queue_mr_size, .{});
         system.sdf.addMemoryRegion(free_mr);
 
-        const free_mr_server_map = Map.create(free_mr, server.getMapVaddr(&free_mr), .rw, .{});
-        server.addMap(free_mr_server_map);
+        var free_mr_server_map: Map = undefined;
+        if (options.vm_sys != null) {
+            std.debug.assert(options.free_uio_node.?.size == queue_mr_size);
+            free_mr_server_map = Map.create(free_mr, options.free_uio_node.?.guest_paddr, .rw, .{.cached = false});
+            options.vm_sys.?.guest.addMap(free_mr_server_map);
+        } else {
+            free_mr_server_map = Map.create(free_mr, server.getMapVaddr(&free_mr), .rw, .{});
+            server.addMap(free_mr_server_map);
+        }
         server_conn.free_queue = .createFromMap(free_mr_server_map);
 
         const free_mr_client_map = Map.create(free_mr, client.getMapVaddr(&free_mr), .rw, .{});
@@ -209,8 +239,15 @@ pub const Net = struct {
         const active_mr = Mr.create(system.allocator, active_mr_name, queue_mr_size, .{});
         system.sdf.addMemoryRegion(active_mr);
 
-        const active_mr_server_map = Map.create(active_mr, server.getMapVaddr(&active_mr), .rw, .{});
-        server.addMap(active_mr_server_map);
+        var active_mr_server_map: Map = undefined;
+        if (options.vm_sys != null) {
+            std.debug.assert(options.active_uio_node.?.size == queue_mr_size);
+            active_mr_server_map = Map.create(active_mr, options.active_uio_node.?.guest_paddr, .rw, .{.cached = false});
+            options.vm_sys.?.guest.addMap(active_mr_server_map);
+        } else {
+            active_mr_server_map = Map.create(active_mr, server.getMapVaddr(&active_mr), .rw, .{});
+            server.addMap(active_mr_server_map);
+        }
         server_conn.active_queue = .createFromMap(active_mr_server_map);
 
         const active_mr_client_map = Map.create(active_mr, client.getMapVaddr(&active_mr), .rw, .{});
@@ -224,7 +261,16 @@ pub const Net = struct {
     }
 
     fn rxConnectDriver(system: *Net) Mr {
-        system.createConnection(system.driver, system.virt_rx, &system.driver_config.virt_rx, &system.virt_rx_config.driver, system.rx_buffers);
+        var conn_options: CreateConnectionOption = .{};
+        if (system.driver_vm_sys != null) {
+            conn_options = .{
+                .vm_sys = system.driver_vm_sys,
+                .free_uio_node = system.driver_vm_sys.?.findUio(UIO_RX_FREE_NAME),
+                .active_uio_node = system.driver_vm_sys.?.findUio(UIO_RX_ACTIVE_NAME),
+            };
+        }
+
+        system.createConnection(system.driver, system.virt_rx, &system.driver_config.virt_rx, &system.virt_rx_config.driver, system.rx_buffers, conn_options);
 
         var rx_dma_mr: Mr = undefined;
         if (system.maybe_rx_dma_mr) |supplied_rx_dma_mr| {
@@ -247,6 +293,12 @@ pub const Net = struct {
         system.virt_rx.addMap(virt_rx_metadata_map);
         system.virt_rx_config.buffer_metadata = .createFromMap(virt_rx_metadata_map);
 
+        if (system.driver_vm_sys != null) {
+            const data_uio_node = system.driver_vm_sys.?.findUio(UIO_RX_DATA_NAME);
+            const driver_vm_map = Map.create(rx_dma_mr, data_uio_node.?.guest_paddr, .rw, .{.cached = false});
+            system.driver_vm_sys.?.guest.addMap(driver_vm_map);
+        }
+
         return rx_dma_mr;
     }
 
@@ -258,7 +310,16 @@ pub const Net = struct {
             }
         }
 
-        system.createConnection(system.driver, system.virt_tx, &system.driver_config.virt_tx, &system.virt_tx_config.driver, num_buffers);
+        var conn_options: CreateConnectionOption = .{};
+        if (system.driver_vm_sys != null) {
+            conn_options = .{
+                .vm_sys = system.driver_vm_sys,
+                .free_uio_node = system.driver_vm_sys.?.findUio(UIO_TX_FREE_NAME),
+                .active_uio_node = system.driver_vm_sys.?.findUio(UIO_TX_ACTIVE_NAME),
+            };
+        }
+
+        system.createConnection(system.driver, system.virt_tx, &system.driver_config.virt_tx, &system.virt_tx_config.driver, num_buffers, conn_options);
     }
 
     fn clientRxConnect(system: *Net, rx_dma_mr: Mr, client_idx: usize) void {
@@ -270,8 +331,8 @@ pub const Net = struct {
         var virt_client_config = &system.virt_rx_config.clients[system.virt_rx_config.num_clients];
 
         if (maybe_copier) |copier| {
-            system.createConnection(system.virt_rx, copier, &virt_client_config.conn, &copier_config.virt_rx, system.rx_buffers);
-            system.createConnection(copier, client, &copier_config.client, &client_config.rx, client_info.rx_buffers);
+            system.createConnection(system.virt_rx, copier, &virt_client_config.conn, &copier_config.virt_rx, system.rx_buffers, .{});
+            system.createConnection(copier, client, &copier_config.client, &client_config.rx, client_info.rx_buffers, .{});
 
             const rx_dma_copier_map = Map.create(rx_dma_mr, copier.getMapVaddr(&rx_dma_mr), .rw, .{});
             copier.addMap(rx_dma_copier_map);
@@ -291,7 +352,7 @@ pub const Net = struct {
             copier_config.client_data = .createFromMap(client_data_copier_map);
         } else {
             // Communicate directly with rx virt if client has no copier
-            system.createConnection(system.virt_rx, client, &virt_client_config.conn, &client_config.rx, system.rx_buffers);
+            system.createConnection(system.virt_rx, client, &virt_client_config.conn, &client_config.rx, system.rx_buffers, .{});
 
             // Map in dma region directly into clients with no copier
             const rx_dma_client_map = Map.create(rx_dma_mr, client.getMapVaddr(&rx_dma_mr), .rw, .{});
@@ -306,7 +367,7 @@ pub const Net = struct {
         var client_config = &system.client_configs.items[client_id];
         const virt_client_config = &system.virt_tx_config.clients[system.virt_tx_config.num_clients];
 
-        system.createConnection(system.virt_tx, client, &virt_client_config.conn, &client_config.tx, client_info.tx_buffers);
+        system.createConnection(system.virt_tx, client, &virt_client_config.conn, &client_config.tx, client_info.tx_buffers, .{});
 
         const data_mr_size = system.sdf.arch.roundUpToPage(client_info.tx_buffers * BUFFER_SIZE);
         const data_mr_name = fmt(system.allocator, "{s}/net/tx/data/client/{s}", .{ system.device.name, client.name });
@@ -320,6 +381,14 @@ pub const Net = struct {
         const data_mr_client_map = Map.create(data_mr, client.getMapVaddr(&data_mr), .rw, .{});
         client.addMap(data_mr_client_map);
         client_config.tx_data = .createFromMap(data_mr_client_map);
+
+        if (system.driver_vm_sys != null) {
+            const data_uio_node = system.driver_vm_sys.?.findUio(UIO_TX_DATA_NAME);
+            // @billn revisit, not sound when clients have different number of buffers.
+            const guest_paddr = data_uio_node.?.guest_paddr + (client_id * data_mr_size);
+            const driver_vm_map = Map.create(data_mr, guest_paddr, .rw, .{.cached = false});
+            system.driver_vm_sys.?.guest.addMap(driver_vm_map);
+        }
     }
 
     /// Generate a LAA (locally administered adresss) for each client
@@ -354,7 +423,34 @@ pub const Net = struct {
     }
 
     pub fn connect(system: *Net) !void {
-        try sddf.createDriver(system.sdf, system.driver, system.device, .network, &system.device_res);
+        if (system.driver_vm_sys == null) {
+            try sddf.createDriver(system.sdf, system.driver, system.device, .network, &system.device_res);
+        } else {
+            if (!system.driver_vm_sys.?.connected) {
+                // return Error.VmSystemNotConnected;
+                return Error.InvalidOptions;
+            }
+            if (system.driver_vm_sys.?.data.num_linux_uio_regions != NUM_UIO_REGIONS) {
+                // return Error.InvalidUio;
+                return Error.InvalidOptions;
+            }
+            try system.driver_vm_sys.?.addPassthroughDevice(system.device, .{});
+
+            const data_passing_uio_node = system.driver_vm_sys.?.findUio(UIO_DATA_PASS_NAME);
+
+            const data_passing_mr_size = system.sdf.arch.defaultPageSize();
+            const data_passing_mr_name = fmt(system.allocator, "{s}/net/driver_vm_data_passing", .{ system.device.name });
+            const data_passing_mr = Mr.physical(system.allocator, system.sdf, data_passing_mr_name, data_passing_mr_size, .{});
+            system.sdf.addMemoryRegion(data_passing_mr);
+
+            const data_passing_mr_vmm_vaddr = system.driver_vm_sys.?.vmm.getMapVaddr(&data_passing_mr);
+            const data_passing_mr_vmm_map = Map.create(data_passing_mr, data_passing_mr_vmm_vaddr, .rw, .{.cached = false});
+            system.driver_vm_sys.?.vmm.addMap(data_passing_mr_vmm_map);
+            data_passing_uio_node.?.vmm_vaddr = data_passing_mr_vmm_vaddr;
+
+            const data_passing_mr_guest_map = Map.create(data_passing_mr, data_passing_uio_node.?.guest_paddr, .r, .{.cached = false});
+            system.driver_vm_sys.?.guest.addMap(data_passing_mr_guest_map);
+        }
 
         const rx_dma_mr = system.rxConnectDriver();
         system.txConnectDriver();
