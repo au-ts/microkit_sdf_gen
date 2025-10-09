@@ -630,12 +630,13 @@ export fn sdfgen_sddf_blk_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
-export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: *align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: *align(8) anyopaque, c_rx_dma_mr: ?*align(8) anyopaque) *anyopaque {
+export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: *align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: *align(8) anyopaque, c_rx_dma_mr: ?*align(8) anyopaque, c_driver_vm_system: ?*align(8) anyopaque) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const net = allocator.create(sddf.Net) catch @panic("OOM");
     const rx_dma_mr: ?*Mr = if (c_rx_dma_mr) |p| @ptrCast(p) else null;
     const options: sddf.Net.Options = .{
         .rx_dma_mr = rx_dma_mr,
+        .driver_vm_system = @ptrCast(c_driver_vm_system)
     };
     net.* = sddf.Net.init(allocator, sdf, @ptrCast(c_device), @ptrCast(driver), @ptrCast(virt_tx), @ptrCast(virt_rx), options);
 
@@ -658,6 +659,8 @@ export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, cl
             sddf.Net.Error.DuplicateMacAddr => return 101,
             sddf.Net.Error.InvalidMacAddr => return 102,
             sddf.Net.Error.InvalidOptions => return 103,
+            sddf.Net.Error.VmSystemNotConnected => return 104,
+            sddf.Net.Error.VmSystemInvalidUio => return 105,
             // Should never happen when adding a client
             sddf.Net.Error.NotConnected => @panic("internal error"),
         }

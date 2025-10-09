@@ -15,6 +15,8 @@ class SddfStatus(IntEnum):
     NET_DUPLICATE_COPIER = 100,
     NET_DUPLICATE_MAC_ADDR = 101,
     NET_INVALID_OPTIONS = 103,
+    NET_VM_SYSTEM_NOT_CONNECTED = 104,
+    NET_VM_SYSTEM_INVALID_UIO = 105,
 
 
 # TOOD: double check
@@ -192,7 +194,7 @@ libsdfgen.sdfgen_sddf_serial_serialise_config.restype = c_bool
 libsdfgen.sdfgen_sddf_serial_serialise_config.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_sddf_net.restype = c_void_p
-libsdfgen.sdfgen_sddf_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p]
 libsdfgen.sdfgen_sddf_net_destroy.restype = None
 libsdfgen.sdfgen_sddf_net_destroy.argtypes = [c_void_p]
 
@@ -921,7 +923,8 @@ class Sddf:
             driver: SystemDescription.ProtectionDomain,
             virt_tx: SystemDescription.ProtectionDomain,
             virt_rx: SystemDescription.ProtectionDomain,
-            rx_dma_mr: Optional[SystemDescription.MemoryRegion] = None
+            rx_dma_mr: Optional[SystemDescription.MemoryRegion] = None,
+            driver_vm_system: Optional[Vmm] = None
         ) -> None:
             if device is None:
                 device_obj = None
@@ -931,9 +934,13 @@ class Sddf:
                 rx_dma_mr_obj = None
             else:
                 rx_dma_mr_obj = rx_dma_mr._obj
+            if driver_vm_system is None:
+                driver_vm_system_obj = None
+            else:
+                driver_vm_system_obj = driver_vm_system._obj
 
             self._obj = libsdfgen.sdfgen_sddf_net(
-                sdf._obj, device_obj, driver._obj, virt_tx._obj, virt_rx._obj, rx_dma_mr_obj
+                sdf._obj, device_obj, driver._obj, virt_tx._obj, virt_rx._obj, rx_dma_mr_obj, driver_vm_system_obj
             )
 
         def add_client_with_copier(
