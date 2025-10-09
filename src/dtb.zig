@@ -196,30 +196,29 @@ pub const LinuxUio = struct {
             break :blk parsed_irqs.items[0];
         };
 
-        const dt_reg = node.prop(.Reg) orelse {
-            log.err("expected UIO device '{s}' to have 'reg' property", .{node.name});
-            return error.InvalidUio;
-        };
+        var paddr: u64 = 0;
+        var size: u64 = 0;
 
-        if (dt_reg.len != 1) {
-            log.err("expected UIO device '{s}' to have one region, instead found {}", .{ node.name, dt_reg.len });
-            return error.InvalidUio;
+        if (node.prop(.Reg)) |dt_reg| {
+            if (dt_reg.len != 1) {
+                log.err("expected UIO device '{s}' to optionally have one region, instead found {}", .{ node.name, dt_reg.len });
+                return error.InvalidUio;
+            }
+
+            const dt_paddr = dt_reg[0][0];
+            if (dt_paddr % arch.defaultPageSize() != 0) {
+                log.err("expected UIO device '{s}' region to be page aligned, found non-page aligned address: 0x{x}", .{ node.name, dt_paddr });
+                return error.InvalidUio;
+            }
+
+            const dt_size = dt_reg[0][1];
+            if (dt_size % arch.defaultPageSize() != 0) {
+                log.err("expected UIO device '{s}' region size to be page aligned, found non-page aligned size: 0x{x}", .{ node.name, dt_paddr });
+                return error.InvalidUio;
+            }
+            paddr = regPaddr(arch, node, dt_paddr);
+            size = @intCast(dt_size);
         }
-
-        const dt_paddr = dt_reg[0][0];
-        if (dt_paddr % arch.defaultPageSize() != 0) {
-            log.err("expected UIO device '{s}' region to be page aligned, found non-page aligned address: 0x{x}", .{ node.name, dt_paddr });
-            return error.InvalidUio;
-        }
-
-        const dt_size = dt_reg[0][1];
-        if (dt_size % arch.defaultPageSize() != 0) {
-            log.err("expected UIO device '{s}' region size to be page aligned, found non-page aligned size: 0x{x}", .{ node.name, dt_paddr });
-            return error.InvalidUio;
-        }
-
-        const paddr: u64 = regPaddr(arch, node, dt_paddr);
-        const size: u64 = @intCast(dt_size);
 
         const irq_number = if (irq) |i| i.irq else null;
         return .{
