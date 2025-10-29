@@ -204,10 +204,12 @@ pub const SystemDescription = struct {
         perms: Perms,
         cached: ?bool,
         setvar_vaddr: ?[]const u8,
+        setvar_size: ?[]const u8,
 
         pub const Options = struct {
             cached: ?bool = null,
             setvar_vaddr: ?[]const u8 = null,
+            setvar_size: ?[]const u8 = null,
         };
 
         pub const Perms = packed struct {
@@ -289,6 +291,7 @@ pub const SystemDescription = struct {
                 .perms = perms,
                 .cached = options.cached,
                 .setvar_vaddr = options.setvar_vaddr,
+                .setvar_size = options.setvar_size,
             };
         }
 
@@ -299,6 +302,10 @@ pub const SystemDescription = struct {
 
             if (map.setvar_vaddr) |setvar_vaddr| {
                 try std.fmt.format(writer, " setvar_vaddr=\"{s}\"", .{setvar_vaddr});
+            }
+
+            if (map.setvar_size) |setvar_size| {
+                try std.fmt.format(writer, " setvar_size=\"{s}\"", .{setvar_size});
             }
 
             if (map.cached) |cached| {
@@ -687,6 +694,8 @@ pub const SystemDescription = struct {
         pd_a_notify: ?bool,
         pd_b_notify: ?bool,
         pp: ?End,
+        pd_a_setvar_id: ?[]const u8,
+        pd_b_setvar_id: ?[]const u8,
 
         pub const End = enum { a, b };
 
@@ -696,6 +705,8 @@ pub const SystemDescription = struct {
             pp: ?End = null,
             pd_a_id: ?u8 = null,
             pd_b_id: ?u8 = null,
+            pd_a_setvar_id: ?[]const u8 = null,
+            pd_b_setvar_id: ?[]const u8 = null,
         };
 
         pub fn create(pd_a: *ProtectionDomain, pd_b: *ProtectionDomain, options: Options) !Channel {
@@ -712,6 +723,9 @@ pub const SystemDescription = struct {
                 .pd_a_notify = options.pd_a_notify,
                 .pd_b_notify = options.pd_b_notify,
                 .pp = options.pp,
+                .pd_a_setvar_id = options.pd_a_setvar_id,
+                .pd_b_setvar_id = options.pd_b_setvar_id,
+
             };
         }
 
@@ -730,6 +744,11 @@ pub const SystemDescription = struct {
             if (ch.pp != null and ch.pp.? == .a) {
                 _ = try writer.write(" pp=\"true\"");
             }
+
+            if (ch.pd_a_setvar_id) |setvar_id| {
+                try std.fmt.format(writer, " setvar_id=\"{s}\"", .{setvar_id});
+            }
+
             _ = try writer.write(" />\n");
 
             try std.fmt.format(writer, "{s}<end pd=\"{s}\" id=\"{}\"", .{ child_separator, ch.pd_b.name, ch.pd_b_id });
@@ -740,6 +759,10 @@ pub const SystemDescription = struct {
 
             if (ch.pp != null and ch.pp.? == .b) {
                 _ = try writer.write(" pp=\"true\"");
+            }
+
+            if (ch.pd_b_setvar_id) |setvar_id| {
+                try std.fmt.format(writer, " setvar_id=\"{s}\"", .{setvar_id});
             }
 
             try std.fmt.format(writer, " />\n{s}</channel>\n", .{separator});
@@ -784,15 +807,18 @@ pub const SystemDescription = struct {
         /// IRQ on all architectures need to map to a channel
         id: ?u8,
         kind: Kind,
+        setvar_id: ?[]const u8 = null,
 
         pub const Options = struct {
             trigger: ?Trigger = null,
             id: ?u8 = null,
+            setvar_id: ?[]const u8 = null,
         };
 
         pub fn create(irq: u32, options: Options) Irq {
             return .{
                 .id = options.id,
+                .setvar_id = options.setvar_id,
                 .kind = .{
                     .conventional = .{
                         .irq = irq,
@@ -835,11 +861,13 @@ pub const SystemDescription = struct {
             trigger: ?Trigger = null,
             // Microkit channel ID
             id: ?u8 = null,
+            setvar_id: ?[]const u8 = null,
         };
 
         pub fn createIoapic(pin: u64, vector: u64, options: IoapicOptions) !Irq {
             return .{
                 .id   = options.id,
+                .setvar_id = options.setvar_id,
                 .kind = .{
                     .ioapic = .{
                         .ioapic = options.ioapic,
@@ -854,12 +882,14 @@ pub const SystemDescription = struct {
 
         pub const MsiOptions = struct {
             id: ?u8 = null,
+            setvar_id: ?[]const u8 = null,
         };
 
         pub fn createMsi(pci_bus: u8, pci_device: u8, pci_func: u8, vector: u64, handle: u64, options: MsiOptions) !Irq {
             // @billn: double check does MSI work in the same manner on arm and riscv?
             return .{
                 .id   = options.id,
+                .setvar_id = options.setvar_id,
                 .kind = .{
                     .msi = .{
                         .pci_bus = pci_bus,
@@ -902,6 +932,9 @@ pub const SystemDescription = struct {
                 .msi => |m_irq| {
                     try std.fmt.format(writer, "pcidev=\"{}:{}.{}\" handle=\"{}\" vector=\"{}\" id=\"{}\"", .{ m_irq.pci_bus, m_irq.pci_dev, m_irq.pci_func, m_irq.handle, m_irq.vector, irq.id.? });
                 }
+            }
+            if (irq.setvar_id) |setvar_id| {
+                try std.fmt.format(writer, " setvar_id=\"{s}\"", .{setvar_id});
             }
 
             _ = try writer.write(" />\n");
