@@ -80,9 +80,9 @@ typedef enum {
     IRQ_IOAPIC_POLARITY_ACTIVE_HIGH = 1,
 } sdfgen_irq_ioapic_polarity_t;
 
-void *sdfgen_irq_create(uint32_t number, sdfgen_irq_trigger_t *trigger, uint8_t *id);
-void *sdfgen_irq_ioapic_create(uint64_t ioapic_id, uint64_t pin, sdfgen_irq_trigger_t *trigger, sdfgen_irq_ioapic_polarity_t *polarity, uint8_t *id);
-void *sdfgen_irq_msi_create(uint8_t pci_bus, uint8_t pci_device, uint8_t pci_func, uint64_t vector, uint64_t handle, uint8_t *id);
+void *sdfgen_irq_create(uint32_t number, sdfgen_irq_trigger_t *trigger, uint8_t *id, char *setvar_vaddr, char *setvar_size);
+void *sdfgen_irq_ioapic_create(uint64_t ioapic_id, uint64_t pin, sdfgen_irq_trigger_t *trigger, sdfgen_irq_ioapic_polarity_t *polarity, uint8_t *id, char *setvar_vaddr, char *setvar_size);
+void *sdfgen_irq_msi_create(uint8_t pci_bus, uint8_t pci_device, uint8_t pci_func, uint64_t vector, uint64_t handle, uint8_t *id, char *setvar_vaddr, char *setvar_size);
 void sdfgen_irq_destroy(void *irq);
 
 void *sdfgen_ioport_create(uint16_t addr, uint16_t size, uint8_t *id);
@@ -94,7 +94,7 @@ uint64_t sdfgen_mr_get_size(void *mr);
 bool sdgen_mr_get_paddr(void *mr, uint64_t *paddr);
 void sdfgen_mr_destroy(void *mr);
 
-void *sdfgen_map_create(void *mr, uint64_t vaddr, sdfgen_map_perms_t perms, bool cached);
+void *sdfgen_map_create(void *mr, uint64_t vaddr, sdfgen_map_perms_t perms, bool cached, char *setvar_vaddr, char *setvar_size);
 uint64_t sdfgen_map_get_vaddr(void *map);
 void *sdfgen_map_destroy(void *map);
 
