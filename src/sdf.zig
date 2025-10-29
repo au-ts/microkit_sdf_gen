@@ -818,6 +818,7 @@ pub const SystemDescription = struct {
         pub fn create(irq: u32, options: Options) Irq {
             return .{
                 .id = options.id,
+                .setvar_id = options.setvar_id,
                 .kind = .{
                     .conventional = .{
                         .irq = irq,
@@ -867,6 +868,7 @@ pub const SystemDescription = struct {
         pub fn createIoapic(pin: u64, vector: u64, options: IoapicOptions) !Irq {
             return .{
                 .id   = options.id,
+                .setvar_id = options.setvar_id,
                 .kind = .{
                     .ioapic = .{
                         .ioapic = options.ioapic,
@@ -889,6 +891,7 @@ pub const SystemDescription = struct {
             // @billn: double check does MSI work in the same manner on arm and riscv?
             return .{
                 .id   = options.id,
+                .setvar_id = options.setvar_id,
                 .kind = .{
                     .msi = .{
                         .pci_bus = pci_bus,
