@@ -39,7 +39,7 @@ Pre-built archives of the C library are available in each
 
 ### Dependencies
 
-* [Zig 0.14.0](https://ziglang.org/download)
+* [Zig 0.15.x](https://ziglang.org/download)
 
 ### C library (libcsdfgen)
 
