@@ -32,6 +32,7 @@ pub const Serial = struct {
     clients: std.array_list.Managed(*Pd),
     connected: bool = false,
     enable_color: bool,
+    baud_rate: u32,
     serialised: bool = false,
     begin_str: [:0]const u8,
 
@@ -53,6 +54,7 @@ pub const Serial = struct {
         queue_size: usize = 0x1000,
         virt_rx: ?*Pd = null,
         enable_color: bool = true,
+        baud_rate: u32 = 115200,
         begin_str: [:0]const u8 = DEFAULT_BEGIN_STR,
     };
 
@@ -90,6 +92,7 @@ pub const Serial = struct {
             .virt_rx = options.virt_rx,
             .virt_tx = virt_tx,
             .enable_color = options.enable_color,
+            .baud_rate = options.baud_rate,
             .begin_str = allocator.dupeZ(u8, options.begin_str) catch @panic("OOM"),
 
             .driver_config = std.mem.zeroInit(ConfigResources.Serial.Driver, .{}),
@@ -155,7 +158,7 @@ pub const Serial = struct {
     pub fn connect(system: *Serial) !void {
         try sddf.createDriver(system.sdf, system.driver, system.device, .serial, &system.device_res);
 
-        system.driver_config.default_baud = 115200;
+        system.driver_config.default_baud = system.baud_rate;
 
         if (system.hasRx()) {
             system.createConnection(system.driver, system.virt_rx.?, system.data_size, &system.driver_config.rx, &system.virt_rx_config.driver);
