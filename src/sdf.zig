@@ -204,10 +204,12 @@ pub const SystemDescription = struct {
         perms: Perms,
         cached: ?bool,
         setvar_vaddr: ?[]const u8,
+        setvar_size: ?[]const u8,
 
         pub const Options = struct {
             cached: ?bool = null,
             setvar_vaddr: ?[]const u8 = null,
+            setvar_size: ?[]const u8 = null,
         };
 
         pub const Perms = packed struct {
@@ -289,6 +291,7 @@ pub const SystemDescription = struct {
                 .perms = perms,
                 .cached = options.cached,
                 .setvar_vaddr = options.setvar_vaddr,
+                .setvar_size = options.setvar_size,
             };
         }
 
@@ -299,6 +302,10 @@ pub const SystemDescription = struct {
 
             if (map.setvar_vaddr) |setvar_vaddr| {
                 try std.fmt.format(writer, " setvar_vaddr=\"{s}\"", .{setvar_vaddr});
+            }
+
+            if (map.setvar_size) |setvar_size| {
+                try std.fmt.format(writer, " setvar_size=\"{s}\"", .{setvar_size});
             }
 
             if (map.cached) |cached| {
@@ -665,6 +672,8 @@ pub const SystemDescription = struct {
         pd_a_notify: ?bool,
         pd_b_notify: ?bool,
         pp: ?End,
+        pd_a_setvar_id: ?[]const u8,
+        pd_b_setvar_id: ?[]const u8,
 
         pub const End = enum { a, b };
 
@@ -674,6 +683,8 @@ pub const SystemDescription = struct {
             pp: ?End = null,
             pd_a_id: ?u8 = null,
             pd_b_id: ?u8 = null,
+            pd_a_setvar_id: ?[]const u8 = null,
+            pd_b_setvar_id: ?[]const u8 = null,
         };
 
         pub fn create(pd_a: *ProtectionDomain, pd_b: *ProtectionDomain, options: Options) !Channel {
@@ -690,6 +701,9 @@ pub const SystemDescription = struct {
                 .pd_a_notify = options.pd_a_notify,
                 .pd_b_notify = options.pd_b_notify,
                 .pp = options.pp,
+                .pd_a_setvar_id = options.pd_a_setvar_id,
+                .pd_b_setvar_id = options.pd_b_setvar_id,
+
             };
         }
 
@@ -708,6 +722,11 @@ pub const SystemDescription = struct {
             if (ch.pp != null and ch.pp.? == .a) {
                 _ = try writer.write(" pp=\"true\"");
             }
+
+            if (ch.pd_a_setvar_id) |setvar_id| {
+                try std.fmt.format(writer, " setvar_id=\"{s}\"", .{setvar_id});
+            }
+
             _ = try writer.write(" />\n");
 
             try std.fmt.format(writer, "{s}<end pd=\"{s}\" id=\"{}\"", .{ child_separator, ch.pd_b.name, ch.pd_b_id });
@@ -718,6 +737,10 @@ pub const SystemDescription = struct {
 
             if (ch.pp != null and ch.pp.? == .b) {
                 _ = try writer.write(" pp=\"true\"");
+            }
+
+            if (ch.pd_b_setvar_id) |setvar_id| {
+                try std.fmt.format(writer, " setvar_id=\"{s}\"", .{setvar_id});
             }
 
             try std.fmt.format(writer, " />\n{s}</channel>\n", .{separator});
@@ -731,6 +754,7 @@ pub const SystemDescription = struct {
         irq: u32,
         trigger: ?Trigger,
         id: ?u8,
+        setvar_id: ?[]const u8 = null,
 
         pub const Trigger = enum(u8) {
             edge,
@@ -740,10 +764,16 @@ pub const SystemDescription = struct {
         pub const Options = struct {
             trigger: ?Trigger = null,
             id: ?u8 = null,
+            setvar_id: ?[]const u8 = null,
         };
 
         pub fn create(irq: u32, options: Options) Irq {
-            return .{ .irq = irq, .trigger = options.trigger, .id = options.id };
+            return .{
+                .irq = irq,
+                .trigger = options.trigger,
+                .id = options.id,
+                .setvar_id = options.setvar_id,
+            };
         }
 
         pub fn render(irq: *const Irq, writer: ArrayList(u8).Writer, separator: []const u8) !void {
@@ -753,6 +783,9 @@ pub const SystemDescription = struct {
             try std.fmt.format(writer, "{s}<irq irq=\"{}\" id=\"{}\"", .{ separator, irq.irq, irq.id.? });
             if (irq.trigger) |trigger| {
                 try std.fmt.format(writer, " trigger=\"{s}\"", .{@tagName(trigger)});
+            }
+            if (irq.setvar_id) |setvar_id| {
+                try std.fmt.format(writer, " setvar_id=\"{s}\"", .{setvar_id});
             }
 
             _ = try writer.write(" />\n");
