@@ -779,7 +779,7 @@ class Sddf:
                 virt_rx_obj = virt_rx._obj
 
             if baud_rate is None:
-                c_baud_rate = 115200
+                c_baud_rate = 0
             else:
                 c_baud_rate = c_uint32(baud_rate)
 

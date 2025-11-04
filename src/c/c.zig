@@ -485,8 +485,10 @@ export fn sdfgen_sddf_serial(c_sdf: *align(8) anyopaque, c_device: ?*align(8) an
     var options: sddf.Serial.Options = .{
         .virt_rx = @ptrCast(virt_rx),
         .enable_color = enable_color,
-        .baud_rate = baud_rate,
     };
+    if (baud_rate > 0) {
+        options.baud_rate = baud_rate;
+    }
     if (begin_str != null) {
         options.begin_str = std.mem.span(begin_str);
     }
