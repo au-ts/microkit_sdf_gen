@@ -178,7 +178,7 @@ libsdfgen.sdfgen_sddf_blk_serialise_config.restype = c_bool
 libsdfgen.sdfgen_sddf_blk_serialise_config.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_sddf_serial.restype = c_void_p
-libsdfgen.sdfgen_sddf_serial.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_bool, c_char_p]
+libsdfgen.sdfgen_sddf_serial.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_bool, c_uint32, c_char_p]
 libsdfgen.sdfgen_sddf_serial_destroy.restype = None
 libsdfgen.sdfgen_sddf_serial_destroy.argtypes = [c_void_p]
 
@@ -619,7 +619,7 @@ class SystemDescription:
             else:
                 self._obj = libsdfgen.sdfgen_mr_create(c_name, size)
             self._size = size
-        
+
         @property
         def size(self):
             return libsdfgen.sdfgen_mr_get_size(self._obj)
@@ -765,6 +765,7 @@ class Sddf:
             *,
             virt_rx: Optional[SystemDescription.ProtectionDomain] = None,
             enable_color: bool = True,
+            baud_rate: Optional[int] = None,
             begin_str: Optional[str] = None,
         ) -> None:
             if device is None:
@@ -777,12 +778,17 @@ class Sddf:
             else:
                 virt_rx_obj = virt_rx._obj
 
+            if baud_rate is None:
+                c_baud_rate = 115200
+            else:
+                c_baud_rate = c_uint32(baud_rate)
+
             if begin_str:
                 c_begin_str = c_char_p(begin_str.encode("utf-8"))
             else:
                 c_begin_str = None
             self._obj = libsdfgen.sdfgen_sddf_serial(
-                sdf._obj, device_obj, driver._obj, virt_tx._obj, virt_rx_obj, c_bool(enable_color), c_begin_str
+                sdf._obj, device_obj, driver._obj, virt_tx._obj, virt_rx_obj, c_bool(enable_color), c_baud_rate, c_begin_str
             )
             if self._obj is None:
                 raise Exception("failed to create serial system")

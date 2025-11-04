@@ -479,12 +479,13 @@ export fn sdfgen_sddf_timer_serialise_config(system: *align(8) anyopaque, output
     return true;
 }
 
-export fn sdfgen_sddf_serial(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: ?*align(8) anyopaque, enable_color: bool, begin_str: [*c]u8) ?*anyopaque {
+export fn sdfgen_sddf_serial(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: ?*align(8) anyopaque, enable_color: bool, baud_rate: u32, begin_str: [*c]u8) ?*anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const device: *dtb.Node = @ptrCast(c_device);
     var options: sddf.Serial.Options = .{
         .virt_rx = @ptrCast(virt_rx),
         .enable_color = enable_color,
+        .baud_rate = baud_rate,
     };
     if (begin_str != null) {
         options.begin_str = std.mem.span(begin_str);
