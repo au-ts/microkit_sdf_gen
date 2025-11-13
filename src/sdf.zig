@@ -292,6 +292,26 @@ pub const SystemDescription = struct {
             };
         }
 
+        pub fn createWithSetVar(allocator: Allocator, mr: MemoryRegion, vaddr: u64, perms: Perms, options: Options) Map {
+            if (!perms.valid()) {
+                log.err("error creating mapping for '{s}': invalid permissions given", .{mr.name});
+                @panic("todo");
+            }
+
+            if (options.setvar_vaddr) |setvar_vaddr| {
+                return Map{
+                    .mr = mr,
+                    .vaddr = vaddr,
+                    .perms = perms,
+                    .cached = options.cached,
+                    .setvar_vaddr = allocator.dupe(u8, setvar_vaddr) catch @panic("Could not allocate options.setvar_vaddr for Map"),
+                };
+            } else {
+                log.err("error creating mapping for '{s}': invalid setvar option provided", .{mr.name});
+                @panic("todo");
+            }
+        }
+
         pub fn render(map: *const Map, writer: ArrayList(u8).Writer, separator: []const u8) !void {
             var perms_buf = [_]u8{0} ** 3;
             const perms = map.perms.toString(&perms_buf);

@@ -309,20 +309,47 @@ export fn sdfgen_irq_destroy(c_irq: *align(8) anyopaque) void {
     allocator.destroy(irq);
 }
 
-export fn sdfgen_mr_create(name: [*c]u8, size: u64) *anyopaque {
+export fn sdfgen_mr_create(name: [*c]u8, size: u64, page_size: [*c]u64) ?*anyopaque {
     const mr = allocator.create(Mr) catch @panic("OOM");
-    mr.* = Mr.create(allocator, std.mem.span(name), size, .{});
+
+    var options: Mr.Options = .{};
+    if (page_size != null) {
+        const page_size_enum: Mr.PageSize = switch (page_size.*) {
+            0x1000 => .small,
+            0x200000 => .large,
+            else => {
+                log.err("Could not create page with size: {}", .{page_size.*});
+                return null;
+            },
+        };
+        options.page_size = page_size_enum;
+    }
+
+    mr.* = Mr.create(allocator, std.mem.span(name), size, options);
 
     return mr;
 }
 
-export fn sdfgen_mr_create_physical(c_sdf: *align(8) anyopaque, name: [*c]u8, size: u64, paddr: [*c]u64) *anyopaque {
+export fn sdfgen_mr_create_physical(c_sdf: *align(8) anyopaque, name: [*c]u8, size: u64, paddr: [*c]u64, page_size: [*c]u64) ?*anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const mr = allocator.create(Mr) catch @panic("OOM");
+
     var options: Mr.OptionsPhysical = .{};
     if (paddr != null) {
         options.paddr = paddr.*;
     }
+    if (page_size != null) {
+        const page_size_enum: Mr.PageSize = switch (page_size.*) {
+            0x1000 => .small,
+            0x200000 => .large,
+            else => {
+                log.err("Could not create page with size: {}", .{page_size.*});
+                return null;
+            },
+        };
+        options.page_size = page_size_enum;
+    }
+
     mr.* = Mr.physical(allocator, sdf, std.mem.span(name), size, options);
 
     return mr;
@@ -346,7 +373,7 @@ export fn sdfgen_mr_destroy(c_mr: *align(8) anyopaque) void {
     allocator.destroy(mr);
 }
 
-export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bindings.sdfgen_map_perms_t, cached: bool) ?*anyopaque {
+export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bindings.sdfgen_map_perms_t, cached: bool, c_setvar_vaddr: [*c]u8) ?*anyopaque {
     const mr: *Mr = @ptrCast(c_mr);
 
     var perms: Map.Perms = .{};
@@ -361,9 +388,18 @@ export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bind
     }
 
     const map = allocator.create(Map) catch @panic("OOM");
-    // TODO: I think we got some memory problems if we're dereferencing this stuff since
-    // we need MemoryRegion to still be valid the whole time since we depend on it
-    map.* = Map.create(mr.*, vaddr, perms, .{ .cached = cached });
+
+    var options: Map.Options = .{};
+    options.cached = cached;
+
+    if (c_setvar_vaddr != null) {
+        options.setvar_vaddr = std.mem.span(c_setvar_vaddr);
+        map.* = Map.createWithSetVar(allocator, mr.*, vaddr, perms, options);
+    } else {
+        // TODO: I think we got some memory problems if we're dereferencing this stuff since
+        // we need MemoryRegion to still be valid the whole time since we depend on it
+        map.* = Map.create(mr.*, vaddr, perms, options);
+    }
 
     return map;
 }
