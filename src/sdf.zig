@@ -527,6 +527,7 @@ pub const SystemDescription = struct {
             if (irq.id) |id| {
                 _ = try allocateId(&pd.channel_ids, id);
                 try pd.irqs.append(irq);
+
                 return id;
             } else {
                 var irq_with_id = irq;

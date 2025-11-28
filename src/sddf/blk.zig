@@ -24,7 +24,7 @@ pub const Blk = struct {
     allocator: Allocator,
     sdf: *SystemDescription,
     driver: *Pd,
-    device: *dtb.Node,
+    device: ?*dtb.Node,
     device_res: ConfigResources.Device,
     virt: *Pd,
     clients: std.array_list.Managed(Client),
@@ -57,7 +57,7 @@ pub const Blk = struct {
 
     const STORAGE_INFO_REGION_SIZE: usize = 0x1000;
 
-    pub fn init(allocator: Allocator, sdf: *SystemDescription, device: *dtb.Node, driver: *Pd, virt: *Pd, _: Options) Error!Blk {
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, device: ?*dtb.Node, driver: *Pd, virt: *Pd, _: Options) Error!Blk {
         if (std.mem.eql(u8, driver.name, virt.name)) {
             log.err("invalid blk virtualiser, same name as driver '{s}", .{virt.name});
             return Error.InvalidVirt;
@@ -261,7 +261,9 @@ pub const Blk = struct {
         const sdf = system.sdf;
 
         // 1. Create the device resources for the driver
-        try sddf.createDriver(sdf, system.driver, system.device, .blk, &system.device_res);
+        if (system.device) |dtb_node| {
+            try sddf.createDriver(sdf, system.driver, dtb_node, .blk, &system.device_res);
+        }
         // 2. Connect the driver to the virtualiser
         system.connectDriver();
         // 3. Connect each client to the virtualiser
