@@ -85,7 +85,7 @@ void *sdfgen_irq_ioapic_create(uint64_t ioapic_id, uint64_t pin, sdfgen_irq_trig
 void *sdfgen_irq_msi_create(uint8_t pci_bus, uint8_t pci_device, uint8_t pci_func, uint64_t vector, uint64_t handle, uint8_t *id);
 void sdfgen_irq_destroy(void *irq);
 
-void *sdfgen_ioport_create(sdfgen_arch_t arch, uint16_t addr, uint16_t size, uint8_t *id);
+void *sdfgen_ioport_create(uint16_t addr, uint16_t size, uint8_t *id);
 void sdfgen_ioport_destroy(void *ioport);
 
 void *sdfgen_mr_create(char *name, uint64_t size);
