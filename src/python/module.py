@@ -97,11 +97,11 @@ libsdfgen.sdfgen_mr_destroy.restype = None
 libsdfgen.sdfgen_mr_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_irq_create.restype = c_void_p
-libsdfgen.sdfgen_irq_create.argtypes = [c_uint32, c_uint32, POINTER(c_uint32), POINTER(c_uint8)]
+libsdfgen.sdfgen_irq_create.argtypes = [c_uint32, POINTER(c_uint32), POINTER(c_uint8)]
 libsdfgen.sdfgen_irq_ioapic_create.restype = c_void_p
-libsdfgen.sdfgen_irq_ioapic_create.argtypes = [c_uint32, c_uint64, c_uint64, POINTER(c_uint32), POINTER(c_uint32), c_uint64, POINTER(c_uint8)]
+libsdfgen.sdfgen_irq_ioapic_create.argtypes = [c_uint64, c_uint64, POINTER(c_uint32), POINTER(c_uint32), c_uint64, POINTER(c_uint8)]
 libsdfgen.sdfgen_irq_msi_create.restype = c_void_p
-libsdfgen.sdfgen_irq_msi_create.argtypes = [c_uint32, c_uint8, c_uint8, c_uint8, c_uint64, c_uint64, POINTER(c_uint8)]
+libsdfgen.sdfgen_irq_msi_create.argtypes = [c_uint8, c_uint8, c_uint8, c_uint64, c_uint64, POINTER(c_uint8)]
 libsdfgen.sdfgen_irq_destroy.restype = None
 libsdfgen.sdfgen_irq_destroy.argtypes = [c_void_p]
 
@@ -670,7 +670,7 @@ class SystemDescription:
             trigger: Optional[Trigger] = None,
             id: Optional[int] = None,
         ):
-            self._obj = libsdfgen.sdfgen_irq_create(arch.value, irq, ffi_uint32_ptr(trigger), ffi_uint8_ptr(id))
+            self._obj = libsdfgen.sdfgen_irq_create(irq, ffi_uint32_ptr(trigger), ffi_uint8_ptr(id))
             if self._obj is None:
                 raise Exception("failed to create IRQ - Conventional type")
 
@@ -697,7 +697,7 @@ class SystemDescription:
             polarity: Optional[Polarity] = None,
             id: Optional[int] = None,
         ):
-            self._obj = libsdfgen.sdfgen_irq_ioapic_create(arch.value, ioapic_id, pin, ffi_uint32_ptr(trigger), ffi_uint32_ptr(polarity), vector, ffi_uint8_ptr(id))
+            self._obj = libsdfgen.sdfgen_irq_ioapic_create(ioapic_id, pin, ffi_uint32_ptr(trigger), ffi_uint32_ptr(polarity), vector, ffi_uint8_ptr(id))
             if self._obj is None:
                 raise Exception("failed to create IRQ - IOAPIC type")
 
@@ -715,7 +715,7 @@ class SystemDescription:
             handle: int,
             id: Optional[int] = None,
         ):
-            self._obj = libsdfgen.sdfgen_irq_msi_create(arch.value, pci_bus, pci_device, pci_func, vector, handle, ffi_uint8_ptr(id))
+            self._obj = libsdfgen.sdfgen_irq_msi_create(pci_bus, pci_device, pci_func, vector, handle, ffi_uint8_ptr(id))
             if self._obj is None:
                 raise Exception("failed to create IRQ - MSI type")
 
@@ -732,10 +732,10 @@ class SystemDescription:
             size: int,
             id: Optional[int] = None,
         ):
-            self._obj = libsdfgen.sdfgen_ioport_create(arch.value, addr, size, ffi_uint8_ptr(id))
+            self._obj = libsdfgen.sdfgen_ioport_create(addr, size, ffi_uint8_ptr(id))
             if self._obj is None:
                 raise Exception("failed to create x86 I/O Port")
-        
+
         def __del__(self):
             libsdfgen.sdfgen_ioport_destroy(self._obj)
 

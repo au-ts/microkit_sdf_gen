@@ -482,6 +482,7 @@ pub const SystemDescription = struct {
             pd.maps.deinit();
             pd.child_pds.deinit();
             pd.irqs.deinit();
+            pd.ioports.deinit();
         }
 
         /// There may be times where a PD resources is attached with an ID, such as a channel
@@ -536,15 +537,15 @@ pub const SystemDescription = struct {
         }
 
         pub fn addIoPort(pd: *ProtectionDomain, ioport: IoPort) !u8 {
-            if (ioport.ch_id) |id| {
+            if (ioport.id) |id| {
                 _ = try allocateId(&pd.channel_ids, id);
                 try pd.ioports.append(ioport);
                 return id;
             } else {
                 var ioport_with_id = ioport;
-                ioport_with_id.ch_id = try allocateId(&pd.channel_ids, null);
+                ioport_with_id.id = try allocateId(&pd.channel_ids, null);
                 try pd.ioports.append(ioport_with_id);
-                return ioport_with_id.ch_id.?;
+                return ioport_with_id.id.?;
             }
         }
 
@@ -756,75 +757,43 @@ pub const SystemDescription = struct {
         };
 
         const Kind = union(enum) {
-            Simple: struct {
+            conventional: struct {
                 irq:     u32,
                 trigger: ?Trigger,
             },
 
             //  @billn: double check which one is optional
-            IOAPIC: struct {
-                ioapic_id: ?u64,
-                pin:       u64,
-                trigger:   ?Trigger,
-                polarity:  ?IoapicPolarity,
-                vector:    u64,
+            ioapic: struct {
+                ioapic: ?u64,
+                pin: u64,
+                trigger: ?Trigger,
+                polarity: ?IoapicPolarity,
+                vector: u64,
             },
 
-            MSI: struct {
-                pci_bus:  u8, // 8 bits
-                pci_dev:  u8, // 5 bits
+            msi: struct {
+                pci_bus: u8, // 8 bits
+                pci_dev: u8, // 5 bits
                 pci_func: u8, // 3 bits
-                handle:   u64, // @billn double check type, and wtf does this do anyways?? double check in Mat's uKit tool
-                vector:   u64,
+                handle: u64, // @billn double check type, and wtf does this do anyways?? double check in Mat's uKit tool
+                vector: u64,
             },
         };
-
-        arch: Arch,
-        kind: Kind,
 
         /// IRQ on all architectures need to map to a channel
         id: ?u8,
-
-        pub fn getNumber(irq: *const Irq) u32 {
-            switch (irq.kind) {
-                .Simple => |s_irq| {
-                    return s_irq.irq;
-                },
-                else => {
-                    @panic("Irq.getNumber() called on non-conventional IRQ.\n");
-                }
-            }
-        }
-
-        pub fn getTrigger(irq: *const Irq) ?Trigger {
-            switch (irq.kind) {
-                .Simple => |s_irq| {
-                    return s_irq.trigger;
-                },
-                .IOAPIC => |i_irq| {
-                    return i_irq.trigger;
-                },
-                else => {
-                    @panic("Irq.getTrigger() called on MSI.\n");
-                }
-            }
-        }
+        kind: Kind,
 
         pub const Options = struct {
             trigger: ?Trigger = null,
-            ch_id: ?u8 = null,
+            id: ?u8 = null,
         };
 
-        pub fn create(irq: u32, arch: Arch, options: Options) !Irq {
-            if (Arch.isX86(arch)) {
-                log.err("failed to create simple irq {} as it is unsupported on x86 architectures\n", .{irq});
-                return error.InvalidIrq;
-            }
+        pub fn create(irq: u32, options: Options) Irq {
             return .{
-                .arch = arch,
-                .id   = options.ch_id,
+                .id = options.id,
                 .kind = .{
-                    .Simple = .{
+                    .conventional = .{
                         .irq = irq,
                         .trigger = options.trigger,
                     },
@@ -832,24 +801,47 @@ pub const SystemDescription = struct {
             };
         }
 
+        pub fn number(irq: *const Irq) ?u32 {
+            switch (irq.kind) {
+                .conventional => |s_irq| {
+                    return s_irq.irq;
+                },
+                else => {
+                    log.err("number called on invalid IRQ kind {s}", .{ @tagName(irq.kind) });
+                    return null;
+                }
+            }
+        }
+
+        pub fn trigger(irq: *const Irq) ?Trigger {
+            switch (irq.kind) {
+                .conventional => |s_irq| {
+                    return s_irq.trigger;
+                },
+                .ioapic => |i_irq| {
+                    return i_irq.trigger;
+                },
+                else => {
+                    log.err("trigger called on invalid IRQ kind {s}", .{ @tagName(irq.kind) });
+                    return null;
+                }
+            }
+        }
+
         pub const IoapicOptions = struct {
-            ioapic_id: ?u64 = null,
+            ioapic: ?u64 = null,
             polarity: ?IoapicPolarity = null,
             trigger: ?Trigger = null,
-            ch_id: ?u8 = null,
+            // Microkit channel ID
+            id: ?u8 = null,
         };
 
-        pub fn createIoapic(pin: u64, vector: u64, arch: Arch, options: IoapicOptions) !Irq {
-            if (!Arch.isX86(arch)) {
-                log.err("failed to create IOAPIC irq at pin {} with vector {} because it is unsupported on non-x86 architectures\n", .{pin, vector});
-                return error.InvalidIrq;
-            }
+        pub fn createIoapic(pin: u64, vector: u64, options: IoapicOptions) !Irq {
             return .{
-                .arch = arch,
-                .id   = options.ch_id,
+                .id   = options.id,
                 .kind = .{
-                    .IOAPIC = .{
-                        .ioapic_id = options.ioapic_id,
+                    .ioapic = .{
+                        .ioapic = options.ioapic,
                         .pin = pin,
                         .trigger = options.trigger,
                         .polarity = options.polarity,
@@ -860,16 +852,15 @@ pub const SystemDescription = struct {
         }
 
         pub const MsiOptions = struct {
-            ch_id: ?u8 = null,
+            id: ?u8 = null,
         };
 
-        pub fn createMsi(pci_bus: u8, pci_device: u8, pci_func: u8, vector: u64, handle: u64, arch: Arch, options: MsiOptions) !Irq {
+        pub fn createMsi(pci_bus: u8, pci_device: u8, pci_func: u8, vector: u64, handle: u64, options: MsiOptions) !Irq {
             // @billn: double check does MSI work in the same manner on arm and riscv?
             return .{
-                .arch = arch,
-                .id   = options.ch_id,
+                .id   = options.id,
                 .kind = .{
-                    .MSI = .{
+                    .msi = .{
                         .pci_bus = pci_bus,
                         .pci_dev = pci_device,
                         .pci_func = pci_func,
@@ -887,25 +878,25 @@ pub const SystemDescription = struct {
             try std.fmt.format(writer, "{s}<irq ", .{separator});
 
             switch (irq.kind) {
-                .Simple => |s_irq| {
+                .conventional => |s_irq| {
                     try std.fmt.format(writer, "irq=\"{}\" id=\"{}\"", .{ s_irq.irq, irq.id.? });
-                    if (s_irq.trigger) |trigger| {
-                        try std.fmt.format(writer, " trigger=\"{s}\"", .{@tagName(trigger)});
+                    if (s_irq.trigger) |t| {
+                        try std.fmt.format(writer, " trigger=\"{s}\"", .{@tagName(t)});
                     }
                 },
-                .IOAPIC => |i_irq| {
+                .ioapic => |i_irq| {
                     try std.fmt.format(writer, "pin=\"{}\" vector=\"{}\" id=\"{}\"", .{ i_irq.pin, i_irq.vector, irq.id.? });
-                    if (i_irq.ioapic_id) |ioapic_id| {
-                        try std.fmt.format(writer, " ioapic=\"{}\"", .{ioapic_id});
+                    if (i_irq.ioapic) |ioapic| {
+                        try std.fmt.format(writer, " ioapic=\"{}\"", .{ioapic});
                     }
-                    if (i_irq.trigger) |trigger| {
-                        try std.fmt.format(writer, " level=\"{s}\"", .{@tagName(trigger)});
+                    if (i_irq.trigger) |t| {
+                        try std.fmt.format(writer, " level=\"{s}\"", .{@tagName(t)});
                     }
                     if (i_irq.polarity) |polarity| {
                         try std.fmt.format(writer, " polarity=\"{s}\"", .{@tagName(polarity)});
                     }
                 },
-                .MSI => |m_irq| {
+                .msi => |m_irq| {
                     try std.fmt.format(writer, "pcidev=\"{}:{}.{}\" handle=\"{}\" vector=\"{}\" id=\"{}\"", .{ m_irq.pci_bus, m_irq.pci_dev, m_irq.pci_func, m_irq.handle, m_irq.vector, irq.id.? });
                 }
             }
@@ -914,39 +905,33 @@ pub const SystemDescription = struct {
         }
     };
 
+    /// Only supported for x86 targets
     pub const IoPort = struct {
-        // Valid for x86 arch only!
-
         addr: u16,
         size: u16,
-        ch_id: ?u8,
+        id: ?u8,
 
         pub const Options = struct {
-            ch_id: ?u8 = null,
+            id: ?u8 = null,
         };
 
-        pub fn create(addr: u16, size: u16, arch: Arch, options: Options) !IoPort {
-            if (!Arch.isX86(arch)) {
-                log.err("failed to create I/O Port @ {} as it is unsupported on non-x86 architectures\n", .{addr});
-                return error.InvalidIrq;
-            }
+        pub fn create(addr: u16, size: u16, options: Options) !IoPort {
             return .{
                 .addr = addr,
                 .size = size,
-                .ch_id = options.ch_id,
+                .id = options.id,
             };
         }
 
         pub fn render(ioport: *const IoPort, writer: ArrayList(u8).Writer, separator: []const u8) !void {
             // By the time we get here, something should have populated the 'id' field.
-            std.debug.assert(ioport.ch_id != null);
+            std.debug.assert(ioport.id != null);
 
-            try std.fmt.format(writer, "{s}<ioport id=\"{}\" addr=\"{}\" size=\"{}\" />\n", .{separator, ioport.ch_id.?, ioport.addr, ioport.size});
-
+            try std.fmt.format(writer, "{s}<ioport id=\"{}\" addr=\"{}\" size=\"{}\" />\n", .{separator, ioport.id.?, ioport.addr, ioport.size});
         }
     };
 
-    pub fn create(allocator: Allocator, arch: Arch, paddr_top: u64) SystemDescription { 
+    pub fn create(allocator: Allocator, arch: Arch, paddr_top: u64) SystemDescription {
         var xml_data = ArrayList(u8).init(allocator);
         return SystemDescription{
             .allocator = allocator,

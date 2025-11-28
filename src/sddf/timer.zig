@@ -81,7 +81,7 @@ pub const Timer = struct {
         // The driver must be passive
         std.debug.assert(system.driver.passive.?);
 
-        if (system.device) | dtb_node | {
+        if (system.device) |dtb_node| {
             try sddf.createDriver(system.sdf, system.driver, dtb_node, .timer, &system.device_res);
         }
         for (system.clients.items, 0..) |client, i| {
