@@ -81,7 +81,7 @@ uint64_t sdfgen_mr_get_size(void *mr);
 bool sdgen_mr_get_paddr(void *mr, uint64_t *paddr);
 void sdfgen_mr_destroy(void *mr);
 
-void *sdfgen_map_create(void *mr, uint64_t vaddr, sdfgen_map_perms_t perms, bool cached);
+void *sdfgen_map_create(void *mr, uint64_t vaddr, sdfgen_map_perms_t perms, bool cached, char *setvar_vaddr, char *setvar_size);
 uint64_t sdfgen_map_get_vaddr(void *map);
 void *sdfgen_map_destroy(void *map);
 
