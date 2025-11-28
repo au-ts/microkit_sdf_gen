@@ -126,6 +126,14 @@ pub const Net = struct {
         return mac_arr;
     }
 
+    fn deviceName(system: *Net) []const u8 {
+        if (system.device) |dtb_node| {
+            return dtb_node.name;
+        } else {
+            return "generic";
+        }
+    }
+
     pub fn addClientWithCopier(system: *Net, client: *Pd, maybe_copier: ?*Pd, options: ClientOptions) Error!void {
         const client_idx = system.clients.items.len;
 
@@ -193,7 +201,7 @@ pub const Net = struct {
         server_conn.num_buffers = @intCast(num_buffers);
         client_conn.num_buffers = @intCast(num_buffers);
 
-        const free_mr_name = fmt(system.allocator, "{s}/net/queue/{s}/{s}/free", .{ if (system.device) |dtb_node| dtb_node.name else "generic_net", server.name, client.name });
+        const free_mr_name = fmt(system.allocator, "{s}/net/queue/{s}/{s}/free", .{ system.deviceName(), server.name, client.name });
         const free_mr = Mr.create(system.allocator, free_mr_name, queue_mr_size, .{});
         system.sdf.addMemoryRegion(free_mr);
 
@@ -205,7 +213,7 @@ pub const Net = struct {
         client.addMap(free_mr_client_map);
         client_conn.free_queue = .createFromMap(free_mr_client_map);
 
-        const active_mr_name = fmt(system.allocator, "{s}/net/queue/{s}/{s}/active", .{ if (system.device) |dtb_node| dtb_node.name else "generic_net", server.name, client.name });
+        const active_mr_name = fmt(system.allocator, "{s}/net/queue/{s}/{s}/active", .{ system.deviceName(), server.name, client.name });
         const active_mr = Mr.create(system.allocator, active_mr_name, queue_mr_size, .{});
         system.sdf.addMemoryRegion(active_mr);
 
@@ -230,7 +238,7 @@ pub const Net = struct {
         if (system.maybe_rx_dma_mr) |supplied_rx_dma_mr| {
             rx_dma_mr = supplied_rx_dma_mr.*;
         } else {
-            const rx_dma_mr_name = fmt(system.allocator, "{s}/net/rx/data/device", .{if (system.device) |dtb_node| dtb_node.name else "generic_net"});
+            const rx_dma_mr_name = fmt(system.allocator, "{s}/net/rx/data/device", .{system.deviceName()});
             const rx_dma_mr_size = system.sdf.arch.roundUpToPage(system.rx_buffers * BUFFER_SIZE);
             rx_dma_mr = Mr.physical(system.allocator, system.sdf, rx_dma_mr_name, rx_dma_mr_size, .{});
             system.sdf.addMemoryRegion(rx_dma_mr);
@@ -239,7 +247,7 @@ pub const Net = struct {
         system.virt_rx.addMap(rx_dma_virt_map);
         system.virt_rx_config.data_region = .createFromMap(rx_dma_virt_map);
 
-        const virt_rx_metadata_mr_name = fmt(system.allocator, "{s}/net/rx/virt_metadata", .{if (system.device) |dtb_node| dtb_node.name else "generic_net"});
+        const virt_rx_metadata_mr_name = fmt(system.allocator, "{s}/net/rx/virt_metadata", .{system.deviceName()});
         const virt_rx_metadata_mr_size = system.sdf.arch.roundUpToPage(system.rx_buffers * 4);
         const virt_rx_metadata_mr = Mr.create(system.allocator, virt_rx_metadata_mr_name, virt_rx_metadata_mr_size, .{});
         system.sdf.addMemoryRegion(virt_rx_metadata_mr);
@@ -278,7 +286,7 @@ pub const Net = struct {
             copier_config.device_data = .createFromMap(rx_dma_copier_map);
 
             const client_data_mr_size = system.sdf.arch.roundUpToPage(system.rx_buffers * BUFFER_SIZE);
-            const client_data_mr_name = fmt(system.allocator, "{s}/net/rx/data/client/{s}", .{ if (system.device) |dtb_node| dtb_node.name else "generic_net", client.name });
+            const client_data_mr_name = fmt(system.allocator, "{s}/net/rx/data/client/{s}", .{ system.deviceName(), client.name });
             const client_data_mr = Mr.create(system.allocator, client_data_mr_name, client_data_mr_size, .{});
             system.sdf.addMemoryRegion(client_data_mr);
 
@@ -309,7 +317,7 @@ pub const Net = struct {
         system.createConnection(system.virt_tx, client, &virt_client_config.conn, &client_config.tx, client_info.tx_buffers);
 
         const data_mr_size = system.sdf.arch.roundUpToPage(client_info.tx_buffers * BUFFER_SIZE);
-        const data_mr_name = fmt(system.allocator, "{s}/net/tx/data/client/{s}", .{ if (system.device) |dtb_node| dtb_node.name else "generic_net", client.name });
+        const data_mr_name = fmt(system.allocator, "{s}/net/tx/data/client/{s}", .{ system.deviceName(), client.name });
         const data_mr = Mr.physical(system.allocator, system.sdf, data_mr_name, data_mr_size, .{});
         system.sdf.addMemoryRegion(data_mr);
 
@@ -431,7 +439,7 @@ pub const Lwip = struct {
 
     pub fn connect(lib: *Lwip) !void {
         const pbuf_pool_mr_size = lib.num_pbufs * PBUF_STRUCT_SIZE;
-        const pbuf_pool_mr_name = fmt(lib.allocator, "{s}/net/lib_sddf_lwip/{s}", .{ if (lib.net.device) |dtb_node| dtb_node.name else "generic_net", lib.pd.name });
+        const pbuf_pool_mr_name = fmt(lib.allocator, "{s}/net/lib_sddf_lwip/{s}", .{ lib.net.deviceName(), lib.pd.name });
         const pbuf_pool_mr = Mr.create(lib.allocator, pbuf_pool_mr_name, pbuf_pool_mr_size, .{});
         lib.sdf.addMemoryRegion(pbuf_pool_mr);
 

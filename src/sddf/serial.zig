@@ -123,8 +123,16 @@ pub const Serial = struct {
         return system.virt_rx != null;
     }
 
+    fn deviceName(system: *Serial) []const u8 {
+        if (system.device) |dtb_node| {
+            return dtb_node.name;
+        } else {
+            return "generic";
+        }
+    }
+
     fn createConnection(system: *Serial, server: *Pd, client: *Pd, data_size: usize, server_conn: *ConfigResources.Serial.Connection, client_conn: *ConfigResources.Serial.Connection) void {
-        const queue_mr_name = fmt(system.allocator, "{s}/serial/queue/{s}/{s}", .{ if (system.device) |dtb_node| dtb_node.name else "generic_serial", server.name, client.name });
+        const queue_mr_name = fmt(system.allocator, "{s}/serial/queue/{s}/{s}", .{ system.deviceName(), server.name, client.name });
         const queue_mr = Mr.create(system.allocator, queue_mr_name, system.queue_size, .{});
         system.sdf.addMemoryRegion(queue_mr);
 
@@ -136,7 +144,7 @@ pub const Serial = struct {
         client.addMap(queue_mr_client_map);
         client_conn.queue = .createFromMap(queue_mr_client_map);
 
-        const data_mr_name = fmt(system.allocator, "{s}/serial/data/{s}/{s}", .{ if (system.device) |dtb_node| dtb_node.name else "generic_serial", server.name, client.name });
+        const data_mr_name = fmt(system.allocator, "{s}/serial/data/{s}/{s}", .{ system.deviceName(), server.name, client.name });
         const data_mr = Mr.create(system.allocator, data_mr_name, data_size, .{});
         system.sdf.addMemoryRegion(data_mr);
 
