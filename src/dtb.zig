@@ -221,7 +221,7 @@ pub const LinuxUio = struct {
         const paddr: u64 = regPaddr(arch, node, dt_paddr);
         const size: u64 = @intCast(dt_size);
 
-        const irq_number = if (irq) |i| i.getNumber() else null;
+        const irq_number = if (irq) |i| i.number() else null;
         return .{
             .node = node,
             .guest_paddr = paddr,
@@ -329,14 +329,14 @@ pub fn parseIrq(arch: SystemDescription.Arch, irq: []u32) !Irq {
         }
         const trigger = armGicTrigger(irq[2]);
         const number = armGicIrqNumber(irq[1], armGicIrqType(irq[0]));
-        return Irq.create(number, arch, .{
+        return Irq.create(number, .{
             .trigger = trigger,
         });
     } else if (arch.isRiscv()) {
         if (irq.len != 1) {
             return error.InvalidInterruptCells;
         }
-        return Irq.create(irq[0], arch, .{});
+        return Irq.create(irq[0], .{});
     } else {
         @panic("unsupported architecture");
     }

@@ -306,7 +306,7 @@ pub const Config = struct {
                     .network => &.{"network", "network/virtio"},
                     .serial => &.{"serial"},
                     .timer => &.{"timer"},
-                    .blk => &.{ "blk", "blk/mmc" },
+                    .blk => &.{ "blk", "blk/mmc", "blk/virtio" },
                     .i2c => &.{"i2c"},
                     .gpu => &.{"gpu"},
                 };
@@ -348,6 +348,8 @@ fn findDriver(compatibles: []const []const u8, class: Config.Driver.Class) ?Conf
 pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: *dtb.Node, class: Config.Driver.Class, device_res: *ConfigResources.Device) !void {
     if (!probed) return error.CalledBeforeProbe;
 
+    // TODO: the tooling is quite DTB based, we need to revisit this for x86-64 support,
+    // this is a bit of a hack right now.
     if (SystemDescription.Arch.isX86(sdf.arch)) {
         // No DTB on x86.
         return;
@@ -488,12 +490,11 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: *dtb.Node, class: 
         const dt_irq = dt_irqs[driver_irq.dt_index];
 
         const irq = try dtb.parseIrq(sdf.arch, dt_irq);
-        const irq_id = try pd.addIrq(try Irq.create(
-            irq.getNumber(),
-            sdf.arch,
+        const irq_id = try pd.addIrq(Irq.create(
+            irq.number().?,
             .{
-                .ch_id = driver_irq.channel_id,
-                .trigger = irq.getTrigger()
+                .id = driver_irq.channel_id,
+                .trigger = irq.trigger().?,
             }
         ));
 

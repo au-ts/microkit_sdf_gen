@@ -300,7 +300,7 @@ export fn sdfgen_sddf_init(path: [*c]u8) bool {
     return true;
 }
 
-export fn sdfgen_irq_create(c_arch: bindings.sdfgen_arch_t, number: u32, c_trigger: [*c]bindings.sdfgen_irq_trigger_t, c_id: [*c]u8) ?*anyopaque {
+export fn sdfgen_irq_create(number: u32, c_trigger: [*c]bindings.sdfgen_irq_trigger_t, c_id: [*c]u8) ?*anyopaque {
     const irq = allocator.create(Irq) catch @panic("OOM");
     var options: Irq.Options = .{};
     if (c_trigger != null) {
@@ -316,19 +316,15 @@ export fn sdfgen_irq_create(c_arch: bindings.sdfgen_arch_t, number: u32, c_trigg
         options.trigger = trigger;
     }
     if (c_id != null) {
-        options.ch_id = c_id.*;
+        options.id = c_id.*;
     }
 
-    irq.* = Irq.create(number, helper_c_arch_to_enum(c_arch), options) catch |e| {
-        log.err("failed to create conventional IRQ number {}: {any}", .{ number, e });
-        allocator.destroy(irq);
-        return null;
-    };
+    irq.* = Irq.create(number, options);
 
     return irq;
 }
 
-export fn sdfgen_irq_ioapic_create(c_arch: bindings.sdfgen_arch_t, ioapic_id: u64, pin: u64, c_trigger: [*c]bindings.sdfgen_irq_trigger_t, c_polarity: [*c]bindings.sdfgen_irq_ioapic_polarity_t, vector: u64, c_id: [*c]u8) ?*anyopaque {
+export fn sdfgen_irq_ioapic_create(ioapic: u64, pin: u64, c_trigger: [*c]bindings.sdfgen_irq_trigger_t, c_polarity: [*c]bindings.sdfgen_irq_ioapic_polarity_t, vector: u64, c_id: [*c]u8) ?*anyopaque {
     const irq = allocator.create(Irq) catch @panic("OOM");
     var options: Irq.IoapicOptions = .{};
     if (c_polarity != null) {
@@ -336,7 +332,7 @@ export fn sdfgen_irq_ioapic_create(c_arch: bindings.sdfgen_arch_t, ioapic_id: u6
             0 => .high,
             1 => .low,
             else => {
-                log.err("failed to create IOAPIC IRQ at chip {}, pin {}, vector {}: invalid polarity '{}'", .{ ioapic_id, pin, vector, c_polarity.* });
+                log.err("failed to create IOAPIC IRQ at chip {}, pin {}, vector {}: invalid polarity '{}'", .{ ioapic, pin, vector, c_polarity.* });
                 allocator.destroy(irq);
                 return null;
             }
@@ -348,7 +344,7 @@ export fn sdfgen_irq_ioapic_create(c_arch: bindings.sdfgen_arch_t, ioapic_id: u6
             0 => .edge,
             1 => .level,
             else => {
-                log.err("failed to create IOAPIC IRQ at chip {}, pin {}, vector {}: invalid trigger '{}'", .{ ioapic_id, pin, vector, c_trigger.* });
+                log.err("failed to create IOAPIC IRQ at chip {}, pin {}, vector {}: invalid trigger '{}'", .{ ioapic, pin, vector, c_trigger.* });
                 allocator.destroy(irq);
                 return null;
             },
@@ -356,12 +352,12 @@ export fn sdfgen_irq_ioapic_create(c_arch: bindings.sdfgen_arch_t, ioapic_id: u6
         options.trigger = trigger;
     }
     if (c_id != null) {
-        options.ch_id = c_id.*;
+        options.id = c_id.*;
     }
-    options.ioapic_id = ioapic_id;
+    options.ioapic = ioapic;
 
-    irq.* = Irq.createIoapic(pin, vector, helper_c_arch_to_enum(c_arch), options) catch |e| {
-        log.err("failed to create IOAPIC IRQ at chip {}, pin {}, vector {}: {any}", .{ ioapic_id, pin, vector, e });
+    irq.* = Irq.createIoapic(pin, vector, options) catch |e| {
+        log.err("failed to create IOAPIC IRQ at chip {}, pin {}, vector {}: {any}", .{ ioapic, pin, vector, e });
         allocator.destroy(irq);
         return null;
     };
@@ -369,14 +365,14 @@ export fn sdfgen_irq_ioapic_create(c_arch: bindings.sdfgen_arch_t, ioapic_id: u6
     return irq;
 }
 
-export fn sdfgen_irq_msi_create(c_arch: bindings.sdfgen_arch_t, pci_bus: u8, pci_device: u8, pci_func: u8, vector: u64, handle: u64, c_id: [*c]u8) ?*anyopaque {
+export fn sdfgen_irq_msi_create(pci_bus: u8, pci_device: u8, pci_func: u8, vector: u64, handle: u64, c_id: [*c]u8) ?*anyopaque {
     const irq = allocator.create(Irq) catch @panic("OOM");
     var options: Irq.MsiOptions = .{};
     if (c_id != null) {
-        options.ch_id = c_id.*;
+        options.id = c_id.*;
     }
 
-    irq.* = Irq.createMsi(pci_bus, pci_device, pci_func, vector, handle, helper_c_arch_to_enum(c_arch), options) catch |e| {
+    irq.* = Irq.createMsi(pci_bus, pci_device, pci_func, vector, handle, options) catch |e| {
         log.err("failed to create MSI IRQ at PCI address {}:{}.{}, vector {}, handle {}: {any}", .{ pci_bus, pci_device, pci_func, vector, handle, e });
         allocator.destroy(irq);
         return null;
@@ -390,14 +386,14 @@ export fn sdfgen_irq_destroy(c_irq: *align(8) anyopaque) void {
     allocator.destroy(irq);
 }
 
-export fn sdfgen_ioport_create(c_arch: bindings.sdfgen_arch_t, addr: u16, size: u16, c_id: [*c]u8) ?*anyopaque {
+export fn sdfgen_ioport_create(addr: u16, size: u16, c_id: [*c]u8) ?*anyopaque {
     const ioport = allocator.create(IoPort) catch @panic("OOM");
     var options: IoPort.Options = .{};
     if (c_id != null) {
-        options.ch_id = c_id.*;
+        options.id = c_id.*;
     }
 
-    ioport.* = IoPort.create(addr, size, helper_c_arch_to_enum(c_arch), options) catch |e| {
+    ioport.* = IoPort.create(addr, size, options) catch |e| {
         log.err("failed to create I/O Port at {}: {any}", .{ addr, e });
         allocator.destroy(ioport);
         return null;
@@ -889,7 +885,7 @@ export fn sdfgen_vmm_add_passthrough_irq(c_vmm: *align(8) anyopaque, c_irq: *ali
     const vmm: *Vmm = @ptrCast(c_vmm);
     const irq: *Irq = @ptrCast(c_irq);
     vmm.addPassthroughIrq(irq.*) catch |e| {
-        log.err("failed to add passthrough IRQ '{}' to VMM '{s}': {any}", .{ irq.getNumber(), vmm.vmm.name, e });
+        log.err("failed to add passthrough IRQ '{}' to VMM '{s}': {any}", .{ irq.number().?, vmm.vmm.name, e });
         return false;
     };
 
