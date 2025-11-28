@@ -872,6 +872,8 @@ pub const SystemDescription = struct {
         }
 
         pub fn render(irq: *const Irq, writer: ArrayList(u8).Writer, separator: []const u8) !void {
+            // TODO: check the architecture here when rendering to see if the right IRQ kind is being
+            // used.
             // By the time we get here, something should have populated the 'id' field.
             std.debug.assert(irq.id != null);
 

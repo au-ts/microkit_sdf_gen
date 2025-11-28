@@ -665,7 +665,6 @@ class SystemDescription:
 
         def __init__(
             self,
-            arch: SystemDescription.Arch,
             irq: int,
             trigger: Optional[Trigger] = None,
             id: Optional[int] = None,
@@ -689,7 +688,6 @@ class SystemDescription:
 
         def __init__(
             self,
-            arch: SystemDescription.Arch,
             ioapic_id: int,
             pin: int,
             vector: int,
@@ -707,7 +705,6 @@ class SystemDescription:
     class IrqMsi(Irq):
         def __init__(
             self,
-            arch: SystemDescription.Arch,
             pci_bus: int,
             pci_device: int,
             pci_func: int,
@@ -727,7 +724,6 @@ class SystemDescription:
 
         def __init__(
             self,
-            arch: SystemDescription.Arch,
             addr: int,
             size: int,
             id: Optional[int] = None,
