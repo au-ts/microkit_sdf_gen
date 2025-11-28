@@ -106,7 +106,7 @@ libsdfgen.sdfgen_irq_destroy.restype = None
 libsdfgen.sdfgen_irq_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_ioport_create.restype = c_void_p
-libsdfgen.sdfgen_ioport_create.argtypes = [c_uint32, c_uint16, c_uint16, POINTER(c_uint8)]
+libsdfgen.sdfgen_ioport_create.argtypes = [c_uint16, c_uint16, POINTER(c_uint8)]
 libsdfgen.sdfgen_ioport_destroy.restype = None
 libsdfgen.sdfgen_ioport_destroy.argtypes = [c_void_p]
 
