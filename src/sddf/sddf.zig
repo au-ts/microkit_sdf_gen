@@ -494,7 +494,7 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: *dtb.Node, class: 
             irq.number().?,
             .{
                 .id = driver_irq.channel_id,
-                .trigger = irq.trigger().?,
+                .trigger = irq.trigger(),
             }
         ));
 
