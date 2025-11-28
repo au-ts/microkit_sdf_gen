@@ -678,12 +678,11 @@ export fn sdfgen_sddf_i2c_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
-export fn sdfgen_sddf_blk(c_sdf: *align(8) anyopaque, c_device: *align(8) anyopaque, driver: *align(8) anyopaque, virt: *align(8) anyopaque) ?*anyopaque {
+export fn sdfgen_sddf_blk(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt: *align(8) anyopaque) ?*anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
-    const device: *dtb.Node = @ptrCast(c_device);
     const blk = allocator.create(sddf.Blk) catch @panic("OOM");
-    blk.* = sddf.Blk.init(allocator, sdf, device, @ptrCast(driver), @ptrCast(virt), .{}) catch |e| {
-        log.err("failed to initialiase blk system for device '{s}': {any}", .{ device.name, e });
+    blk.* = sddf.Blk.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt), .{}) catch |e| {
+        log.err("failed to initialiase blk system: {any}", .{ e });
         allocator.destroy(blk);
         return null;
     };
