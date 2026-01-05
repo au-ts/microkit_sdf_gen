@@ -21,6 +21,7 @@ const Vm = SystemDescription.VirtualMachine;
 const Channel = SystemDescription.Channel;
 const Mr = SystemDescription.MemoryRegion;
 const Map = SystemDescription.Map;
+const CapMap = SystemDescription.CapMap;
 const Arch = SystemDescription.Arch;
 
 fn helper_c_arch_to_enum(c_arch: bindings.sdfgen_arch_t) Arch {
@@ -164,6 +165,13 @@ export fn sdfgen_pd_add_map(c_pd: *align(8) anyopaque, c_map: *align(8) anyopaqu
     const map: *Map = @ptrCast(c_map);
 
     pd.addMap(map.*);
+}
+
+export fn sdfgen_pd_add_cap_map(c_pd: *align(8) anyopaque, c_cap_map: *align(8) anyopaque) void {
+    const pd: *Pd = @ptrCast(c_pd);
+    const cap_map: *CapMap = @ptrCast(c_cap_map);
+
+    pd.addCapMap(cap_map.*);
 }
 
 export fn sdfgen_pd_add_irq(c_pd: *align(8) anyopaque, c_irq: *align(8) anyopaque) i8 {
@@ -338,7 +346,7 @@ export fn sdfgen_irq_ioapic_create(ioapic: u64, pin: u64, c_trigger: [*c]binding
                 log.err("failed to create IOAPIC IRQ at chip {}, pin {}, vector {}: invalid polarity '{}'", .{ ioapic, pin, vector, c_polarity.* });
                 allocator.destroy(irq);
                 return null;
-            }
+            },
         };
         options.polarity = polarity;
     }
@@ -502,6 +510,19 @@ export fn sdfgen_map_destroy(c_map: *align(8) anyopaque) void {
     allocator.destroy(map);
 }
 
+export fn sdfgen_cap_map_create(cap_type: [*c]u8, pd: [*c]u8, dest_cspace_slot: u64) ?*anyopaque {
+    const cap_map = allocator.create(CapMap) catch @panic("OOM");
+
+    cap_map.* = CapMap.create(allocator, std.mem.span(cap_type), std.mem.span(pd), dest_cspace_slot);
+
+    return cap_map;
+}
+
+export fn sdfgen_cap_map_destroy(c_cap_map: *align(8) anyopaque) void {
+    const cap_map: *CapMap = @ptrCast(c_cap_map);
+    allocator.destroy(cap_map);
+}
+
 export fn sdfgen_channel_create(c_pd_a: *align(8) anyopaque, c_pd_b: *align(8) anyopaque, pd_a_id: [*c]u8, pd_b_id: [*c]u8, pd_a_notify: [*c]bool, pd_b_notify: [*c]bool, c_pp: [*c]u8, c_pd_a_setvar_id: [*c]u8, c_pd_b_setvar_id: [*c]u8) ?*anyopaque {
     const pd_a: *Pd = @ptrCast(c_pd_a);
     const pd_b: *Pd = @ptrCast(c_pd_b);
@@ -576,12 +597,7 @@ export fn sdfgen_channel_add(c_sdf: *align(8) anyopaque, c_ch: *align(8) anyopaq
 export fn sdfgen_sddf_timer(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const timer = allocator.create(sddf.Timer) catch @panic("OOM");
-    timer.* = sddf.Timer.init(
-        allocator,
-        sdf,
-        if (c_device) |raw| @ptrCast(raw) else null,
-        @ptrCast(driver)
-    );
+    timer.* = sddf.Timer.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver));
 
     return timer;
 }
@@ -634,7 +650,7 @@ export fn sdfgen_sddf_serial(c_sdf: *align(8) anyopaque, c_device: ?*align(8) an
     }
     const serial = allocator.create(sddf.Serial) catch @panic("OOM");
     serial.* = sddf.Serial.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt_tx), options) catch |e| {
-        log.err("failed to initialiase serial system: {any}", .{ e });
+        log.err("failed to initialiase serial system: {any}", .{e});
         allocator.destroy(serial);
         return null;
     };
@@ -769,7 +785,7 @@ export fn sdfgen_sddf_blk(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyop
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const blk = allocator.create(sddf.Blk) catch @panic("OOM");
     blk.* = sddf.Blk.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt), .{}) catch |e| {
-        log.err("failed to initialiase blk system: {any}", .{ e });
+        log.err("failed to initialiase blk system: {any}", .{e});
         allocator.destroy(blk);
         return null;
     };
