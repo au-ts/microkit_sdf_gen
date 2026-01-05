@@ -77,6 +77,11 @@ libsdfgen.sdfgen_channel_get_pd_a_id.argtypes = [c_void_p]
 libsdfgen.sdfgen_channel_get_pd_b_id.restype = c_uint8
 libsdfgen.sdfgen_channel_get_pd_b_id.argtypes = [c_void_p]
 
+libsdfgen.sdfgen_cap_map_create.restype = c_void_p
+libsdfgen.sdfgen_cap_map_create.argtypes = [c_void_p, c_void_p, c_uint64]
+libsdfgen.sdfgen_cap_map_destroy.restype = None
+libsdfgen.sdfgen_cap_map_destroy.argtypes = [c_void_p]
+
 libsdfgen.sdfgen_map_create.restype = c_void_p
 libsdfgen.sdfgen_map_create.argtypes = [c_void_p, c_uint64, MapPermsType, c_bool]
 libsdfgen.sdfgen_map_get_vaddr.restype = c_uint64
@@ -141,6 +146,8 @@ libsdfgen.sdfgen_pd_get_map_vaddr.restype = c_uint64
 libsdfgen.sdfgen_pd_get_map_vaddr.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_pd_add_map.restype = None
 libsdfgen.sdfgen_pd_add_map.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_pd_add_cap_map.restype = None
+libsdfgen.sdfgen_pd_add_cap_map.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_pd_add_irq.restype = c_int8
 libsdfgen.sdfgen_pd_add_irq.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_pd_set_virtual_machine.restype = c_bool
@@ -514,6 +521,9 @@ class SystemDescription:
         def add_map(self, map: SystemDescription.Map):
             libsdfgen.sdfgen_pd_add_map(self._obj, map._obj)
 
+        def add_cap_map(self, cap_map: SystemDescription.CapMap):
+            libsdfgen.sdfgen_pd_add_cap_map(self._obj, cap_map._obj)
+
         def add_irq(self, irq: SystemDescription.Irq) -> int:
             id = libsdfgen.sdfgen_pd_add_irq(self._obj, irq._obj)
             if id < 0:
@@ -615,6 +625,29 @@ class SystemDescription:
         @property
         def vaddr(self):
             return libsdfgen.sdfgen_map_get_vaddr(self._obj)
+
+    class CapMap:
+        _obj: c_void_p
+
+        class CapType(IntEnum):
+            TCB = 0,
+            SC = 1,
+
+        def __init__(
+            self,
+            type: CapType,
+            pd: SystemDescription.ProtectionDomain,
+            dest_cspace_slot: int,
+        ) -> None:
+            c_type = None
+            if type is self.CapType.TCB:
+                c_type = c_char_p("tcb".encode("utf-8"))
+            elif type is self.CapType.SC:
+                c_type = c_char_p("sc".encode("utf-8"))
+
+            c_pd = c_char_p(pd._name.encode("utf-8"))
+
+            self._obj = libsdfgen.sdfgen_cap_map_create(c_type, c_pd, dest_cspace_slot)
 
     class MemoryRegion:
         _obj: c_void_p

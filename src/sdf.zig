@@ -396,6 +396,31 @@ pub const SystemDescription = struct {
         }
     };
 
+    pub const CapMap = struct {
+        allocator: Allocator,
+        cap_type: []const u8,
+        pd: []const u8,
+        dest_cspace_slot: u64,
+
+        pub fn create(allocator: Allocator, cap_type: []const u8, pd: []const u8, dest_cspace_slot: u64) CapMap {
+            return CapMap{
+                .allocator = allocator,
+                .cap_type = allocator.dupe(u8, cap_type) catch @panic("Could not dupe cap map type"),
+                .pd = allocator.dupe(u8, pd) catch @panic("Could not dupe src PD name"),
+                .dest_cspace_slot = dest_cspace_slot,
+            };
+        }
+
+        pub fn destroy(cap_map: *CapMap) void {
+            cap_map.allocator.free(cap_map.cap_type);
+            cap_map.allocator.free(cap_map.pd);
+        }
+
+        pub fn render(cap_map: *const CapMap, writer: ArrayList(u8).Writer, separator: []const u8) !void {
+            try std.fmt.format(writer, "{s}<cap type=\"{s}\" pd=\"{s}\" dest_cspace_slot=\"{}\" />\n", .{ separator, cap_map.cap_type, cap_map.pd, cap_map.dest_cspace_slot });
+        }
+    };
+
     pub const ProtectionDomain = struct {
         allocator: Allocator,
         name: []const u8,
@@ -410,6 +435,8 @@ pub const SystemDescription = struct {
         stack_size: ?u32,
         /// Memory mappings
         maps: ArrayList(Map),
+        /// TCB and SC cap mappings
+        cap_maps: ArrayList(CapMap),
         /// The length of this array is bound by the maximum number of child PDs a PD can have.
         child_pds: ArrayList(*ProtectionDomain),
         /// The length of this array is bound by the maximum number of IRQs a PD can have.
@@ -456,6 +483,7 @@ pub const SystemDescription = struct {
                 .name = allocator.dupe(u8, name) catch @panic("Could not dupe PD name"),
                 .program_image = program_image_dupe,
                 .maps = ArrayList(Map).init(allocator),
+                .cap_maps = ArrayList(CapMap).init(allocator),
                 .child_pds = ArrayList(*ProtectionDomain).initCapacity(allocator, MAX_CHILD_PDS) catch @panic("Could not allocate child_pds"),
                 .irqs = ArrayList(Irq).initCapacity(allocator, MAX_IRQS) catch @panic("Could not allocate irqs"),
                 .ioports = ArrayList(IoPort).initCapacity(allocator, MAX_IOPORTS) catch @panic("Could not allocate I/O Ports"),
@@ -519,6 +547,10 @@ pub const SystemDescription = struct {
 
         pub fn addMap(pd: *ProtectionDomain, map: Map) void {
             pd.maps.append(map) catch @panic("Could not add Map to ProtectionDomain");
+        }
+
+        pub fn addCapMap(pd: *ProtectionDomain, cap_map: CapMap) void {
+            pd.cap_maps.append(cap_map) catch @panic("Could not add TCB Cap Map to ProtectionDomain");
         }
 
         pub fn addIrq(pd: *ProtectionDomain, irq: Irq) !u8 {
@@ -659,6 +691,9 @@ pub const SystemDescription = struct {
             for (pd.maps.items) |map| {
                 try map.render(writer, child_separator);
             }
+            for (pd.cap_maps.items) |cap_map| {
+                try cap_map.render(writer, child_separator);
+            }
             for (pd.child_pds.items) |child_pd| {
                 try child_pd.render(sdf, writer, child_separator, child_pd.child_id.?);
             }
@@ -759,7 +794,7 @@ pub const SystemDescription = struct {
 
         const Kind = union(enum) {
             conventional: struct {
-                irq:     u32,
+                irq: u32,
                 trigger: ?Trigger,
             },
 
@@ -808,9 +843,9 @@ pub const SystemDescription = struct {
                     return s_irq.irq;
                 },
                 else => {
-                    log.err("number called on invalid IRQ kind {s}", .{ @tagName(irq.kind) });
+                    log.err("number called on invalid IRQ kind {s}", .{@tagName(irq.kind)});
                     return null;
-                }
+                },
             }
         }
 
@@ -823,9 +858,9 @@ pub const SystemDescription = struct {
                     return i_irq.trigger;
                 },
                 else => {
-                    log.err("trigger called on invalid IRQ kind {s}", .{ @tagName(irq.kind) });
+                    log.err("trigger called on invalid IRQ kind {s}", .{@tagName(irq.kind)});
                     return null;
-                }
+                },
             }
         }
 
@@ -839,7 +874,7 @@ pub const SystemDescription = struct {
 
         pub fn createIoapic(pin: u64, vector: u64, options: IoapicOptions) !Irq {
             return .{
-                .id   = options.id,
+                .id = options.id,
                 .kind = .{
                     .ioapic = .{
                         .ioapic = options.ioapic,
@@ -859,7 +894,7 @@ pub const SystemDescription = struct {
         pub fn createMsi(pci_bus: u8, pci_device: u8, pci_func: u8, vector: u64, handle: u64, options: MsiOptions) !Irq {
             // @billn: double check does MSI work in the same manner on arm and riscv?
             return .{
-                .id   = options.id,
+                .id = options.id,
                 .kind = .{
                     .msi = .{
                         .pci_bus = pci_bus,
@@ -901,7 +936,7 @@ pub const SystemDescription = struct {
                 },
                 .msi => |m_irq| {
                     try std.fmt.format(writer, "pcidev=\"{}:{}.{}\" handle=\"{}\" vector=\"{}\" id=\"{}\"", .{ m_irq.pci_bus, m_irq.pci_dev, m_irq.pci_func, m_irq.handle, m_irq.vector, irq.id.? });
-                }
+                },
             }
 
             _ = try writer.write(" />\n");
@@ -930,7 +965,7 @@ pub const SystemDescription = struct {
             // By the time we get here, something should have populated the 'id' field.
             std.debug.assert(ioport.id != null);
 
-            try std.fmt.format(writer, "{s}<ioport id=\"{}\" addr=\"{}\" size=\"{}\" />\n", .{separator, ioport.id.?, ioport.addr, ioport.size});
+            try std.fmt.format(writer, "{s}<ioport id=\"{}\" addr=\"{}\" size=\"{}\" />\n", .{ separator, ioport.id.?, ioport.addr, ioport.size });
         }
     };
 
