@@ -149,8 +149,17 @@ bool sdfgen_sddf_gpu_serialise_config(void *system, char *output_dir);
 
 /*** Virtual Machine Monitor ***/
 void *sdfgen_vmm(void *sdf, void *vmm_pd, void *vm, char *name, void *dtb, bool one_to_one_ram);
-bool sdfgen_vmm_add_passthrough_device(void *vmm, char *name, void *device);
+bool sdfgen_vmm_add_passthrough_device(void *vmm, void *device);
+bool sdfgen_vmm_add_passthrough_device_regions(void *vmm, void *device, void *regions, uint8_t num_regions);
+bool sdfgen_vmm_add_passthrough_device_irqs(void *vmm, void *device, void *irqs, uint8_t num_irqs);
+bool sdfgen_vmm_add_passthrough_irq(void *vmm, void *irq);
+bool sdfgen_vmm_add_virtio_mmio_console(void *vmm, void *device, void *serial);
+bool sdfgen_vmm_add_virtio_mmio_blk(void *vmm, void *device, void *blk, uint32_t partition);
+bool sdfgen_vmm_add_virtio_mmio_net(void *vmm, void *device, void *net, void *copier, uint8_t mac_addr[6]);
+void *sdfgen_vmm_virtio_socket_connection(void *sdf, void *device, void *vmm_a, uint32_t cid_a, void *vmm_b, uint32_t cid_b);
+bool sdfgen_vmm_virtio_socket_connection_connect(void *vmm_vsock);
 bool sdfgen_vmm_connect(void *vmm);
+bool sdfgen_vmm_serialise_config(void *system, char *output_dir);
 
 /*** LionsOS ***/
 

@@ -13,6 +13,7 @@ const dtb = modsdf.dtb;
 const sddf = modsdf.sddf;
 const lionsos = modsdf.lionsos;
 const Vmm = modsdf.Vmm;
+const VmmVirtioSocketConnection = Vmm.VmmVirtioSocketConnection;
 const SystemDescription = modsdf.sdf.SystemDescription;
 const Pd = SystemDescription.ProtectionDomain;
 const Irq = SystemDescription.Irq;
@@ -926,6 +927,24 @@ export fn sdfgen_vmm_add_virtio_mmio_net(c_vmm: *align(8) anyopaque, c_device: *
         log.err("failed to add virtIO MMIO net device '{s}' to VMM '{s}': {any}", .{ device.name, vmm.vmm.name, e });
         return false;
     };
+
+    return true;
+}
+
+export fn sdfgen_vmm_virtio_socket_connection(c_sdf: *align(8) anyopaque, c_device: *align(8) anyopaque, c_vmm_a: *align(8) anyopaque, cid_a: u32, c_vmm_b: *align(8) anyopaque, cid_b: u32) *anyopaque {
+    const sdf: *SystemDescription = @ptrCast(c_sdf);
+    const device: *dtb.Node = @ptrCast(c_device);
+    const vmm_a: *Vmm = @ptrCast(c_vmm_a);
+    const vmm_b: *Vmm = @ptrCast(c_vmm_b);
+    const vsock = allocator.create(VmmVirtioSocketConnection) catch @panic("OOM");
+    vsock.* = VmmVirtioSocketConnection.init(allocator, sdf, device, vmm_a, cid_a, vmm_b, cid_b);
+
+    return vsock;
+}
+
+export fn sdfgen_vmm_virtio_socket_connection_connect(c_vmm_vsock: *align(8) anyopaque) bool {
+    const vsock: *VmmVirtioSocketConnection = @ptrCast(c_vmm_vsock);
+    vsock.connect() catch return false;
 
     return true;
 }
