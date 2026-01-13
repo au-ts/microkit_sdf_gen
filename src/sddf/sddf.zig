@@ -11,6 +11,7 @@ pub const Net = @import("net.zig").Net;
 pub const Lwip = @import("net.zig").Lwip;
 pub const Gpu = @import("gpu.zig").Gpu;
 pub const Serial = @import("serial.zig").Serial;
+pub const Pinctrl = @import("pinctrl.zig").Pinctrl;
 
 const fs = std.fs;
 const assert = std.debug.assert;
@@ -123,8 +124,16 @@ pub fn probe(allocator: Allocator, path: []const u8) !void {
         for (@as(Config.Driver.Class, @enumFromInt(device_class.value)).dirs()) |dir| {
             const driver_dir = fmt(allocator, "drivers/{s}", .{dir});
             var device_class_dir = sddf.openDir(driver_dir, .{ .iterate = true }) catch |e| {
-                log.err("failed to open sDDF driver directory '{s}': {}", .{ driver_dir, e });
-                return e;
+                if (e == std.fs.Dir.OpenError.FileNotFound) {
+                    // Rather than failing on a particular driver directory not being found, we instead
+                    // skip it.
+                    // This makes the tool more resilient to when we delevop new device classes that
+                    // have not been merged in yet.
+                    continue;
+                } else {
+                    log.err("failed to open sDDF driver directory '{s}': {}", .{ driver_dir, e });
+                    return e;
+                }
             };
             defer device_class_dir.close();
             var iter = device_class_dir.iterate();
@@ -290,6 +299,7 @@ pub const Config = struct {
             blk,
             i2c,
             gpu,
+            pinctrl,
 
             pub fn fromStr(str: []const u8) ?Class {
                 inline for (std.meta.fields(Class)) |field| {
@@ -309,6 +319,7 @@ pub const Config = struct {
                     .blk => &.{ "blk", "blk/mmc", "blk/virtio" },
                     .i2c => &.{"i2c"},
                     .gpu => &.{"gpu"},
+                    .pinctrl => &.{"pinctrl"},
                 };
             }
         };

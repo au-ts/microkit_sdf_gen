@@ -147,6 +147,11 @@ sdfgen_sddf_status_t sdfgen_sddf_gpu_add_client(void *system, void *client);
 bool sdfgen_sddf_gpu_connect(void *system);
 bool sdfgen_sddf_gpu_serialise_config(void *system, char *output_dir);
 
+void *sdfgen_sddf_pinctrl(void *sdf, void *device, void *driver);
+void sdfgen_sddf_pinctrl_destroy(void *system);
+bool sdfgen_sddf_pinctrl_connect(void *system);
+bool sdfgen_sddf_pinctrl_serialise_config(void *system, char *output_dir);
+
 /*** Virtual Machine Monitor ***/
 void *sdfgen_vmm(void *sdf, void *vmm_pd, void *vm, char *name, void *dtb, bool one_to_one_ram);
 bool sdfgen_vmm_add_passthrough_device(void *vmm, char *name, void *device);

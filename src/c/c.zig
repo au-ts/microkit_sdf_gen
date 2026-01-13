@@ -831,6 +831,34 @@ export fn sdfgen_sddf_gpu_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
+export fn sdfgen_sddf_pinctrl(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque) *anyopaque {
+    const sdf: *SystemDescription = @ptrCast(c_sdf);
+    const pinctrl = allocator.create(sddf.Pinctrl) catch @panic("OOM");
+    pinctrl.* = sddf.Pinctrl.init(allocator, sdf, @ptrCast(c_device), @ptrCast(driver));
+
+    return pinctrl;
+}
+
+export fn sdfgen_sddf_pinctrl_destroy(system: *align(8) anyopaque) void {
+    const pinctrl: *sddf.Pinctrl = @ptrCast(system);
+    pinctrl.deinit();
+    allocator.destroy(pinctrl);
+}
+
+export fn sdfgen_sddf_pinctrl_connect(system: *align(8) anyopaque) bool {
+    const pinctrl: *sddf.Pinctrl = @ptrCast(system);
+    pinctrl.connect() catch return false;
+
+    return true;
+}
+
+export fn sdfgen_sddf_pinctrl_serialise_config(system: *align(8) anyopaque, output_dir: [*c]u8) bool {
+    const pinctrl: *sddf.Pinctrl = @ptrCast(system);
+    pinctrl.serialiseConfig(std.mem.span(output_dir)) catch return false;
+
+    return true;
+}
+
 export fn sdfgen_vmm(c_sdf: *align(8) anyopaque, vmm_pd: *align(8) anyopaque, vm: *align(8) anyopaque, c_dtb: *align(8) anyopaque, dtb_size: u64, one_to_one_ram: bool) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const vmm = allocator.create(Vmm) catch @panic("OOM");
