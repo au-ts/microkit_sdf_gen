@@ -1187,11 +1187,16 @@ class Vmm:
         sdf: SystemDescription,
         vmm: SystemDescription.ProtectionDomain,
         vm: SystemDescription.VirtualMachine,
-        dtb: DeviceTree,
+        dtb: Optional[DeviceTree],
         *,
         one_to_one_ram: bool = False,
     ):
-        self._obj = libsdfgen.sdfgen_vmm(sdf._obj, vmm._obj, vm._obj, dtb._obj, dtb.size, one_to_one_ram)
+        dtb_obj = None
+        dtb_size = 0
+        if dtb is not None:
+            dtb_obj = dtb._obj
+            dtb_size = dtb.size
+        self._obj = libsdfgen.sdfgen_vmm(sdf._obj, vmm._obj, vm._obj, dtb_obj, dtb_size, one_to_one_ram)
 
     def add_passthrough_device(
         self,

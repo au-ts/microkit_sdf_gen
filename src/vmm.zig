@@ -24,7 +24,7 @@ allocator: Allocator,
 sdf: *SystemDescription,
 vmm: *Pd,
 guest: *Vm,
-guest_dtb: *dtb.Node,
+guest_dtb: ?*dtb.Node,
 guest_dtb_size: u64,
 data: Data,
 /// Whether or not to map guest RAM with 1-1 mappings with physical memory
@@ -93,7 +93,7 @@ const Data = extern struct {
     linux_uios: [MAX_LINUX_UIO_REGIONS]LinuxUioRegion,
 };
 
-pub fn init(allocator: Allocator, sdf: *SystemDescription, vmm: *Pd, guest: *Vm, guest_dtb: *dtb.Node, guest_dtb_size: u64, options: Options) Self {
+pub fn init(allocator: Allocator, sdf: *SystemDescription, vmm: *Pd, guest: *Vm, guest_dtb: ?*dtb.Node, guest_dtb_size: u64, options: Options) Self {
     return .{
         .allocator = allocator,
         .sdf = sdf,
@@ -314,7 +314,7 @@ fn allocateDtbAddress(arch: Arch, dtb_size: u64, ram_start: u64, ram_end: u64, i
 fn parseUios(system: *Self) !void {
     const allocator = system.allocator;
 
-    const uio_nodes = try dtb.findAllCompatible(allocator, system.guest_dtb, dtb.LinuxUio.compatible);
+    const uio_nodes = try dtb.findAllCompatible(allocator, system.guest_dtb.?, dtb.LinuxUio.compatible);
     defer uio_nodes.deinit();
     if (uio_nodes.items.len >= MAX_LINUX_UIO_REGIONS) {
         log.err("The DTB parser found {d} UIO nodes, but the limit is {d}", .{ uio_nodes.items.len, MAX_LINUX_UIO_REGIONS });
@@ -381,7 +381,7 @@ pub fn connect(system: *Self) !void {
     try vmm.setVirtualMachine(guest);
 
     if (sdf.arch.isArm()) {
-        const gic = dtb.ArmGic.fromDtb(sdf.arch, system.guest_dtb) orelse {
+        const gic = dtb.ArmGic.fromDtb(sdf.arch, system.guest_dtb.?) orelse {
             log.err("error connecting VMM '{s}' system: could not find GIC interrupt controller DTB node", .{vmm.name});
             return error.MissinGicNode;
         };
@@ -403,78 +403,77 @@ pub fn connect(system: *Self) !void {
             const gic_guest_map = Map.create(gic_vcpu_mr.?, gic.cpu_paddr.?, .rw, .{ .cached = false });
             guest.addMap(gic_guest_map);
         }
-    }
 
-    const memory_node = dtb.memory(system.guest_dtb) orelse {
-        log.err("error connecting VMM '{s}' system: could not find 'memory' DTB node", .{vmm.name});
-        return error.MissingMemoryNode;
-    };
-    const memory_reg = memory_node.prop(.Reg) orelse {
-        log.err("error connecting VMM '{s}' system: 'memory' node does not have 'reg' field", .{vmm.name});
-        return error.InvalidMemoryNode;
-    };
-    if (memory_reg.len != 1) {
-        log.err("error connecting VMM '{s}' system: expected 1 main memory region, found {}", .{ vmm.name, memory_reg.len });
-        return error.InvalidMemoryNode;
-    }
-
-    const memory_paddr: u64 = @intCast(memory_reg[0][0]);
-    const guest_mr_name = std.fmt.allocPrint(allocator, "guest_ram_{s}", .{guest.name}) catch @panic("OOM");
-    defer allocator.free(guest_mr_name);
-    const guest_ram_size: u64 = @intCast(memory_reg[0][1]);
-
-    const guest_ram_mr = blk: {
-        if (system.one_to_one_ram) {
-            break :blk Mr.physical(allocator, sdf, guest_mr_name, guest_ram_size, .{ .paddr = memory_paddr });
-        } else {
-            break :blk Mr.create(allocator, guest_mr_name, guest_ram_size, .{});
-        }
-    };
-    sdf.addMemoryRegion(guest_ram_mr);
-    vmm.addMap(.create(guest_ram_mr, memory_paddr, .rw, .{}));
-    guest.addMap(.create(guest_ram_mr, memory_paddr, .rwx, .{}));
-
-    system.guest_ram = guest_ram_mr;
-
-    for (system.guest.vcpus) |vcpu| {
-        system.data.vcpus[system.data.num_vcpus] = .{
-            .id = vcpu.id,
+        const memory_node = dtb.memory(system.guest_dtb.?) orelse {
+            log.err("error connecting VMM '{s}' system: could not find 'memory' DTB node", .{vmm.name});
+            return error.MissingMemoryNode;
         };
-        system.data.num_vcpus += 1;
-    }
-
-    const initrd_start = blk: {
-        if (system.guest_dtb.propAt(&.{"chosen"}, .LinuxInitrdStart)) |addr| {
-            break :blk addr;
-        } else {
-            return error.MissingInitrd;
+        const memory_reg = memory_node.prop(.Reg) orelse {
+            log.err("error connecting VMM '{s}' system: 'memory' node does not have 'reg' field", .{vmm.name});
+            return error.InvalidMemoryNode;
+        };
+        if (memory_reg.len != 1) {
+            log.err("error connecting VMM '{s}' system: expected 1 main memory region, found {}", .{ vmm.name, memory_reg.len });
+            return error.InvalidMemoryNode;
         }
-    };
-    const initrd_end = blk: {
-        if (system.guest_dtb.propAt(&.{"chosen"}, .LinuxInitrdEnd)) |addr| {
-            break :blk addr;
-        } else {
-            return error.MissingInitrd;
+
+        const memory_paddr: u64 = @intCast(memory_reg[0][0]);
+        const guest_mr_name = std.fmt.allocPrint(allocator, "guest_ram_{s}", .{guest.name}) catch @panic("OOM");
+        defer allocator.free(guest_mr_name);
+        const guest_ram_size: u64 = @intCast(memory_reg[0][1]);
+
+        const guest_ram_mr = blk: {
+            if (system.one_to_one_ram) {
+                break :blk Mr.physical(allocator, sdf, guest_mr_name, guest_ram_size, .{ .paddr = memory_paddr });
+            } else {
+                break :blk Mr.create(allocator, guest_mr_name, guest_ram_size, .{});
+            }
+        };
+        sdf.addMemoryRegion(guest_ram_mr);
+        vmm.addMap(.create(guest_ram_mr, memory_paddr, .rw, .{}));
+        guest.addMap(.create(guest_ram_mr, memory_paddr, .rwx, .{}));
+
+        system.guest_ram = guest_ram_mr;
+
+        for (system.guest.vcpus) |vcpu| {
+            system.data.vcpus[system.data.num_vcpus] = .{
+                .id = vcpu.id,
+            };
+            system.data.num_vcpus += 1;
         }
-    };
 
-    if (initrd_end <= initrd_start) {
-        log.err("invalid initrd region for VMM '{s}': end address 0x{x} is less than start address 0x{x}", .{ vmm.name, initrd_end, initrd_start });
-        return error.InvalidInitrd;
+        const initrd_start = blk: {
+            if (system.guest_dtb.?.propAt(&.{"chosen"}, .LinuxInitrdStart)) |addr| {
+                break :blk addr;
+            } else {
+                return error.MissingInitrd;
+            }
+        };
+        const initrd_end = blk: {
+            if (system.guest_dtb.?.propAt(&.{"chosen"}, .LinuxInitrdEnd)) |addr| {
+                break :blk addr;
+            } else {
+                return error.MissingInitrd;
+            }
+        };
+
+        if (initrd_end <= initrd_start) {
+            log.err("invalid initrd region for VMM '{s}': end address 0x{x} is less than start address 0x{x}", .{ vmm.name, initrd_end, initrd_start });
+            return error.InvalidInitrd;
+        }
+
+        if (initrd_end > memory_paddr + guest_ram_size or initrd_start < memory_paddr) {
+            log.err("invalid initrd region for VMM '{s}': initrd at [0x{x}..0x{x}) is not within guest main memory [0x{x}..0x{x})", .{ vmm.name, initrd_start, initrd_end, memory_paddr, memory_paddr + guest_ram_size });
+            return error.InvalidInitrd;
+        }
+
+        try parseUios(system);
+
+        system.data.ram = memory_paddr;
+        system.data.ram_size = guest_ram_size;
+        system.data.dtb = try allocateDtbAddress(arch, system.guest_dtb_size, system.data.ram, system.data.ram + system.data.ram_size, initrd_start, initrd_end);
+        system.data.initrd = initrd_start;
     }
-
-    if (initrd_end > memory_paddr + guest_ram_size or initrd_start < memory_paddr) {
-        log.err("invalid initrd region for VMM '{s}': initrd at [0x{x}..0x{x}) is not within guest main memory [0x{x}..0x{x})", .{ vmm.name, initrd_start, initrd_end, memory_paddr, memory_paddr + guest_ram_size });
-        return error.InvalidInitrd;
-    }
-
-    try parseUios(system);
-
-    system.data.ram = memory_paddr;
-    system.data.ram_size = guest_ram_size;
-    system.data.dtb = try allocateDtbAddress(arch, system.guest_dtb_size, system.data.ram, system.data.ram + system.data.ram_size, initrd_start, initrd_end);
-    system.data.initrd = initrd_start;
-
     system.connected = true;
 }
 
