@@ -473,6 +473,13 @@ pub fn connect(system: *Self) !void {
         system.data.ram_size = guest_ram_size;
         system.data.dtb = try allocateDtbAddress(arch, system.guest_dtb_size, system.data.ram, system.data.ram + system.data.ram_size, initrd_start, initrd_end);
         system.data.initrd = initrd_start;
+    } else {
+        for (system.guest.vcpus) |vcpu| {
+            system.data.vcpus[system.data.num_vcpus] = .{
+                .id = vcpu.id,
+            };
+            system.data.num_vcpus += 1;
+        }
     }
     system.connected = true;
 }
