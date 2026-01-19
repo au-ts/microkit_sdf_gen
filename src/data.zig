@@ -1,7 +1,9 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const sdf = @import("sdf.zig");
+const pci = @import("sddf/pci.zig");
 const Allocator = std.mem.Allocator;
+const log = @import("log.zig");
 
 comptime {
     if (@sizeOf(usize) != 8) {
@@ -77,6 +79,8 @@ pub const Resources = struct {
 
     // For all sDDF devices classes, let's just make them have 64 clients.
     const MAX_NUM_CLIENTS: usize = 64;
+
+    pub const IrqType = enum(u8) { legacy, ioapic, msi, msix };
 
     pub const Blk = struct {
         const MAGIC: [5]u8 = MAGIC_START ++ .{0x2};
@@ -341,6 +345,38 @@ pub const Resources = struct {
         };
     };
 
+    pub const Pci = extern struct {
+        const MAGIC: [5]u8 = MAGIC_START ++ .{0x8};
+        pub const MAX_NUM_PCI_BARS: u8 = 6;
+
+        pub const ConfigRequest = extern struct {
+            bus: u8,
+            dev: u8,
+            func: u8,
+            device_id: u16,
+            vendor_id: u16,
+            bars: [MAX_NUM_PCI_BARS]MemoryBar,
+            irq_type: IrqType,
+        };
+
+        // PCI BAR feature
+        pub const MemBarLocatable = enum(u8) { any_32b, less_1m, any_64b };
+
+        pub const MemoryBar = extern struct {
+            bar_id: u8,
+            base_addr: u64,
+            mem_mapped: bool,
+            locatable: MemBarLocatable,
+            prefetchable: bool,
+        };
+
+        pub const EcamConfig = extern struct {
+            magic: [5]u8 = MAGIC,
+            num_requests: u8,
+            requests: [MAX_NUM_CLIENTS]ConfigRequest,
+        };
+    };
+
     pub const Fs = extern struct {
         const MAGIC: [8]u8 = LIONS_MAGIC_START ++ .{0x1};
 
@@ -393,6 +429,7 @@ pub fn serialize(allocator: Allocator, s: anytype, prefix: []const u8, path: []c
     const serialize_file = try std.fs.cwd().createFile(full_path_data, .{});
     defer serialize_file.close();
     try serialize_file.writeAll(bytes);
+    log.debug("{s} bytes: {any}", .{full_path, bytes});
 
     if (emit_json) {
         const json_file = try std.fs.cwd().createFile(full_path_json, .{});

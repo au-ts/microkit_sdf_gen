@@ -363,7 +363,7 @@ pub const Net = struct {
 
     pub fn connect(system: *Net) !void {
         if (system.device) |dtb_node| {
-            try sddf.createDriver(system.sdf, system.driver, dtb_node, .network, &system.device_res);
+            try sddf.createDriver(system.sdf, system.driver, dtb_node, null, .network, &system.device_res);
         }
 
         const rx_dma_mr = system.rxConnectDriver();

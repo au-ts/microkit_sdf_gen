@@ -4,7 +4,7 @@ import importlib.util
 from ctypes import (
     cast, c_void_p, c_char_p, c_int8, c_uint8, c_uint16, c_uint32, c_uint64, c_bool, POINTER, byref, pointer
 )
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Any
 from enum import IntEnum
 from abc import ABC, abstractmethod
 
@@ -236,6 +236,23 @@ libsdfgen.sdfgen_sddf_gpu_connect.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_sddf_gpu_serialise_config.restype = c_bool
 libsdfgen.sdfgen_sddf_gpu_serialise_config.argtypes = [c_void_p, c_char_p]
+
+libsdfgen.sdfgen_sddf_pci.restype = c_void_p
+libsdfgen.sdfgen_sddf_pci.argtypes = [c_void_p, c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_pci_destroy.restype = None
+libsdfgen.sdfgen_sddf_pci_destroy.argtypes = [c_void_p]
+
+libsdfgen.sdfgen_sddf_pci_add_client.restype = c_bool
+libsdfgen.sdfgen_sddf_pci_add_client.argtypes = [c_void_p, c_int8, c_void_p]
+
+libsdfgen.sdfgen_sddf_pci_add_ecam.restype = c_uint32
+libsdfgen.sdfgen_sddf_pci_add_ecam.argtypes = [c_void_p, c_uint64, c_uint64]
+
+libsdfgen.sdfgen_sddf_pci_connect.restype = c_bool
+libsdfgen.sdfgen_sddf_pci_connect.argtypes = [c_void_p]
+
+libsdfgen.sdfgen_sddf_pci_serialise_config.restype = c_bool
+libsdfgen.sdfgen_sddf_pci_serialise_config.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_vmm.restype = c_void_p
 libsdfgen.sdfgen_vmm.argtypes = [
@@ -986,6 +1003,9 @@ class Sddf:
         def connect(self) -> bool:
             return libsdfgen.sdfgen_sddf_blk_connect(self._obj)
 
+        def pciConfig(self, pci_sys: Pci):
+            return libsdfgen.sdfgen_sddf_blk_pci_config(self._obj, pci_sys._obj)
+
         def serialise_config(self, output_dir: str) -> bool:
             c_output_dir = c_char_p(output_dir.encode("utf-8"))
             return libsdfgen.sdfgen_sddf_blk_serialise_config(self._obj, c_output_dir)
@@ -1159,6 +1179,65 @@ class Sddf:
         def __del__(self):
             if hasattr(self, "_obj"):
                 libsdfgen.sdfgen_sddf_gpu_destroy(self._obj)
+
+    class Pci:
+        _obj: c_void_p
+
+        def __init__(
+            self,
+            sdf: SystemDescription,
+            device: Optional[DeviceTree.Node],
+            driver: SystemDescription.ProtectionDomain,
+        ) -> None:
+            if device is None:
+                device_obj = None
+            else:
+                device_obj = device._obj
+
+            self._obj = libsdfgen.sdfgen_sddf_pci(sdf._obj, device_obj, driver._obj)
+
+        def add_client(self, client: Any):
+            # match sddf.Config.Driver.Config
+            CLASS_MAPPING = {
+                Sddf.Net: 0,
+                Sddf.Serial: 1,
+                Sddf.Timer: 2,
+                Sddf.Blk: 3,
+                Sddf.I2c: 4,
+                Sddf.Gpu: 5,
+            }
+            if type(client) in CLASS_MAPPING:
+                driver_class = CLASS_MAPPING[type(client)]
+                print("driver class: ", driver_class)
+                print("type of pci: ", type(self))
+                print("type of client: ", type(client))
+                ret = libsdfgen.sdfgen_sddf_pci_add_client(self._obj, driver_class, client._obj)
+                if ret == SddfStatus.OK:
+                    return
+                else:
+                    raise Exception(f"internal error: {ret}")
+            else:
+                raise Exception(f"invalid client given 'client'")
+
+        def add_ecam(self, paddr: int, size: int):
+            print("PCI add_ecam: ", paddr, size)
+            ret = libsdfgen.sdfgen_sddf_pci_add_ecam(self._obj, paddr, size)
+            if ret == SddfStatus.OK:
+                return
+            else:
+                raise Exception(f"internal error: {ret}")
+
+        def connect(self) -> bool:
+            return libsdfgen.sdfgen_sddf_pci_connect(self._obj)
+
+        def serialise_config(self, output_dir: str) -> bool:
+            c_output_dir = c_char_p(output_dir.encode("utf-8"))
+            return libsdfgen.sdfgen_sddf_pci_serialise_config(self._obj, c_output_dir)
+
+        def __del__(self):
+            if hasattr(self, "_obj"):
+                libsdfgen.sdfgen_sddf_pci_destroy(self._obj)
+
 
     class Lwip:
         _obj: c_void_p

@@ -14,6 +14,7 @@ class ZigBuilder(build_ext):
         modpath = os.path.abspath('/'.join(modpath[0:-1]))
 
         optimize = "Debug" if os.environ.get("PYSDFGEN_DEBUG", '0') != '0' else "ReleaseSafe"
+        print("optimize:", optimize)
 
         args = [
             "zig",
@@ -23,6 +24,7 @@ class ZigBuilder(build_ext):
             # Python expects us to always provide a dynamic library
             "-Dc-linkage=dynamic",
             f"-Dc-emit={self.get_ext_filename(ext.name)}",
+            "-freference-trace=13",
             "--prefix-lib-dir",
             f"{modpath}",
         ]

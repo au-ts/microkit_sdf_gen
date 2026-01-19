@@ -82,7 +82,7 @@ pub const Timer = struct {
         std.debug.assert(system.driver.passive.?);
 
         if (system.device) |dtb_node| {
-            try sddf.createDriver(system.sdf, system.driver, dtb_node, .timer, &system.device_res);
+            try sddf.createDriver(system.sdf, system.driver, dtb_node, null, .timer, &system.device_res);
         }
         for (system.clients.items, 0..) |client, i| {
             const ch = Channel.create(system.driver, client, .{

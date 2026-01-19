@@ -195,7 +195,7 @@ pub const I2c = struct {
 
         // 1. Create the device resources for the driver
         if (system.device) |device| {
-            try sddf.createDriver(sdf, system.driver, device, .i2c, &system.device_res);
+            try sddf.createDriver(sdf, system.driver, device, null, .i2c, &system.device_res);
         }
         // 2. Connect the driver to the virtualiser
         system.connectDriver();

@@ -165,7 +165,7 @@ pub const Serial = struct {
 
     pub fn connect(system: *Serial) !void {
         if (system.device) |dtb_node| {
-            try sddf.createDriver(system.sdf, system.driver, dtb_node, .serial, &system.device_res);
+            try sddf.createDriver(system.sdf, system.driver, dtb_node, null, .serial, &system.device_res);
         }
 
         system.driver_config.default_baud = system.baud_rate;

@@ -831,6 +831,57 @@ export fn sdfgen_sddf_gpu_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
+export fn sdfgen_sddf_pci(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque) *anyopaque {
+    const sdf: *SystemDescription = @ptrCast(c_sdf);
+    const pci = allocator.create(sddf.Pci) catch @panic("OOM");
+    pci.* = sddf.Pci.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver));
+    return pci;
+}
+
+export fn sdfgen_sddf_pci_destroy(system: *align(8) anyopaque) void {
+    const pci: *sddf.Pci = @ptrCast(system);
+    pci.deinit();
+    allocator.destroy(pci);
+}
+
+export fn sdfgen_sddf_pci_add_client(system: *align(8) anyopaque, client_class: u8, client: *align(8)anyopaque) bindings.sdfgen_sddf_status_t {
+    const pci: *sddf.Pci = @ptrCast(system);
+    const class: sddf.Config.Driver.Class = @enumFromInt(client_class);
+    log.debug("pci add client", .{});
+    pci.addClient(class, client) catch |e| {
+        switch (e) {
+            sddf.Pci.Error.InvalidClient => return 1,
+            sddf.Pci.Error.ClientNotConnected => return 2,
+            sddf.Pci.Error.InvalidPciConfig => return 3,
+            sddf.Pci.Error.NotConnected => return 4,
+            sddf.Pci.Error.DuplicateClient => return 5,
+        }
+    };
+
+    return 0;
+}
+
+export fn sdfgen_sddf_pci_add_ecam(system: *align(8) anyopaque, paddr: u64, size: u64) bindings.sdfgen_sddf_status_t {
+    const pci: *sddf.Pci = @ptrCast(system);
+    pci.addEcam(paddr, size);
+
+    return 0;
+}
+
+export fn sdfgen_sddf_pci_connect(system: *align(8) anyopaque) bool {
+    const pci: *sddf.Pci = @ptrCast(system);
+    pci.connect() catch return false;
+
+    return true;
+}
+
+export fn sdfgen_sddf_pci_serialise_config(system: *align(8) anyopaque, output_dir: [*c]u8) bool {
+    const pci: *sddf.Pci = @ptrCast(system);
+    pci.serialiseConfig(std.mem.span(output_dir)) catch return false;
+
+    return true;
+}
+
 export fn sdfgen_vmm(c_sdf: *align(8) anyopaque, vmm_pd: *align(8) anyopaque, vm: *align(8) anyopaque, c_dtb: *align(8) anyopaque, dtb_size: u64, one_to_one_ram: bool) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const vmm = allocator.create(Vmm) catch @panic("OOM");

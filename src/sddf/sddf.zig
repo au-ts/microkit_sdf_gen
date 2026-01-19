@@ -10,6 +10,7 @@ pub const Timer = @import("timer.zig").Timer;
 pub const Net = @import("net.zig").Net;
 pub const Lwip = @import("net.zig").Lwip;
 pub const Gpu = @import("gpu.zig").Gpu;
+pub const Pci = @import("pci.zig").Pci;
 pub const Serial = @import("serial.zig").Serial;
 
 const fs = std.fs;
@@ -28,7 +29,6 @@ const ConfigResources = data.Resources;
 
 // TODO: apply this more widely
 pub const DeviceTreeIndex = u8;
-
 ///
 /// Expected sDDF repository layout:
 ///     -- network/
@@ -174,15 +174,19 @@ pub fn probe(allocator: Allocator, path: []const u8) !void {
 
                 // Check IRQ resources are valid
                 var checked_irqs = std.array_list.Managed(DeviceTreeIndex).init(allocator);
+                log.debug("irq_type: {s}", .{ @tagName(config.resources.irq_type.?) });
                 defer checked_irqs.deinit();
                 for (config.resources.irqs) |irq| {
-                    for (checked_irqs.items) |checked_dt_index| {
-                        if (irq.dt_index == checked_dt_index) {
-                            log.err("duplicate irq dt_index value '{}' for driver '{s}'", .{ irq.dt_index, driver_dir });
-                            return error.InvalidConfig;
+                    if (config.resources.irq_type.? == .legacy) {
+                        for (checked_irqs.items) |checked_dt_index| {
+                            if (irq.dt_index.? == checked_dt_index) {
+                                log.err("duplicate irq dt_index value '{}' for driver '{s}'", .{ irq.dt_index.?, driver_dir });
+                                return error.InvalidConfig;
+                            }
                         }
+
+                        try checked_irqs.append(irq.dt_index.?);
                     }
-                    try checked_irqs.append(irq.dt_index);
                 }
 
                 // Check region resources are valid
@@ -224,7 +228,21 @@ pub fn probe(allocator: Allocator, path: []const u8) !void {
     probed = true;
 }
 
+
+pub const PciConfig = struct {
+    name: []const u8,
+    compatible: []const u8,
+    pci_bus: u8,
+    pci_dev: u8,
+    pci_func: u8,
+    device_id: u16,
+    vendor_id: u16,
+    irq_type: ConfigResources.IrqType,
+    pci_bars: [ConfigResources.Pci.MAX_NUM_PCI_BARS]ConfigResources.Pci.MemoryBar,
+};
+
 pub const Config = struct {
+
     const Region = struct {
         /// Name of the region
         name: []const u8,
@@ -236,6 +254,7 @@ pub const Config = struct {
         cached: ?bool = false,
         // Index into 'reg' property of the device tree
         dt_index: ?DeviceTreeIndex = null,
+        paddr: ?u64 = null,
     };
 
     /// The actual IRQ number that gets registered with seL4
@@ -243,7 +262,18 @@ pub const Config = struct {
     const Irq = struct {
         channel_id: ?u8 = null,
         /// Index into the 'interrupts' property of the Device Tree
-        dt_index: DeviceTreeIndex,
+        dt_index: ?DeviceTreeIndex = null,
+        vector: ?u64 = null,
+        pin: ?u64 = null,
+    };
+
+    // Struct used in config.json, and slightly different from generated header
+    pub const PciBar = struct {
+        region_idx: u8,
+        bar_id: u8,
+        mem_mapped: ?bool = true,
+        locatable: ?ConfigResources.Pci.MemBarLocatable = .less_1m,
+        prefetchable: ?bool = false,
     };
 
     /// In the case of drivers there is some extra information we want
@@ -255,9 +285,11 @@ pub const Config = struct {
         compatible: []const []const u8,
         resources: Resources,
 
-        const Resources = struct {
+        pub const Resources = struct {
             regions: []const Region,
             irqs: []const Config.Irq,
+            irq_type: ?ConfigResources.IrqType = .legacy,
+            pci_bars: ?[]const PciBar = null,
         };
 
         pub const Json = struct {
@@ -283,7 +315,7 @@ pub const Config = struct {
         /// You could instead have something in the repisitory to list the
         /// device classes or organise the repository differently, but I do
         /// not see the need for that kind of complexity at this time.
-        const Class = enum {
+        pub const Class = enum {
             network,
             serial,
             timer,
@@ -345,41 +377,51 @@ fn findDriver(compatibles: []const []const u8, class: Config.Driver.Class) ?Conf
 
 /// Given the DTB node for the device and the SDF program image, we can figure
 /// all the resources that need to be added to the system description.
-pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: *dtb.Node, class: Config.Driver.Class, device_res: *ConfigResources.Device) !void {
+pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: ?*dtb.Node, dev_info: ?*PciConfig, class: Config.Driver.Class, device_res: *ConfigResources.Device) !void {
+
     if (!probed) return error.CalledBeforeProbe;
 
-    // TODO: the tooling is quite DTB based, we need to revisit this for x86-64 support,
-    // this is a bit of a hack right now.
-    if (SystemDescription.Arch.isX86(sdf.arch)) {
-        // No DTB on x86.
-        return;
-    }
+    // // TODO: the tooling is quite DTB based, we need to revisit this for x86-64 support,
+    // // this is a bit of a hack right now.
+    // if (SystemDescription.Arch.isX86(sdf.arch)) {
+    //     // No DTB on x86.
+    //     return;
+    // }
 
-    // First thing to do is find the driver configuration for the device given.
-    // The way we do that is by searching for the compatible string described in the DTB node.
-    const compatible = device.prop(.Compatible).?;
+    const compatible = if (dev_info) |d| d: {
+        break :d &[_][]const u8{ d.compatible };
+    } else blk: {
+        // First thing to do is find the driver configuration for the device given.
+        // The way we do that is by searching for the compatible string described in the DTB node.
+        const dt_compatible = device.?.prop(.Compatible).?;
 
-    log.debug("Creating driver for device: '{s}'", .{device.name});
-    log.debug("Compatible with:", .{});
-    for (compatible) |c| {
-        log.debug("     '{s}'", .{c});
-    }
+        log.debug("Creating driver for device: '{s}'", .{device.?.name});
+        log.debug("Compatible with:", .{});
+        for (dt_compatible) |c| {
+            log.debug("     '{s}'", .{c});
+        }
+        break :blk dt_compatible;
+    };
     // Get the driver based on the compatible string are given, assuming we can
     // find it.
     const driver = if (findDriver(compatible, class)) |d| d else {
-        log.err("Cannot find driver matching '{s}' for class '{s}'", .{ device.name, @tagName(class) });
+        log.err("Cannot find driver matching '{s}' for class '{s}'", .{ device.?.name, @tagName(class) });
         return error.UnknownDevice;
     };
     log.debug("Found compatible driver '{s}'", .{driver.dir});
 
     // If a status property does exist, we should check that it is 'okay'
-    if (device.prop(.Status)) |status| {
-        if (status != .Okay) {
-            log.err("Device '{s}' has invalid status: '{f}'", .{ device.name, status });
-            return error.DeviceStatusInvalid;
+    if (device) |d| {
+        if (d.prop(.Status)) |status| {
+            log.debug("what?", .{});
+            if (status != .Okay) {
+                log.err("Device '{s}' has invalid status: '{f}'", .{ d.name, status });
+                return error.DeviceStatusInvalid;
+            }
         }
     }
 
+    log.debug("adding regions", .{});
     for (driver.resources.regions) |region_resource| {
         // TODO: all this error checking should be done when we parse config.json
         if (region_resource.dt_index == null and region_resource.size == null) {
@@ -392,50 +434,72 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: *dtb.Node, class: 
             return error.InvalidConfig;
         }
 
-        const mr_name = fmt(sdf.allocator, "{s}/{s}/{s}", .{ device.name, driver.dir, region_resource.name });
+        const dev_name = if (device) |d| d.name else if (dev_info) |d| d.name else "";
+        const mr_name = fmt(sdf.allocator, "{s}/{s}/{s}", .{ dev_name, driver.dir, region_resource.name });
 
         var mr: ?Mr = null;
         var device_reg_offset: u64 = 0;
         if (region_resource.dt_index != null) {
-            const dt_reg = device.prop(.Reg).?;
-            assert(region_resource.dt_index.? < dt_reg.len);
+            if (device) |dev| {
+                const dt_reg = dev.prop(.Reg).?;
+                assert(region_resource.dt_index.? < dt_reg.len);
 
-            const dt_reg_entry = dt_reg[region_resource.dt_index.?];
-            const dt_reg_paddr = dt_reg_entry[0];
-            const dt_reg_size = sdf.arch.roundUpToPage(@intCast(dt_reg_entry[1]));
+                const dt_reg_entry = dt_reg[region_resource.dt_index.?];
+                const dt_reg_paddr = dt_reg_entry[0];
+                const dt_reg_size = sdf.arch.roundUpToPage(@intCast(dt_reg_entry[1]));
 
-            if (region_resource.size != null and dt_reg_size < region_resource.size.?) {
-                log.err("device '{s}' has config region size for dt_index '{?}' that is too small (0x{x} bytes)", .{ device.name, region_resource.dt_index, dt_reg_size });
-                return error.InvalidConfig;
+                if (region_resource.size != null and dt_reg_size < region_resource.size.?) {
+                    log.err("device '{s}' has config region size for dt_index '{?}' that is too small (0x{x} bytes)", .{ dev.name, region_resource.dt_index, dt_reg_size });
+                    return error.InvalidConfig;
+                }
+
+                if (region_resource.size != null and region_resource.size.? & (sdf.arch.defaultPageSize() - 1) != 0) {
+                    log.err("device '{s}' has config region size not aligned to page size for dt_index '{?}'", .{ dev.name, region_resource.dt_index });
+                    return error.InvalidConfig;
+                }
+
+                if (!sdf.arch.pageAligned(dt_reg_size)) {
+                    log.err("device '{s}' has DTB region size not aligned to page size for dt_index '{?}'", .{ dev.name, region_resource.dt_index });
+                    return error.InvalidConfig;
+                }
+
+                const mr_size = if (region_resource.size != null) region_resource.size.? else dt_reg_size;
+
+                const device_paddr = dtb.regPaddr(sdf.arch, dev, @intCast(dt_reg_paddr));
+                device_reg_offset = @intCast(dt_reg_paddr % sdf.arch.defaultPageSize());
+
+                // If we are dealing with a device that shares the same page of memory as another
+                // device, we need to check whether an MR has already been created and use that
+                // for our mapping instead.
+                for (sdf.mrs.items) |existing_mr| {
+                    if (existing_mr.paddr) |paddr| {
+                        if (paddr == device_paddr) {
+                            mr = existing_mr;
+                        }
+                    }
+                }
+                if (mr == null) {
+                    mr = Mr.physical(sdf.allocator, sdf, mr_name, mr_size, .{ .paddr = device_paddr });
+                    sdf.addMemoryRegion(mr.?);
+                }
+
             }
-
-            if (region_resource.size != null and region_resource.size.? & (sdf.arch.defaultPageSize() - 1) != 0) {
-                log.err("device '{s}' has config region size not aligned to page size for dt_index '{?}'", .{ device.name, region_resource.dt_index });
-                return error.InvalidConfig;
-            }
-
-            if (!sdf.arch.pageAligned(dt_reg_size)) {
-                log.err("device '{s}' has DTB region size not aligned to page size for dt_index '{?}'", .{ device.name, region_resource.dt_index });
-                return error.InvalidConfig;
-            }
-
-            const mr_size = if (region_resource.size != null) region_resource.size.? else dt_reg_size;
-
-            const device_paddr = dtb.regPaddr(sdf.arch, device, @intCast(dt_reg_paddr));
-            device_reg_offset = @intCast(dt_reg_paddr % sdf.arch.defaultPageSize());
-
-            // If we are dealing with a device that shares the same page of memory as another
-            // device, we need to check whether an MR has already been created and use that
-            // for our mapping instead.
+        } else if (region_resource.paddr != null) {
+            // @terryb temporary solution
             for (sdf.mrs.items) |existing_mr| {
                 if (existing_mr.paddr) |paddr| {
-                    if (paddr == device_paddr) {
+                    if (paddr == region_resource.paddr) {
                         mr = existing_mr;
                     }
                 }
             }
+
+            const mr_size = if (region_resource.size != null) region_resource.size.? else {
+                log.err("device '{s}' has unknown region size'", .{ dev_info.?.name });
+                return error.InvalidConfig;
+            };
             if (mr == null) {
-                mr = Mr.physical(sdf.allocator, sdf, mr_name, mr_size, .{ .paddr = device_paddr });
+                mr = Mr.physical(sdf.allocator, sdf, mr_name, mr_size, .{ .paddr = region_resource.paddr });
                 sdf.addMemoryRegion(mr.?);
             }
         } else {
@@ -447,7 +511,7 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: *dtb.Node, class: 
         const perms = blk: {
             if (region_resource.perms) |perms| {
                 break :blk Map.Perms.fromString(perms) catch |e| {
-                    log.err("failed to create driver '{s}', invalid perms '{s}': {any}", .{ device.name, perms, e });
+                    log.err("failed to create driver '{s}', invalid perms '{s}': {any}", .{ device.?.name, perms, e });
                     return e;
                 };
             } else {
@@ -473,34 +537,106 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: *dtb.Node, class: 
         device_res.num_regions += 1;
     }
 
-    // For all driver IRQs, find the corresponding entry in the device tree and
-    // process it for the SDF.
-    const maybe_dt_irqs = device.prop(.Interrupts);
-    if (driver.resources.irqs.len != 0 and maybe_dt_irqs == null) {
-        log.err("expected interrupts field for node '{s}' when creating driver '{s}'", .{ device.name, driver.dir });
-        return error.InvalidDeviceTreeNode;
+    log.debug("adding irqs", .{});
+    // MSI/MSI-X not supported on ARM in seL4
+    if (device != null) {
+        // For all driver IRQs, find the corresponding entry in the device tree and
+        // process it for the SDF.
+        const maybe_dt_irqs = device.?.prop(.Interrupts);
+        if (driver.resources.irqs.len != 0 and maybe_dt_irqs == null) {
+            log.err("expected interrupts field for node '{s}' when creating driver '{s}'", .{ device.?.name, driver.dir });
+            return error.InvalidDeviceTreeNode;
+        }
+
+        for (driver.resources.irqs) |driver_irq| {
+            const dt_irqs = maybe_dt_irqs.?;
+            if (driver_irq.dt_index.? >= dt_irqs.len) {
+                log.err("invalid device tree index '{}' when creating driver '{s}'", .{ driver_irq.dt_index.?, driver.dir });
+                return error.InvalidDeviceTreeIndex;
+            }
+            const dt_irq = dt_irqs[driver_irq.dt_index.?];
+
+            const irq = try dtb.parseIrq(sdf.arch, dt_irq);
+            const irq_id = try pd.addIrq(Irq.create(
+                irq.number().?,
+                .{
+                    .id = driver_irq.channel_id,
+                    .trigger = irq.trigger(),
+                }
+            ));
+
+            device_res.irqs[device_res.num_irqs] = .{
+                .id = irq_id,
+            };
+            device_res.num_irqs += 1;
+        }
+    } else if (dev_info) |dev| {
+        log.debug("x86 legacy IRQ or MSI/MSI-X", .{});
+        // @terryb: check duplication of vectors
+        for (driver.resources.irqs) |driver_irq| {
+            switch (driver.resources.irq_type.?) {
+                .ioapic => {
+                    log.debug("TODO: add ioapic interrupts", .{});
+                    const irq_id = try pd.addIrq(Irq.createIoapic(
+                        driver_irq.pin.?,
+                        driver_irq.vector.?,
+                        .{}
+                    ) catch @panic("Could not create I/O APIC interrupt"));
+                    device_res.irqs[device_res.num_irqs] = .{
+                        .id = irq_id,
+                    };
+                    device_res.num_irqs += 1;
+
+                },
+                .msi, .msix => {
+
+                    if (driver_irq.vector) |vector| {
+                        const irq_id = try pd.addIrq(try Irq.createMsi(
+                            dev.pci_bus,
+                            dev.pci_dev,
+                            dev.pci_func,
+                            vector,
+                            0,
+                            .{}
+                        ));
+
+                        device_res.irqs[device_res.num_irqs] = .{
+                            .id = irq_id,
+                        };
+                        device_res.num_irqs += 1;
+                    } else {
+                        log.err("'vector' is expected for MSI/MSI-X interrupts", .{});
+                    }
+                },
+                else => {
+                    log.err("x86 supports only MSI, MSI-X and I/O APIC", .{});
+                }
+            }
+        }
+        log.debug("interrupts added", .{});
+        log.debug("bus: {any}, dev: {any}", .{dev.pci_bus, dev.pci_dev});
     }
 
-    for (driver.resources.irqs) |driver_irq| {
-        const dt_irqs = maybe_dt_irqs.?;
-        if (driver_irq.dt_index >= dt_irqs.len) {
-            log.err("invalid device tree index '{}' when creating driver '{s}'", .{ driver_irq.dt_index, driver.dir });
-            return error.InvalidDeviceTreeIndex;
-        }
-        const dt_irq = dt_irqs[driver_irq.dt_index];
-
-        const irq = try dtb.parseIrq(sdf.arch, dt_irq);
-        const irq_id = try pd.addIrq(Irq.create(
-            irq.number().?,
-            .{
-                .id = driver_irq.channel_id,
-                .trigger = irq.trigger(),
+    if (dev_info) |dev| {
+        for (driver.resources.pci_bars.?) |pci_bar| {
+            if (pci_bar.region_idx > device_res.num_regions) {
+                log.err("invalid region_idx {} > num_regions {}", .{pci_bar.region_idx, device_res.num_regions});
+                return error.InvalidConfig;
             }
-        ));
 
-        device_res.irqs[device_res.num_irqs] = .{
-            .id = irq_id,
-        };
-        device_res.num_irqs += 1;
+            log.debug("pci_bar: {}", .{pci_bar});
+            log.debug("dev_info: {}", .{dev});
+            log.debug("device_res.regions: {any}", .{device_res.regions});
+            // var test_pci_bar = &dev.pci_bars[pci_bar.bar_id];
+            // dev.pci_bars[pci_bar.region_idx] = pci_bar;
+            // test_pci_bar = pci_bar;
+            dev.pci_bars[pci_bar.bar_id] = .{
+                .bar_id = pci_bar.bar_id,
+                .base_addr = device_res.regions[pci_bar.region_idx].io_addr,
+                .mem_mapped = pci_bar.mem_mapped.?,
+                .locatable = pci_bar.locatable.?,
+                .prefetchable = pci_bar.prefetchable.?,
+            };
+        }
     }
 }

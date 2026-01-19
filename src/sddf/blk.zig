@@ -4,6 +4,7 @@ const dtb = @import("../dtb.zig");
 const data = @import("../data.zig");
 const log = @import("../log.zig");
 const sddf = @import("sddf.zig");
+const pci = @import("pci.zig");
 
 const fmt = sddf.fmt;
 
@@ -33,6 +34,7 @@ pub const Blk = struct {
     // Only needed for initialisation to read partition table, maximum of 10 pages
     // for either MBR or GPT
     driver_data_size: u32 = 10 * 0x1000,
+    dev_info: ?sddf.PciConfig,
     config: Blk.Config,
 
     const Client = struct {
@@ -73,6 +75,17 @@ pub const Blk = struct {
             .config = .{
                 .virt_clients = .init(allocator),
                 .clients = .init(allocator),
+            },
+            .dev_info = .{
+                .name = allocator.dupe(u8, driver.name) catch @panic("Could not allocate name for driver_name"),
+                .compatible = "virtio,pci",
+                .pci_bus = 0,
+                .pci_dev = 3,
+                .pci_func = 0,
+                .device_id = 0,
+                .vendor_id = 0,
+                .irq_type = .msix,
+                .pci_bars = [_]ConfigResources.Pci.MemoryBar{std.mem.zeroInit(ConfigResources.Pci.MemoryBar, .{})} ** ConfigResources.Pci.MAX_NUM_PCI_BARS,
             },
         };
     }
@@ -261,8 +274,18 @@ pub const Blk = struct {
         const sdf = system.sdf;
 
         // 1. Create the device resources for the driver
-        if (system.device) |dtb_node| {
-            try sddf.createDriver(sdf, system.driver, dtb_node, .blk, &system.device_res);
+        // if (system.device) |dtb_node| {
+        //     try sddf.createDriver(sdf, system.driver, dtb_node, .blk, &system.device_res);
+        // }
+        if (SystemDescription.Arch.isArm(sdf.arch)) {
+            if (system.device) |dtb_node| {
+                try sddf.createDriver(sdf, system.driver, dtb_node, null, .blk, &system.device_res);
+            }
+        } else if (SystemDescription.Arch.isX86(sdf.arch)) {
+            log.debug("connect blk...", .{});
+            log.debug("name: {s}", .{ system.dev_info.?.name });
+            log.debug("bus: {any}, dev: {any}", .{system.dev_info.?.pci_bus, system.dev_info.?.pci_dev});
+            try sddf.createDriver(sdf, system.driver, null, &system.dev_info.?, .blk, &system.device_res);
         }
         // 2. Connect the driver to the virtualiser
         system.connectDriver();
@@ -272,6 +295,10 @@ pub const Blk = struct {
         }
 
         system.connected = true;
+    }
+
+    pub fn pciConfig(system: *Blk, pci_sys: *pci.Pci) void {
+        pci_sys.addClientConfig(system.dev_info, system.device_res);
     }
 
     pub fn serialiseConfig(system: *Blk, prefix: []const u8) !void {

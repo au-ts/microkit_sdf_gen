@@ -935,6 +935,7 @@ pub const SystemDescription = struct {
     };
 
     pub fn create(allocator: Allocator, arch: Arch, paddr_top: u64) SystemDescription {
+        log.debug("SystemDescription.paddr_top: 0x{x}", .{paddr_top});
         var xml_data = ArrayList(u8).init(allocator);
         return SystemDescription{
             .allocator = allocator,

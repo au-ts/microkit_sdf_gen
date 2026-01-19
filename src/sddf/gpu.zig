@@ -202,7 +202,7 @@ pub const Gpu = struct {
         const sdf = system.sdf;
 
         // 1. Create the device resources for the driver
-        try sddf.createDriver(sdf, system.driver, system.device, .gpu, &system.device_res);
+        try sddf.createDriver(sdf, system.driver, system.device, null, .gpu, &system.device_res);
         // 2. Connect the driver to the virtualiser
         system.connectDriver();
         // 3. Connect each client to the virtualiser
