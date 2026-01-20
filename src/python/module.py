@@ -238,7 +238,7 @@ libsdfgen.sdfgen_sddf_gpu_serialise_config.restype = c_bool
 libsdfgen.sdfgen_sddf_gpu_serialise_config.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_sddf_pci.restype = c_void_p
-libsdfgen.sdfgen_sddf_pci.argtypes = [c_void_p, c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_pci.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_sddf_pci_destroy.restype = None
 libsdfgen.sdfgen_sddf_pci_destroy.argtypes = [c_void_p]
 
@@ -1186,15 +1186,9 @@ class Sddf:
         def __init__(
             self,
             sdf: SystemDescription,
-            device: Optional[DeviceTree.Node],
             driver: SystemDescription.ProtectionDomain,
         ) -> None:
-            if device is None:
-                device_obj = None
-            else:
-                device_obj = device._obj
-
-            self._obj = libsdfgen.sdfgen_sddf_pci(sdf._obj, device_obj, driver._obj)
+            self._obj = libsdfgen.sdfgen_sddf_pci(sdf._obj, driver._obj)
 
         def add_client(self, client: Any):
             # match sddf.Config.Driver.Config

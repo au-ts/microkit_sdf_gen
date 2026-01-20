@@ -831,10 +831,10 @@ export fn sdfgen_sddf_gpu_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
-export fn sdfgen_sddf_pci(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque) *anyopaque {
+export fn sdfgen_sddf_pci(c_sdf: *align(8) anyopaque, driver: *align(8) anyopaque) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const pci = allocator.create(sddf.Pci) catch @panic("OOM");
-    pci.* = sddf.Pci.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver));
+    pci.* = sddf.Pci.init(allocator, sdf, @ptrCast(driver));
     return pci;
 }
 

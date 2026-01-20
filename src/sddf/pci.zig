@@ -22,7 +22,6 @@ pub const Pci = struct {
     allocator: Allocator,
     sdf: *SystemDescription,
     driver: *Pd,
-    device: ?*dtb.Node,
     device_res: ConfigResources.Device,
     clients: std.array_list.Managed(PciClient),
     client_config: ConfigResources.Pci.EcamConfig,
@@ -42,12 +41,11 @@ pub const Pci = struct {
         InvalidPciConfig,
     };
 
-    pub fn init(allocator: Allocator, sdf: *SystemDescription, device: ?*dtb.Node, driver: *Pd) Pci {
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, driver: *Pd) Pci {
         return .{
             .allocator = allocator,
             .sdf = sdf,
             .driver = driver,
-            .device = device,
             .device_res = std.mem.zeroInit(ConfigResources.Device, .{}),
             .clients = std.array_list.Managed(PciClient).init(allocator),
             .client_config = std.mem.zeroInit(ConfigResources.Pci.EcamConfig, .{}),
