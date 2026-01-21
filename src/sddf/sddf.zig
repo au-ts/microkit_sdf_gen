@@ -153,6 +153,7 @@ pub fn probe(allocator: Allocator, path: []const u8) !void {
                     }
                 };
                 defer config_file.close();
+                log.debug("file: {s}/{s}", .{ dir, config_path });
                 const config_file_stat = config_file.stat() catch |e| {
                     log.err("failed to stat driver config file: {s}: {}", .{ config_path, e });
                     return e;
@@ -174,10 +175,10 @@ pub fn probe(allocator: Allocator, path: []const u8) !void {
 
                 // Check IRQ resources are valid
                 var checked_irqs = std.array_list.Managed(DeviceTreeIndex).init(allocator);
-                log.debug("irq_type: {s}", .{ @tagName(config.resources.irq_type.?) });
                 defer checked_irqs.deinit();
                 for (config.resources.irqs) |irq| {
-                    if (config.resources.irq_type.? == .legacy) {
+                    log.debug("irq: {any}", .{irq.irq_type.?});
+                    if (irq.irq_type.? == .legacy) {
                         for (checked_irqs.items) |checked_dt_index| {
                             if (irq.dt_index.? == checked_dt_index) {
                                 log.err("duplicate irq dt_index value '{}' for driver '{s}'", .{ irq.dt_index.?, driver_dir });
@@ -189,6 +190,7 @@ pub fn probe(allocator: Allocator, path: []const u8) !void {
                     }
                 }
 
+                log.debug("regions", .{});
                 // Check region resources are valid
                 var checked_regions = std.array_list.Managed(Config.Region).init(allocator);
                 defer checked_regions.deinit();
@@ -208,6 +210,7 @@ pub fn probe(allocator: Allocator, path: []const u8) !void {
                     try checked_regions.append(region);
                 }
 
+                log.debug("compatible", .{});
                 // Check there are no duplicate compatible strings for the same device class
                 for (config.compatible) |compatible| {
                     for (checked_compatibles.items) |checked_compatible| {
@@ -219,6 +222,23 @@ pub fn probe(allocator: Allocator, path: []const u8) !void {
                     try checked_compatibles.append(compatible);
                 }
 
+                log.debug("check PCI bars", .{});
+                // Check PCI BARs are valid
+                var checked_bars = std.array_list.Managed(Config.PciBar).init(allocator);
+                defer checked_bars.deinit();
+                if (config.resources.pci_bars) |pci_bars| {
+                    for (pci_bars) |pci_bar| {
+                        for (checked_bars.items) |checked_bar| {
+                            if (checked_bar.bar_id == pci_bar.bar_id) {
+                                log.err("duplicate bar_id '{}' for driver '{s}'", .{ pci_bar.bar_id, driver_dir });
+                                return error.InvalidConfig;
+                            }
+                        }
+                    }
+                }
+
+                log.debug("hello", .{});
+
                 try drivers.append(config);
             }
         }
@@ -227,19 +247,6 @@ pub fn probe(allocator: Allocator, path: []const u8) !void {
     // Probing finished
     probed = true;
 }
-
-
-pub const PciConfig = struct {
-    name: []const u8,
-    compatible: []const u8,
-    pci_bus: u8,
-    pci_dev: u8,
-    pci_func: u8,
-    device_id: u16,
-    vendor_id: u16,
-    irq_type: ConfigResources.IrqType,
-    pci_bars: [ConfigResources.Pci.MAX_NUM_PCI_BARS]ConfigResources.Pci.MemoryBar,
-};
 
 pub const Config = struct {
 
@@ -265,15 +272,18 @@ pub const Config = struct {
         dt_index: ?DeviceTreeIndex = null,
         vector: ?u64 = null,
         pin: ?u64 = null,
+        irq_type: ?IrqType = .legacy,
     };
+
+    // .legacy for ARM and RISCV, and others for x86 atm
+    pub const IrqType = enum(u8) { legacy, ioapic, msi, msix };
 
     // Struct used in config.json, and slightly different from generated header
     pub const PciBar = struct {
         region_idx: u8,
         bar_id: u8,
         mem_mapped: ?bool = true,
-        locatable: ?ConfigResources.Pci.MemBarLocatable = .less_1m,
-        prefetchable: ?bool = false,
+        mem_64b: ?bool = false,
     };
 
     /// In the case of drivers there is some extra information we want
@@ -288,7 +298,6 @@ pub const Config = struct {
         pub const Resources = struct {
             regions: []const Region,
             irqs: []const Config.Irq,
-            irq_type: ?ConfigResources.IrqType = .legacy,
             pci_bars: ?[]const PciBar = null,
         };
 
@@ -377,8 +386,9 @@ fn findDriver(compatibles: []const []const u8, class: Config.Driver.Class) ?Conf
 
 /// Given the DTB node for the device and the SDF program image, we can figure
 /// all the resources that need to be added to the system description.
-pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: ?*dtb.Node, dev_info: ?*PciConfig, class: Config.Driver.Class, device_res: *ConfigResources.Device) !void {
+pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: ?*dtb.Node, preferred_compatible: ?[]const u8, class: Config.Driver.Class, device_res: *ConfigResources.Device) !void {
 
+    log.debug("gdnhsgdag", .{});
     if (!probed) return error.CalledBeforeProbe;
 
     // // TODO: the tooling is quite DTB based, we need to revisit this for x86-64 support,
@@ -387,10 +397,12 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: ?*dtb.Node, dev_in
     //     // No DTB on x86.
     //     return;
     // }
+    if (device == null and preferred_compatible == null) {
+        log.err("Either device or compatible needs to be provided", .{});
+        return error.UnknownDevice;
+    }
 
-    const compatible = if (dev_info) |d| d: {
-        break :d &[_][]const u8{ d.compatible };
-    } else blk: {
+    const compatible = if (preferred_compatible) |c| &[_][]const u8{ c } else blk: {
         // First thing to do is find the driver configuration for the device given.
         // The way we do that is by searching for the compatible string described in the DTB node.
         const dt_compatible = device.?.prop(.Compatible).?;
@@ -402,6 +414,7 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: ?*dtb.Node, dev_in
         }
         break :blk dt_compatible;
     };
+    log.debug("compatible: {any}", .{ compatible });
     // Get the driver based on the compatible string are given, assuming we can
     // find it.
     const driver = if (findDriver(compatible, class)) |d| d else {
@@ -434,7 +447,7 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: ?*dtb.Node, dev_in
             return error.InvalidConfig;
         }
 
-        const dev_name = if (device) |d| d.name else if (dev_info) |d| d.name else "";
+        const dev_name = if (device) |d| d.name else pd.name;
         const mr_name = fmt(sdf.allocator, "{s}/{s}/{s}", .{ dev_name, driver.dir, region_resource.name });
 
         var mr: ?Mr = null;
@@ -495,7 +508,7 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: ?*dtb.Node, dev_in
             }
 
             const mr_size = if (region_resource.size != null) region_resource.size.? else {
-                log.err("device '{s}' has unknown region size'", .{ dev_info.?.name });
+                log.err("device '{s}' has unknown region size'", .{ dev_name });
                 return error.InvalidConfig;
             };
             if (mr == null) {
@@ -570,28 +583,126 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: ?*dtb.Node, dev_in
             };
             device_res.num_irqs += 1;
         }
-    } else if (dev_info) |dev| {
-        log.debug("x86 legacy IRQ or MSI/MSI-X", .{});
-        // @terryb: check duplication of vectors
-        for (driver.resources.irqs) |driver_irq| {
-            switch (driver.resources.irq_type.?) {
+    }
+    // else if (dev_info) |dev| {
+    //     log.debug("x86 legacy IRQ or MSI/MSI-X", .{});
+    //     // @terryb: check duplication of vectors
+    //     for (driver.resources.irqs) |driver_irq| {
+    //         switch (driver.resources.irq_type.?) {
+    //             .ioapic => {
+    //                 log.debug("TODO: add ioapic interrupts", .{});
+    //                 const irq_id = try pd.addIrq(Irq.createIoapic(
+    //                     driver_irq.pin.?,
+    //                     driver_irq.vector.?,
+    //                     .{}
+    //                 ) catch @panic("Could not create I/O APIC interrupt"));
+    //                 device_res.irqs[device_res.num_irqs] = .{
+    //                     .id = irq_id,
+    //                 };
+    //                 device_res.num_irqs += 1;
+    //             },
+    //             .msi, .msix => {
+
+    //                 if (driver_irq.vector) |vector| {
+    //                     const irq_id = try pd.addIrq(try Irq.createMsi(
+    //                         dev.pci_bus,
+    //                         dev.pci_dev,
+    //                         dev.pci_func,
+    //                         vector,
+    //                         0,
+    //                         .{}
+    //                     ));
+
+    //                     device_res.irqs[device_res.num_irqs] = .{
+    //                         .id = irq_id,
+    //                     };
+    //                     device_res.num_irqs += 1;
+    //                 } else {
+    //                     log.err("'vector' is expected for MSI/MSI-X interrupts", .{});
+    //                 }
+    //             },
+    //             else => {
+    //                 log.err("x86 supports only MSI, MSI-X and I/O APIC", .{});
+    //             }
+    //         }
+    //     }
+    //     log.debug("interrupts added", .{});
+    //     log.debug("bus: {any}, dev: {any}", .{dev.pci_bus, dev.pci_dev});
+    // }
+
+    // if (dev_info) |dev| {
+    //     for (driver.resources.pci_bars.?) |pci_bar| {
+    //         if (pci_bar.region_idx > device_res.num_regions) {
+    //             log.err("invalid region_idx {} > num_regions {}", .{pci_bar.region_idx, device_res.num_regions});
+    //             return error.InvalidConfig;
+    //         }
+
+    //         log.debug("pci_bar: {}", .{pci_bar});
+    //         log.debug("dev_info: {}", .{dev});
+    //         log.debug("device_res.regions: {any}", .{device_res.regions});
+    //         // var test_pci_bar = &dev.pci_bars[pci_bar.bar_id];
+    //         // dev.pci_bars[pci_bar.region_idx] = pci_bar;
+    //         // test_pci_bar = pci_bar;
+    //         dev.pci_bars[pci_bar.bar_id] = .{
+    //             .bar_id = pci_bar.bar_id,
+    //             .base_addr = device_res.regions[pci_bar.region_idx].io_addr,
+    //             .mem_mapped = pci_bar.mem_mapped.?,
+    //             .locatable = pci_bar.locatable.?,
+    //             .prefetchable = pci_bar.prefetchable.?,
+    //         };
+    //     }
+    // }
+}
+
+pub fn composePciConfig(pd: *Pd, compatible: []const u8, class: Config.Driver.Class, device_res: *ConfigResources.Device, dev: Pci.DeviceOptions) !ConfigResources.Pci.ConfigRequest {
+
+    // Get the driver based on the compatible string are given, assuming we can
+    // find it.
+    const driver = if (findDriver(&[_][]const u8{ compatible }, class)) |d| d else {
+        log.err("Cannot find driver matching '{s}' for class '{s}'", .{ compatible, @tagName(class) });
+        return error.UnknownDevice;
+    };
+    log.debug("Found compatible driver '{s}'", .{driver.dir});
+
+    var is_ioapic_enabled = true;
+    // TODO: check if MSI interrupts are contiguous
+
+    var requested_irqs = [_]ConfigResources.Pci.PciIrq{std.mem.zeroInit(ConfigResources.Pci.PciIrq, .{})} ** ConfigResources.Pci.MAX_PCI_IRQS;
+    var requested_num_irqs : u8 = 0;
+    for (driver.resources.irqs) |irq| {
+        const irq_id = blk: {
+            switch (irq.irq_type.?) {
                 .ioapic => {
-                    log.debug("TODO: add ioapic interrupts", .{});
-                    const irq_id = try pd.addIrq(Irq.createIoapic(
-                        driver_irq.pin.?,
-                        driver_irq.vector.?,
+                    if (!is_ioapic_enabled) {
+                        log.err("I/O APIC cannot work with MSI/MSI-X", .{});
+                        return error.InvalidPciConfig;
+                    }
+
+                    requested_irqs[requested_num_irqs] = .{
+                        .pin = irq.pin.?,
+                        .vector = irq.vector.?,
+                        .kind = .ioapic
+                    };
+
+                    break :blk try pd.addIrq(Irq.createIoapic(
+                        irq.pin.?,
+                        irq.vector.?,
                         .{}
                     ) catch @panic("Could not create I/O APIC interrupt"));
-                    device_res.irqs[device_res.num_irqs] = .{
-                        .id = irq_id,
-                    };
-                    device_res.num_irqs += 1;
-
                 },
                 .msi, .msix => {
+                    is_ioapic_enabled = false;
 
-                    if (driver_irq.vector) |vector| {
-                        const irq_id = try pd.addIrq(try Irq.createMsi(
+                    // TODO: figure out what's the use of the handle argument
+                    if (irq.vector) |vector| {
+
+                        requested_irqs[requested_num_irqs] = (.{
+                            .pin = 0,
+                            .vector = irq.vector.?,
+                            .kind = if (irq.irq_type == .msi) .msi else .msix
+                        });
+
+                        break :blk try pd.addIrq(try Irq.createMsi(
                             dev.pci_bus,
                             dev.pci_dev,
                             dev.pci_func,
@@ -600,43 +711,76 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: ?*dtb.Node, dev_in
                             .{}
                         ));
 
-                        device_res.irqs[device_res.num_irqs] = .{
-                            .id = irq_id,
-                        };
-                        device_res.num_irqs += 1;
                     } else {
                         log.err("'vector' is expected for MSI/MSI-X interrupts", .{});
+                        return error.InvalidClientConfig;
                     }
                 },
                 else => {
-                    log.err("x86 supports only MSI, MSI-X and I/O APIC", .{});
+                    log.err("Legacy interrupts are not supported for PCI devices\n", .{});
+                    return error.InvalidPciConfig;
                 }
             }
-        }
-        log.debug("interrupts added", .{});
-        log.debug("bus: {any}, dev: {any}", .{dev.pci_bus, dev.pci_dev});
+        };
+        device_res.irqs[device_res.num_irqs] = .{
+            .id = irq_id,
+        };
+        device_res.num_irqs += 1;
+        log.debug("num_irqs: {}", .{ device_res.num_irqs });
+        requested_num_irqs += 1;
     }
 
-    if (dev_info) |dev| {
-        for (driver.resources.pci_bars.?) |pci_bar| {
-            if (pci_bar.region_idx > device_res.num_regions) {
-                log.err("invalid region_idx {} > num_regions {}", .{pci_bar.region_idx, device_res.num_regions});
-                return error.InvalidConfig;
+    var requested_bars = [_]ConfigResources.Pci.PciBar{std.mem.zeroInit(ConfigResources.Pci.PciBar, .{})} ** ConfigResources.Pci.MAX_PCI_BARS;
+    for (driver.resources.pci_bars.?) |pci_bar| {
+        const base_addr = blk: {
+            switch (pci_bar.mem_mapped.?) {
+                true => {
+                    if (pci_bar.region_idx > device_res.num_regions) {
+                        log.err("invalid region_idx {} > num_regions {}", .{pci_bar.region_idx, device_res.num_regions});
+                        return error.InvalidPciConfig;
+                    }
+                    break :blk device_res.regions[pci_bar.region_idx].io_addr;
+                },
+                false => {
+                    if (pci_bar.region_idx > device_res.num_ioports) {
+                        log.err("invalid ioport_idx {} > num_ioports {}", .{pci_bar.region_idx, device_res.num_ioports});
+                        return error.InvalidPciConfig;
+                    }
+                    break :blk device_res.ioports[pci_bar.region_idx].base_addr;
+                }
             }
+        };
 
-            log.debug("pci_bar: {}", .{pci_bar});
-            log.debug("dev_info: {}", .{dev});
-            log.debug("device_res.regions: {any}", .{device_res.regions});
-            // var test_pci_bar = &dev.pci_bars[pci_bar.bar_id];
-            // dev.pci_bars[pci_bar.region_idx] = pci_bar;
-            // test_pci_bar = pci_bar;
-            dev.pci_bars[pci_bar.bar_id] = .{
+        if (requested_bars[pci_bar.bar_id].base_addr != 0) {
+            log.err("PCI BAR {} has been used", .{pci_bar.bar_id});
+            return error.InvalidPciConfig;
+        }
+
+        requested_bars[pci_bar.bar_id] = .{
+            .bar_id = pci_bar.bar_id,
+            .base_addr = base_addr,
+            .mem_mapped = pci_bar.mem_mapped.?,
+            .mem_64b = pci_bar.mem_64b.?,
+        };
+
+        if (pci_bar.mem_64b == true) {
+            requested_bars[pci_bar.bar_id + 1] = .{
                 .bar_id = pci_bar.bar_id,
-                .base_addr = device_res.regions[pci_bar.region_idx].io_addr,
+                .base_addr = base_addr,
                 .mem_mapped = pci_bar.mem_mapped.?,
-                .locatable = pci_bar.locatable.?,
-                .prefetchable = pci_bar.prefetchable.?,
+                .mem_64b = pci_bar.mem_64b.?,
             };
         }
     }
+
+    return .{
+        .bus = dev.pci_bus,
+        .dev = dev.pci_dev,
+        .func = dev.pci_func,
+        .device_id = dev.device_id,
+        .vendor_id = dev.vendor_id,
+        .bars = requested_bars,
+        .num_irqs = requested_num_irqs,
+        .irqs = requested_irqs,
+    };
 }

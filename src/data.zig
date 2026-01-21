@@ -46,6 +46,7 @@ pub const Resources = struct {
     pub const Device = extern struct {
         pub const MaxRegions = 64;
         pub const MaxIrqs = 64;
+        pub const MaxIoPorts = 8;
 
         const MAGIC: [5]u8 = MAGIC_START ++ .{0x1};
 
@@ -70,17 +71,22 @@ pub const Resources = struct {
             id: u8,
         };
 
+        pub const IoPort = extern struct {
+            id: u8,
+            base_addr: u64,
+        };
+
         magic: [5]u8 = MAGIC,
         num_regions: u8,
         num_irqs: u8,
+        num_ioports: u8,
         regions: [MaxRegions]Device.Region,
         irqs: [MaxIrqs]Irq,
+        ioports: [MaxIoPorts]IoPort,
     };
 
     // For all sDDF devices classes, let's just make them have 64 clients.
     const MAX_NUM_CLIENTS: usize = 64;
-
-    pub const IrqType = enum(u8) { legacy, ioapic, msi, msix };
 
     pub const Blk = struct {
         const MAGIC: [5]u8 = MAGIC_START ++ .{0x2};
@@ -347,7 +353,23 @@ pub const Resources = struct {
 
     pub const Pci = extern struct {
         const MAGIC: [5]u8 = MAGIC_START ++ .{0x8};
-        pub const MAX_NUM_PCI_BARS: u8 = 6;
+        pub const MAX_PCI_BARS: u8 = 6;
+        pub const MAX_PCI_IRQS: u8 = 8;
+
+        pub const IrqKind = enum(u8) { ioapic, msi, msix };
+
+        pub const PciIrq = extern struct {
+            pin: u64,
+            vector: u64,
+            kind: IrqKind,
+        };
+
+        pub const PciBar = extern struct {
+            bar_id: u8,
+            base_addr: u64,
+            mem_mapped: bool,
+            mem_64b: bool,
+        };
 
         pub const ConfigRequest = extern struct {
             bus: u8,
@@ -355,22 +377,12 @@ pub const Resources = struct {
             func: u8,
             device_id: u16,
             vendor_id: u16,
-            bars: [MAX_NUM_PCI_BARS]MemoryBar,
-            irq_type: IrqType,
+            bars: [MAX_PCI_BARS]PciBar,
+            num_irqs: u8,
+            irqs: [MAX_PCI_IRQS]PciIrq,
         };
 
-        // PCI BAR feature
-        pub const MemBarLocatable = enum(u8) { any_32b, less_1m, any_64b };
-
-        pub const MemoryBar = extern struct {
-            bar_id: u8,
-            base_addr: u64,
-            mem_mapped: bool,
-            locatable: MemBarLocatable,
-            prefetchable: bool,
-        };
-
-        pub const EcamConfig = extern struct {
+        pub const PciConfig = extern struct {
             magic: [5]u8 = MAGIC,
             num_requests: u8,
             requests: [MAX_NUM_CLIENTS]ConfigRequest,
@@ -429,7 +441,6 @@ pub fn serialize(allocator: Allocator, s: anytype, prefix: []const u8, path: []c
     const serialize_file = try std.fs.cwd().createFile(full_path_data, .{});
     defer serialize_file.close();
     try serialize_file.writeAll(bytes);
-    log.debug("{s} bytes: {any}", .{full_path, bytes});
 
     if (emit_json) {
         const json_file = try std.fs.cwd().createFile(full_path_json, .{});

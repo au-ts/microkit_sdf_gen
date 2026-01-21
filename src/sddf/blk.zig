@@ -34,8 +34,9 @@ pub const Blk = struct {
     // Only needed for initialisation to read partition table, maximum of 10 pages
     // for either MBR or GPT
     driver_data_size: u32 = 10 * 0x1000,
-    dev_info: ?sddf.PciConfig,
     config: Blk.Config,
+    // Used as a preference or for x86 where no dtb given
+    compatible: ?[]const u8,
 
     const Client = struct {
         pd: *Pd,
@@ -55,11 +56,13 @@ pub const Blk = struct {
         InvalidVirt,
     };
 
-    pub const Options = struct {};
+    pub const Options = struct {
+        compatible: ?[]const u8 = null,
+    };
 
     const STORAGE_INFO_REGION_SIZE: usize = 0x1000;
 
-    pub fn init(allocator: Allocator, sdf: *SystemDescription, device: ?*dtb.Node, driver: *Pd, virt: *Pd, _: Options) Error!Blk {
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, device: ?*dtb.Node, driver: *Pd, virt: *Pd, options: Options) Error!Blk {
         if (std.mem.eql(u8, driver.name, virt.name)) {
             log.err("invalid blk virtualiser, same name as driver '{s}", .{virt.name});
             return Error.InvalidVirt;
@@ -76,17 +79,7 @@ pub const Blk = struct {
                 .virt_clients = .init(allocator),
                 .clients = .init(allocator),
             },
-            .dev_info = .{
-                .name = allocator.dupe(u8, driver.name) catch @panic("Could not allocate name for driver_name"),
-                .compatible = "virtio,pci",
-                .pci_bus = 0,
-                .pci_dev = 3,
-                .pci_func = 0,
-                .device_id = 0,
-                .vendor_id = 0,
-                .irq_type = .msix,
-                .pci_bars = [_]ConfigResources.Pci.MemoryBar{std.mem.zeroInit(ConfigResources.Pci.MemoryBar, .{})} ** ConfigResources.Pci.MAX_NUM_PCI_BARS,
-            },
+            .compatible = if (options.compatible) |c| allocator.dupe(u8, c) catch @panic("Could not allocate compatible for Blk") else null,
         };
     }
 
@@ -283,9 +276,7 @@ pub const Blk = struct {
             }
         } else if (SystemDescription.Arch.isX86(sdf.arch)) {
             log.debug("connect blk...", .{});
-            log.debug("name: {s}", .{ system.dev_info.?.name });
-            log.debug("bus: {any}, dev: {any}", .{system.dev_info.?.pci_bus, system.dev_info.?.pci_dev});
-            try sddf.createDriver(sdf, system.driver, null, &system.dev_info.?, .blk, &system.device_res);
+            try sddf.createDriver(sdf, system.driver, null, system.compatible, .blk, &system.device_res);
         }
         // 2. Connect the driver to the virtualiser
         system.connectDriver();

@@ -12,6 +12,7 @@ const SystemDescription = mod_sdf.SystemDescription;
 const Mr = SystemDescription.MemoryRegion;
 const Map = SystemDescription.Map;
 const Pd = SystemDescription.ProtectionDomain;
+const Irq = SystemDescription.Irq;
 
 const ConfigResources = data.Resources;
 
@@ -24,21 +25,29 @@ pub const Pci = struct {
     driver: *Pd,
     device_res: ConfigResources.Device,
     clients: std.array_list.Managed(PciClient),
-    client_config: ConfigResources.Pci.EcamConfig,
+    client_config: ConfigResources.Pci.PciConfig,
 
     connected: bool = false,
     serialised: bool = false,
 
-
     pub const PciClient = struct {
         class: sddf.Config.Driver.Class,
         subsystem: *align(8)anyopaque,
+        dev: DeviceOptions,
     };
 
     pub const Error = SystemError || error{
         InvalidClient,
         ClientNotConnected,
         InvalidPciConfig,
+    };
+
+    pub const DeviceOptions = struct {
+        pci_bus: u8,
+        pci_dev: u8,
+        pci_func: u8,
+        device_id: u16,
+        vendor_id: u16,
     };
 
     pub fn init(allocator: Allocator, sdf: *SystemDescription, driver: *Pd) Pci {
@@ -48,34 +57,14 @@ pub const Pci = struct {
             .driver = driver,
             .device_res = std.mem.zeroInit(ConfigResources.Device, .{}),
             .clients = std.array_list.Managed(PciClient).init(allocator),
-            .client_config = std.mem.zeroInit(ConfigResources.Pci.EcamConfig, .{}),
+            .client_config = std.mem.zeroInit(ConfigResources.Pci.PciConfig, .{}),
         };
     }
 
     pub fn deinit(_: *Pci) void {
     }
 
-    fn addConfigRequest(system: *Pci, pci_cfg: ?sddf.PciConfig) Error!void {
-        log.debug("add config request", .{});
-        if (pci_cfg) |cfg| {
-            log.debug("bus: {any}, dev: {any}", .{cfg.pci_bus, cfg.pci_dev});
-            system.client_config.requests[system.client_config.num_requests] = .{
-                .bus = cfg.pci_bus,
-                .dev = cfg.pci_dev,
-                .func = cfg.pci_func,
-                .device_id = cfg.device_id,
-                .vendor_id = cfg.vendor_id,
-                .irq_type = cfg.irq_type,
-                .bars = cfg.pci_bars,
-            };
-            system.client_config.num_requests += 1;
-            // system.client_config.num_requests = 156;
-        } else {
-            return Error.InvalidPciConfig;
-        }
-    }
-
-    pub fn addClient(system: *Pci, class: sddf.Config.Driver.Class, subsystem: *align(8)anyopaque) Error!void {
+    pub fn addClient(system: *Pci, class: sddf.Config.Driver.Class, subsystem: *align(8)anyopaque, options: DeviceOptions) Error!void {
 
         for (system.clients.items) |client| {
             if (client.subsystem == subsystem) {
@@ -85,7 +74,8 @@ pub const Pci = struct {
 
         system.clients.append(.{
             .class = class,
-            .subsystem = subsystem
+            .subsystem = subsystem,
+            .dev = options,
         }) catch @panic("Could not add client to Pci");
 
     }
@@ -115,8 +105,10 @@ pub const Pci = struct {
                     log.debug("connect blk to pci host", .{});
                     const blk: *sddf.Blk = @ptrCast(client.subsystem);
 
-                    log.debug("compatible: {s}", .{ blk.dev_info.?.name });
-                    try system.addConfigRequest(blk.dev_info);
+                    const config = try sddf.composePciConfig(blk.driver, blk.compatible.?, .blk, &blk.device_res, client.dev);
+
+                    system.client_config.requests[system.client_config.num_requests] = config;
+                    system.client_config.num_requests += 1;
                 },
                 else => @panic("client is not supported")
             }
@@ -128,7 +120,6 @@ pub const Pci = struct {
         const device_res_data_name = fmt(system.allocator, "{s}_device_resources", .{system.driver.name});
         try data.serialize(system.allocator, system.device_res, prefix, device_res_data_name);
 
-        log.debug("raw: {any}", .{system.client_config});
         const client_configs_name = fmt(system.allocator, "{s}_client_configs", .{system.driver.name});
         try data.serialize(system.allocator, system.client_config, prefix, client_configs_name);
 

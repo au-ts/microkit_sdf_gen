@@ -175,7 +175,7 @@ libsdfgen.sdfgen_sddf_i2c_serialise_config.restype = c_bool
 libsdfgen.sdfgen_sddf_i2c_serialise_config.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_sddf_blk.restype = c_void_p
-libsdfgen.sdfgen_sddf_blk.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_blk.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_char_p]
 libsdfgen.sdfgen_sddf_blk_destroy.restype = None
 libsdfgen.sdfgen_sddf_blk_destroy.argtypes = [c_void_p]
 
@@ -243,7 +243,7 @@ libsdfgen.sdfgen_sddf_pci_destroy.restype = None
 libsdfgen.sdfgen_sddf_pci_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_sddf_pci_add_client.restype = c_bool
-libsdfgen.sdfgen_sddf_pci_add_client.argtypes = [c_void_p, c_int8, c_void_p]
+libsdfgen.sdfgen_sddf_pci_add_client.argtypes = [c_void_p, c_int8, c_void_p, c_uint16, c_uint16, c_uint8, c_uint8, c_uint8]
 
 libsdfgen.sdfgen_sddf_pci_add_ecam.restype = c_uint32
 libsdfgen.sdfgen_sddf_pci_add_ecam.argtypes = [c_void_p, c_uint64, c_uint64]
@@ -958,6 +958,7 @@ class Sddf:
                 libsdfgen.sdfgen_sddf_i2c_destroy(self._obj)
 
     class Blk:
+        _compatible: str
         _obj: c_void_p
 
         def __init__(
@@ -965,14 +966,22 @@ class Sddf:
             sdf: SystemDescription,
             device: Optional[DeviceTree.Node],
             driver: SystemDescription.ProtectionDomain,
-            virt: SystemDescription.ProtectionDomain
+            virt: SystemDescription.ProtectionDomain,
+            *,
+            compatible: Optional[str] = None,
         ) -> None:
             if device is None:
                 device_obj = None
             else:
                 device_obj = device._obj
 
-            self._obj = libsdfgen.sdfgen_sddf_blk(sdf._obj, device_obj, driver._obj, virt._obj)
+            if compatible:
+                self._compatible = compatible
+            else:
+                self._compatible = ""
+
+            c_compatible = c_char_p(self._compatible.encode("utf-8"))
+            self._obj = libsdfgen.sdfgen_sddf_blk(sdf._obj, device_obj, driver._obj, virt._obj, c_compatible)
             if self._obj is None:
                 raise Exception("failed to create blk system")
 
@@ -1190,7 +1199,15 @@ class Sddf:
         ) -> None:
             self._obj = libsdfgen.sdfgen_sddf_pci(sdf._obj, driver._obj)
 
-        def add_client(self, client: Any):
+        def add_client(
+                self,
+                client: Any,
+                device_id: int,
+                vendor_id: int,
+                bus: int,
+                dev: int,
+                func: int,
+        ):
             # match sddf.Config.Driver.Config
             CLASS_MAPPING = {
                 Sddf.Net: 0,
@@ -1205,7 +1222,7 @@ class Sddf:
                 print("driver class: ", driver_class)
                 print("type of pci: ", type(self))
                 print("type of client: ", type(client))
-                ret = libsdfgen.sdfgen_sddf_pci_add_client(self._obj, driver_class, client._obj)
+                ret = libsdfgen.sdfgen_sddf_pci_add_client(self._obj, driver_class, client._obj, device_id, vendor_id, bus, dev, func)
                 if ret == SddfStatus.OK:
                     return
                 else:

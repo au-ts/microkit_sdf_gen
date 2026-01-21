@@ -678,10 +678,14 @@ export fn sdfgen_sddf_i2c_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
-export fn sdfgen_sddf_blk(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt: *align(8) anyopaque) ?*anyopaque {
+export fn sdfgen_sddf_blk(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt: *align(8) anyopaque, compatible: [*c]u8) ?*anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const blk = allocator.create(sddf.Blk) catch @panic("OOM");
-    blk.* = sddf.Blk.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt), .{}) catch |e| {
+
+    log.debug("--compatible: {s}", .{ std.mem.span(compatible) });
+    const compatible_str = std.mem.span(compatible);
+    const arg_compatible = if (compatible_str.len > 0) compatible_str else null;
+    blk.* = sddf.Blk.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt), .{ .compatible = arg_compatible }) catch |e| {
         log.err("failed to initialiase blk system: {any}", .{ e });
         allocator.destroy(blk);
         return null;
@@ -844,11 +848,17 @@ export fn sdfgen_sddf_pci_destroy(system: *align(8) anyopaque) void {
     allocator.destroy(pci);
 }
 
-export fn sdfgen_sddf_pci_add_client(system: *align(8) anyopaque, client_class: u8, client: *align(8)anyopaque) bindings.sdfgen_sddf_status_t {
-    const pci: *sddf.Pci = @ptrCast(system);
+export fn sdfgen_sddf_pci_add_client(c_sdf: *align(8) anyopaque, client_class: u8, client: *align(8)anyopaque, device_id: u16, vendor_id: u16, bus: u8, dev: u8, func: u8) bindings.sdfgen_sddf_status_t {
+    const pci: *sddf.Pci = @ptrCast(c_sdf);
     const class: sddf.Config.Driver.Class = @enumFromInt(client_class);
-    log.debug("pci add client", .{});
-    pci.addClient(class, client) catch |e| {
+    const options: sddf.Pci.DeviceOptions = .{
+        .device_id = device_id,
+        .vendor_id = vendor_id,
+        .pci_bus = bus,
+        .pci_dev = dev,
+        .pci_func = func,
+    };
+    pci.addClient(class, client, options) catch |e| {
         switch (e) {
             sddf.Pci.Error.InvalidClient => return 1,
             sddf.Pci.Error.ClientNotConnected => return 2,
