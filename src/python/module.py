@@ -632,6 +632,8 @@ class SystemDescription:
         class CapType(IntEnum):
             TCB = 0,
             SC = 1,
+            Vspace = 2,
+            Cnode = 3,
 
         def __init__(
             self,
@@ -644,6 +646,10 @@ class SystemDescription:
                 c_type = c_char_p("tcb".encode("utf-8"))
             elif type is self.CapType.SC:
                 c_type = c_char_p("sc".encode("utf-8"))
+            elif type is self.CapType.Vspace:
+                c_type = c_char_p("vspace".encode("utf-8"))
+            elif type is self.CapType.Cnode:
+                c_type = c_char_p("cnode".encode("utf-8"))
 
             c_pd = c_char_p(pd._name.encode("utf-8"))
 

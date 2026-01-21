@@ -435,7 +435,7 @@ pub const SystemDescription = struct {
         stack_size: ?u32,
         /// Memory mappings
         maps: ArrayList(Map),
-        /// TCB and SC cap mappings
+        /// Extra cap mappings
         cap_maps: ArrayList(CapMap),
         /// The length of this array is bound by the maximum number of child PDs a PD can have.
         child_pds: ArrayList(*ProtectionDomain),
