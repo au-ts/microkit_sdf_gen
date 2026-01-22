@@ -26,6 +26,8 @@ pub const Blk = struct {
     sdf: *SystemDescription,
     driver: *Pd,
     device: ?*dtb.Node,
+    // Used as a preference or for x86 where no dtb given
+    compatible: ?[]const u8,
     device_res: ConfigResources.Device,
     virt: *Pd,
     clients: std.array_list.Managed(Client),
@@ -35,8 +37,6 @@ pub const Blk = struct {
     // for either MBR or GPT
     driver_data_size: u32 = 10 * 0x1000,
     config: Blk.Config,
-    // Used as a preference or for x86 where no dtb given
-    compatible: ?[]const u8,
 
     const Client = struct {
         pd: *Pd,

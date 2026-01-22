@@ -685,6 +685,7 @@ pub fn composePciConfig(pci: *Pci, pd: *Pd, compatible: []const u8, class: Confi
         requested_num_irqs += 1;
     }
 
+    log.debug("bars", .{});
     var requested_bars = [_]ConfigResources.Pci.PciBar{std.mem.zeroInit(ConfigResources.Pci.PciBar, .{})} ** ConfigResources.Pci.MAX_PCI_BARS;
     for (driver.resources.pci_bars.?) |pci_bar| {
 

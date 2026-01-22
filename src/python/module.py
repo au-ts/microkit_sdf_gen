@@ -203,7 +203,7 @@ libsdfgen.sdfgen_sddf_serial_serialise_config.restype = c_bool
 libsdfgen.sdfgen_sddf_serial_serialise_config.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_sddf_net.restype = c_void_p
-libsdfgen.sdfgen_sddf_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_char_p]
 libsdfgen.sdfgen_sddf_net_destroy.restype = None
 libsdfgen.sdfgen_sddf_net_destroy.argtypes = [c_void_p]
 
@@ -1021,6 +1021,7 @@ class Sddf:
                 libsdfgen.sdfgen_sddf_blk_destroy(self._obj)
 
     class Net:
+        _compatible: str
         _obj: c_void_p
 
         def __init__(
@@ -1030,7 +1031,9 @@ class Sddf:
             driver: SystemDescription.ProtectionDomain,
             virt_tx: SystemDescription.ProtectionDomain,
             virt_rx: SystemDescription.ProtectionDomain,
-            rx_dma_mr: Optional[SystemDescription.MemoryRegion] = None
+            rx_dma_mr: Optional[SystemDescription.MemoryRegion] = None,
+            *,
+            compatible: Optional[str] = None,
         ) -> None:
             if device is None:
                 device_obj = None
@@ -1041,8 +1044,14 @@ class Sddf:
             else:
                 rx_dma_mr_obj = rx_dma_mr._obj
 
+            if compatible:
+                self._compatible = compatible
+            else:
+                self._compatible = ""
+
+            c_compatible = c_char_p(self._compatible.encode("utf-8"))
             self._obj = libsdfgen.sdfgen_sddf_net(
-                sdf._obj, device_obj, driver._obj, virt_tx._obj, virt_rx._obj, rx_dma_mr_obj
+                sdf._obj, device_obj, driver._obj, virt_tx._obj, virt_rx._obj, rx_dma_mr_obj, c_compatible
             )
 
         def add_client_with_copier(

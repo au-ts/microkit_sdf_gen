@@ -738,12 +738,15 @@ export fn sdfgen_sddf_blk_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
-export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: *align(8) anyopaque, c_rx_dma_mr: ?*align(8) anyopaque) *anyopaque {
+export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: *align(8) anyopaque, c_rx_dma_mr: ?*align(8) anyopaque, compatible: [*c]u8) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const net = allocator.create(sddf.Net) catch @panic("OOM");
     const rx_dma_mr: ?*Mr = if (c_rx_dma_mr) |p| @ptrCast(p) else null;
+
+    const compatible_str = std.mem.span(compatible);
     const options: sddf.Net.Options = .{
         .rx_dma_mr = rx_dma_mr,
+        .compatible = if (compatible_str.len > 0) compatible_str else null,
     };
     net.* = sddf.Net.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt_tx), @ptrCast(virt_rx), options);
 

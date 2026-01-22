@@ -108,18 +108,29 @@ pub const Pci = struct {
         system.addMemoryRegion(system.ecam_paddr, system.ecam_size, "ecam_region");
 
         for (system.clients.items) |client| {
-            switch (client.class) {
-                .blk => {
-                    log.debug("connect blk to pci host", .{});
-                    const blk: *sddf.Blk = @ptrCast(client.subsystem);
+            const config = blk: {
+                switch (client.class) {
+                    .blk => {
+                        log.debug("connect blk to pci host", .{});
+                        const blk: *sddf.Blk = @ptrCast(client.subsystem);
 
-                    const config = try sddf.composePciConfig(system, blk.driver, blk.compatible.?, .blk, &blk.device_res, client.dev);
+                        const config = try sddf.composePciConfig(system, blk.driver, blk.compatible.?, .blk, &blk.device_res, client.dev);
 
-                    system.client_config.requests[system.client_config.num_requests] = config;
-                    system.client_config.num_requests += 1;
-                },
-                else => @panic("client is not supported")
-            }
+                        break :blk config;
+                    },
+                    .network => {
+                        log.debug("connect net to pci host", .{});
+                        const net: *sddf.Net = @ptrCast(client.subsystem);
+
+                        const config = try sddf.composePciConfig(system, net.driver, net.compatible.?, .network, &net.device_res, client.dev);
+
+                        break :blk config;
+                    },
+                    else => @panic("client is not supported")
+                }
+            };
+            system.client_config.requests[system.client_config.num_requests] = config;
+            system.client_config.num_requests += 1;
         }
         system.connected = true;
     }

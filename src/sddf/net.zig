@@ -33,6 +33,7 @@ pub const Net = struct {
     pub const Options = struct {
         rx_buffers: usize = 512,
         rx_dma_mr: ?*Mr = null,
+        compatible: ?[]const u8 = null,
     };
 
     pub const ClientOptions = struct {
@@ -54,6 +55,8 @@ pub const Net = struct {
     allocator: Allocator,
     sdf: *SystemDescription,
     device: ?*dtb.Node,
+    // Used as a preference or for x86 where no dtb given
+    compatible: ?[]const u8,
 
     driver: *Pd,
     virt_rx: *Pd,
@@ -93,6 +96,7 @@ pub const Net = struct {
             .copiers = std.array_list.Managed(?*Pd).init(allocator),
             .driver = driver,
             .device = device,
+            .compatible = if (options.compatible) |c| allocator.dupe(u8, c) catch @panic("Could not allocate compatible for Blk") else null,
             .device_res = std.mem.zeroInit(ConfigResources.Device, .{}),
             .virt_rx = virt_rx,
             .virt_tx = virt_tx,
@@ -362,9 +366,10 @@ pub const Net = struct {
     }
 
     pub fn connect(system: *Net) !void {
-        if (system.device) |dtb_node| {
-            try sddf.createDriver(system.sdf, system.driver, dtb_node, null, .network, &system.device_res);
-        }
+        // if (system.device) |dtb_node| {
+            // try sddf.createDriver(system.sdf, system.driver, dtb_node, null, .network, &system.device_res);
+        // }
+        try sddf.createDriver(system.sdf, system.driver, system.device, system.compatible, .blk, &system.device_res);
 
         const rx_dma_mr = system.rxConnectDriver();
         system.txConnectDriver();
