@@ -835,10 +835,10 @@ export fn sdfgen_sddf_gpu_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
-export fn sdfgen_sddf_pci(c_sdf: *align(8) anyopaque, driver: *align(8) anyopaque) *anyopaque {
+export fn sdfgen_sddf_pci(c_sdf: *align(8) anyopaque, driver: *align(8) anyopaque, ecam_paddr: u64, ecam_size: u64, mmio_paddr: u64, mmio_size: u64) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const pci = allocator.create(sddf.Pci) catch @panic("OOM");
-    pci.* = sddf.Pci.init(allocator, sdf, @ptrCast(driver));
+    pci.* = sddf.Pci.init(allocator, sdf, @ptrCast(driver), ecam_paddr, ecam_size, mmio_paddr, mmio_size);
     return pci;
 }
 
@@ -867,13 +867,6 @@ export fn sdfgen_sddf_pci_add_client(c_sdf: *align(8) anyopaque, client_class: u
             sddf.Pci.Error.DuplicateClient => return 5,
         }
     };
-
-    return 0;
-}
-
-export fn sdfgen_sddf_pci_add_ecam(system: *align(8) anyopaque, paddr: u64, size: u64) bindings.sdfgen_sddf_status_t {
-    const pci: *sddf.Pci = @ptrCast(system);
-    pci.addEcam(paddr, size);
 
     return 0;
 }

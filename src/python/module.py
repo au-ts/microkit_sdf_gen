@@ -238,15 +238,12 @@ libsdfgen.sdfgen_sddf_gpu_serialise_config.restype = c_bool
 libsdfgen.sdfgen_sddf_gpu_serialise_config.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_sddf_pci.restype = c_void_p
-libsdfgen.sdfgen_sddf_pci.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_pci.argtypes = [c_void_p, c_void_p, c_uint64, c_uint64, c_uint64, c_uint64]
 libsdfgen.sdfgen_sddf_pci_destroy.restype = None
 libsdfgen.sdfgen_sddf_pci_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_sddf_pci_add_client.restype = c_bool
 libsdfgen.sdfgen_sddf_pci_add_client.argtypes = [c_void_p, c_int8, c_void_p, c_uint16, c_uint16, c_uint8, c_uint8, c_uint8]
-
-libsdfgen.sdfgen_sddf_pci_add_ecam.restype = c_uint32
-libsdfgen.sdfgen_sddf_pci_add_ecam.argtypes = [c_void_p, c_uint64, c_uint64]
 
 libsdfgen.sdfgen_sddf_pci_connect.restype = c_bool
 libsdfgen.sdfgen_sddf_pci_connect.argtypes = [c_void_p]
@@ -1196,17 +1193,21 @@ class Sddf:
             self,
             sdf: SystemDescription,
             driver: SystemDescription.ProtectionDomain,
+            ecam_paddr: int,
+            ecam_size: int,
+            mmio_paddr: int,
+            mmio_size: int,
         ) -> None:
-            self._obj = libsdfgen.sdfgen_sddf_pci(sdf._obj, driver._obj)
+            self._obj = libsdfgen.sdfgen_sddf_pci(sdf._obj, driver._obj, ecam_paddr, ecam_size, mmio_paddr, mmio_size)
 
         def add_client(
-                self,
-                client: Any,
-                device_id: int,
-                vendor_id: int,
-                bus: int,
-                dev: int,
-                func: int,
+            self,
+            client: Any,
+            device_id: int,
+            vendor_id: int,
+            bus: int,
+            dev: int,
+            func: int,
         ):
             # match sddf.Config.Driver.Config
             CLASS_MAPPING = {
@@ -1229,14 +1230,6 @@ class Sddf:
                     raise Exception(f"internal error: {ret}")
             else:
                 raise Exception(f"invalid client given 'client'")
-
-        def add_ecam(self, paddr: int, size: int):
-            print("PCI add_ecam: ", paddr, size)
-            ret = libsdfgen.sdfgen_sddf_pci_add_ecam(self._obj, paddr, size)
-            if ret == SddfStatus.OK:
-                return
-            else:
-                raise Exception(f"internal error: {ret}")
 
         def connect(self) -> bool:
             return libsdfgen.sdfgen_sddf_pci_connect(self._obj)

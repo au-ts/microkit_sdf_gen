@@ -26,6 +26,10 @@ pub const Pci = struct {
     device_res: ConfigResources.Device,
     clients: std.array_list.Managed(PciClient),
     client_config: ConfigResources.Pci.PciConfig,
+    ecam_paddr: u64,
+    ecam_size: u64,
+    mmio_paddr_base: u64,
+    mmio_paddr_top: u64,
 
     connected: bool = false,
     serialised: bool = false,
@@ -50,7 +54,8 @@ pub const Pci = struct {
         vendor_id: u16,
     };
 
-    pub fn init(allocator: Allocator, sdf: *SystemDescription, driver: *Pd) Pci {
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, driver: *Pd, ecam_paddr: u64, ecam_size: u64, mmio_paddr: u64, mmio_size: u64) Pci {
+
         return .{
             .allocator = allocator,
             .sdf = sdf,
@@ -58,6 +63,10 @@ pub const Pci = struct {
             .device_res = std.mem.zeroInit(ConfigResources.Device, .{}),
             .clients = std.array_list.Managed(PciClient).init(allocator),
             .client_config = std.mem.zeroInit(ConfigResources.Pci.PciConfig, .{}),
+            .ecam_paddr = ecam_paddr,
+            .ecam_size = ecam_size,
+            .mmio_paddr_base = mmio_paddr,
+            .mmio_paddr_top = mmio_paddr + mmio_size,
         };
     }
 
@@ -77,14 +86,10 @@ pub const Pci = struct {
             .subsystem = subsystem,
             .dev = options,
         }) catch @panic("Could not add client to Pci");
-
     }
 
-    pub fn addEcam(system: *Pci, paddr: u64, size: u64) void {
-        log.debug("blk driver class: {}", .{ @intFromEnum(sddf.Config.Driver.Class.blk) });
-
-        const mr_name = fmt(system.allocator, "pci_driver/ecam_{any}", .{ system.device_res.num_regions });
-        const mr = Mr.physical(system.allocator, system.sdf, mr_name, size, .{ .paddr = paddr });
+    pub fn addMemoryRegion(system: *Pci, paddr: u64, size: u64, name: []const u8) void {
+        const mr = Mr.physical(system.allocator, system.sdf, name, size, .{ .paddr = paddr });
         system.sdf.addMemoryRegion(mr);
         const map = Map.create(mr, system.driver.getMapVaddr(&mr), Map.Perms.rw, .{});
         system.driver.addMap(map);
@@ -96,16 +101,19 @@ pub const Pci = struct {
             .io_addr = map.mr.paddr.?,
         };
         system.device_res.num_regions += 1;
+
     }
 
     pub fn connect(system: *Pci) !void {
+        system.addMemoryRegion(system.ecam_paddr, system.ecam_size, "ecam_region");
+
         for (system.clients.items) |client| {
             switch (client.class) {
                 .blk => {
                     log.debug("connect blk to pci host", .{});
                     const blk: *sddf.Blk = @ptrCast(client.subsystem);
 
-                    const config = try sddf.composePciConfig(blk.driver, blk.compatible.?, .blk, &blk.device_res, client.dev);
+                    const config = try sddf.composePciConfig(system, blk.driver, blk.compatible.?, .blk, &blk.device_res, client.dev);
 
                     system.client_config.requests[system.client_config.num_requests] = config;
                     system.client_config.num_requests += 1;

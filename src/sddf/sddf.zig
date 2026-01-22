@@ -654,7 +654,7 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: ?*dtb.Node, prefer
     // }
 }
 
-pub fn composePciConfig(pd: *Pd, compatible: []const u8, class: Config.Driver.Class, device_res: *ConfigResources.Device, dev: Pci.DeviceOptions) !ConfigResources.Pci.ConfigRequest {
+pub fn composePciConfig(pci: *Pci, pd: *Pd, compatible: []const u8, class: Config.Driver.Class, device_res: *ConfigResources.Device, dev: Pci.DeviceOptions) !ConfigResources.Pci.ConfigRequest {
 
     // Get the driver based on the compatible string are given, assuming we can
     // find it.
@@ -690,7 +690,7 @@ pub fn composePciConfig(pd: *Pd, compatible: []const u8, class: Config.Driver.Cl
                         .{}
                     ) catch @panic("Could not create I/O APIC interrupt"));
                 },
-                .msi, .msix => {
+                .msi, => {
                     is_ioapic_enabled = false;
 
                     // TODO: figure out what's the use of the handle argument
@@ -699,7 +699,7 @@ pub fn composePciConfig(pd: *Pd, compatible: []const u8, class: Config.Driver.Cl
                         requested_irqs[requested_num_irqs] = (.{
                             .pin = 0,
                             .vector = irq.vector.?,
-                            .kind = if (irq.irq_type == .msi) .msi else .msix
+                            .kind = .msi,
                         });
 
                         break :blk try pd.addIrq(try Irq.createMsi(
@@ -712,7 +712,36 @@ pub fn composePciConfig(pd: *Pd, compatible: []const u8, class: Config.Driver.Cl
                         ));
 
                     } else {
-                        log.err("'vector' is expected for MSI/MSI-X interrupts", .{});
+                        log.err("'vector' is expected for MSI interrupts", .{});
+                        return error.InvalidClientConfig;
+                    }
+                },
+                .msix => {
+                    is_ioapic_enabled = false;
+
+                    // TODO: figure out what's the use of the handle argument
+                    if (irq.vector) |vector| {
+
+                        requested_irqs[requested_num_irqs] = (.{
+                            .pin = 0,
+                            .vector = irq.vector.?,
+                            .kind = .msix,
+                        });
+
+                        // Allocate 0x9000 for a MSI-X capability
+                        const msix_region_name = fmt(pci.allocator, "msix_bar_{}", .{ pci.device_res.num_regions });
+                        pci.addMemoryRegion(pci.mmio_paddr_top - 36864, 36864, msix_region_name);
+
+                        break :blk try pd.addIrq(try Irq.createMsi(
+                            dev.pci_bus,
+                            dev.pci_dev,
+                            dev.pci_func,
+                            vector,
+                            0,
+                            .{}
+                        ));
+                    } else {
+                        log.err("'vector' is expected for MSI-X interrupts", .{});
                         return error.InvalidClientConfig;
                     }
                 },
