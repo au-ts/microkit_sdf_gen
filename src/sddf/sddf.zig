@@ -263,6 +263,10 @@ pub const Config = struct {
         dt_index: ?DeviceTreeIndex = null,
     };
 
+    const IoPort = struct {
+        size: u16,
+    };
+
     /// The actual IRQ number that gets registered with seL4
     /// is something we can determine from the device tree.
     const Irq = struct {
@@ -271,6 +275,7 @@ pub const Config = struct {
         dt_index: ?DeviceTreeIndex = null,
         vector: ?u64 = null,
         pin: ?u64 = null,
+        ioapic: ?u64 = 0,
         irq_type: ?IrqType = .legacy,
     };
 
@@ -279,9 +284,9 @@ pub const Config = struct {
 
     // Struct used in config.json, and slightly different from generated header
     pub const PciBar = struct {
-        region_idx: u8,
+        res_idx: u8,
         bar_id: u8,
-        mem_mapped: ?bool = true,
+        ioport: ?bool = false,
         mem_64b: ?bool = false,
     };
 
@@ -296,6 +301,7 @@ pub const Config = struct {
 
         pub const Resources = struct {
             regions: []const Region,
+            ioports: ?[]const IoPort = null,
             irqs: []const Config.Irq,
             pci_bars: ?[]const PciBar = null,
         };
@@ -434,7 +440,7 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: ?*dtb.Node, prefer
     }
 
     log.debug("adding regions", .{});
-    for (driver.resources.regions, 0..) |region_resource, region_idx| {
+    for (driver.resources.regions, 0..) |region_resource, res_idx| {
         // TODO: all this error checking should be done when we parse config.json
         if (region_resource.dt_index == null and region_resource.size == null) {
             log.err("driver '{s}' has region resource '{s}' which specifies neither dt_index nor size: one or both must be specified", .{ driver.dir, region_resource.name });
@@ -498,10 +504,12 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: ?*dtb.Node, prefer
             }
         } else {
             var is_pci_bar : bool = false;
-            for (driver.resources.pci_bars.?) |pci_bar| {
-                if (pci_bar.region_idx == region_idx) {
-                    is_pci_bar = true;
-                    break;
+            if (driver.resources.pci_bars) |pci_bars| {
+                for (pci_bars) |pci_bar| {
+                    if (pci_bar.res_idx == res_idx) {
+                        is_pci_bar = true;
+                        break;
+                    }
                 }
             }
             if (is_pci_bar) {
@@ -612,7 +620,7 @@ pub fn composePciConfig(pci: *Pci, pd: *Pd, compatible: []const u8, class: Confi
                     break :blk try pd.addIrq(Irq.createIoapic(
                         irq.pin.?,
                         irq.vector.?,
-                        .{}
+                        .{ .ioapic=irq.ioapic.? }
                     ) catch @panic("Could not create I/O APIC interrupt"));
                 },
                 .msi, => {
@@ -689,84 +697,110 @@ pub fn composePciConfig(pci: *Pci, pd: *Pd, compatible: []const u8, class: Confi
     var requested_bars = [_]ConfigResources.Pci.PciBar{std.mem.zeroInit(ConfigResources.Pci.PciBar, .{})} ** ConfigResources.Pci.MAX_PCI_BARS;
     for (driver.resources.pci_bars.?) |pci_bar| {
 
-        const region_resource = driver.resources.regions[pci_bar.region_idx];
-        const mr_size = if (region_resource.size != null) region_resource.size.? else {
-            log.err("region '{}' has unknown region size'", .{ pci_bar.region_idx });
-            return error.InvalidConfig;
-        };
-        const mr_name = fmt(pci.allocator, "{s}/{s}/{s}", .{ pd.name, driver.dir, region_resource.name });
+        if (pci_bar.ioport.?) {
+            log.debug("hello", .{});
+            const ioport_cfg = if (driver.resources.ioports) |ioports| ioports[pci_bar.res_idx] else @panic("No I/O Ports defined");
+            log.debug("paddr_top: {}, size: {}", .{ pci.ioport_paddr_top, ioport_cfg.size });
+            const ioport_addr : u16 = @intCast(pci.ioport_paddr_top - ioport_cfg.size);
+            const ioport = SystemDescription.IoPort.create(ioport_addr, ioport_cfg.size, .{}) catch @panic("Could not create I/O Port");
+            log.debug("hello?", .{});
+            const ioport_id = pd.addIoPort(ioport) catch @panic("Could not create I/O Port");
+            pci.ioport_paddr_top -= ioport_cfg.size;
 
-        // Some devices require base address 0x10000-byte aligned
-        const alignment : u64 = 0x10000;
-        const paddr = (pci.mmio_paddr_top - mr_size) & ~(alignment - 1);
-        const mr = Mr.physical(pci.allocator, pci.sdf, mr_name, mr_size, .{ .paddr = paddr });
-        pci.mmio_paddr_top = paddr;
-        pci.sdf.addMemoryRegion(mr);
-        const perms = blk: {
-            if (region_resource.perms) |perms| {
-                break :blk Map.Perms.fromString(perms) catch |e| {
-                    log.err("failed to create driver '{s}', invalid perms '{s}': {any}", .{ pd.name, perms, e });
-                    return e;
-                };
-            } else {
-                break :blk Map.Perms.rw;
-            }
-        };
-        const map = Map.create(mr, pd.getMapVaddr(&mr), perms, .{
-            .cached = region_resource.cached,
-            .setvar_vaddr = region_resource.setvar_vaddr,
-        });
-        pd.addMap(map);
-        device_res.regions[pci_bar.region_idx] = .{
-            .region = .{
-                // The driver that is consuming the device region wants to know about the
-                // region that is specifeid in the DTB node, rather than the start of the region that
-                // is mapped. While uncommon, sometimes the device region is not page-aligned unlike
-                // the mapping.
-                .vaddr = map.vaddr,
-                .size = map.mr.size,
-            },
-            .io_addr = map.mr.paddr.?,
-        };
+            device_res.ioports[device_res.num_ioports] = .{
+                .id = ioport_id,
+                .addr = ioport_addr,
+                .size = ioport_cfg.size,
+            };
+            device_res.num_ioports += 1;
+            log.debug("hello?", .{});
 
-        const base_addr = blk: {
-            switch (pci_bar.mem_mapped.?) {
-                true => {
-                    if (pci_bar.region_idx > device_res.num_regions) {
-                        log.err("invalid region_idx {} > num_regions {}", .{pci_bar.region_idx, device_res.num_regions});
-                        return error.InvalidPciConfig;
-                    }
-                    break :blk device_res.regions[pci_bar.region_idx].io_addr;
-                },
-                false => {
-                    if (pci_bar.region_idx > device_res.num_ioports) {
-                        log.err("invalid ioport_idx {} > num_ioports {}", .{pci_bar.region_idx, device_res.num_ioports});
-                        return error.InvalidPciConfig;
-                    }
-                    break :blk device_res.ioports[pci_bar.region_idx].base_addr;
+            requested_bars[pci_bar.bar_id] = .{
+                .bar_id = pci_bar.bar_id,
+                .base_addr = ioport.addr,
+                .ioport = true,
+                .mem_64b = false,
+            };
+        } else {
+            const region_resource = driver.resources.regions[pci_bar.res_idx];
+            const mr_size = if (region_resource.size != null) region_resource.size.? else {
+                log.err("region '{}' has unknown region size'", .{ pci_bar.res_idx });
+                return error.InvalidConfig;
+            };
+            const mr_name = fmt(pci.allocator, "{s}/{s}/{s}", .{ pd.name, driver.dir, region_resource.name });
+
+            // Some devices require base address 0x10000-byte aligned
+            const alignment : u64 = 0x10000;
+            const paddr = (pci.mmio_paddr_top - mr_size) & ~(alignment - 1);
+            const mr = Mr.physical(pci.allocator, pci.sdf, mr_name, mr_size, .{ .paddr = paddr });
+            pci.mmio_paddr_top = paddr;
+            pci.sdf.addMemoryRegion(mr);
+            const perms = blk: {
+                if (region_resource.perms) |perms| {
+                    break :blk Map.Perms.fromString(perms) catch |e| {
+                        log.err("failed to create driver '{s}', invalid perms '{s}': {any}", .{ pd.name, perms, e });
+                        return e;
+                    };
+                } else {
+                    break :blk Map.Perms.rw;
                 }
+            };
+            const map = Map.create(mr, pd.getMapVaddr(&mr), perms, .{
+                .cached = region_resource.cached,
+                .setvar_vaddr = region_resource.setvar_vaddr,
+            });
+            pd.addMap(map);
+            device_res.regions[pci_bar.res_idx] = .{
+                .region = .{
+                    // The driver that is consuming the device region wants to know about the
+                    // region that is specifeid in the DTB node, rather than the start of the region that
+                    // is mapped. While uncommon, sometimes the device region is not page-aligned unlike
+                    // the mapping.
+                    .vaddr = map.vaddr,
+                    .size = map.mr.size,
+                },
+                .io_addr = map.mr.paddr.?,
+            };
+
+            const base_addr = blk: {
+                switch (pci_bar.ioport.?) {
+                    true => {
+                        if (pci_bar.res_idx > device_res.num_ioports) {
+                            log.err("invalid ioport_idx {} > num_ioports {}", .{pci_bar.res_idx, device_res.num_ioports});
+                            return error.InvalidPciConfig;
+                        }
+                        break :blk device_res.ioports[pci_bar.res_idx].addr;
+                    },
+                    false => {
+                        if (pci_bar.res_idx > device_res.num_regions) {
+                            log.err("invalid res_idx {} > num_regions {}", .{pci_bar.res_idx, device_res.num_regions});
+                            return error.InvalidPciConfig;
+                        }
+                        break :blk device_res.regions[pci_bar.res_idx].io_addr;
+                    }
+                }
+            };
+
+            if (requested_bars[pci_bar.bar_id].base_addr != 0) {
+                log.err("PCI BAR {} has been used", .{pci_bar.bar_id});
+                return error.InvalidPciConfig;
             }
-        };
 
-        if (requested_bars[pci_bar.bar_id].base_addr != 0) {
-            log.err("PCI BAR {} has been used", .{pci_bar.bar_id});
-            return error.InvalidPciConfig;
-        }
-
-        requested_bars[pci_bar.bar_id] = .{
-            .bar_id = pci_bar.bar_id,
-            .base_addr = base_addr,
-            .mem_mapped = pci_bar.mem_mapped.?,
-            .mem_64b = pci_bar.mem_64b.?,
-        };
-
-        if (pci_bar.mem_64b == true) {
-            requested_bars[pci_bar.bar_id + 1] = .{
+            requested_bars[pci_bar.bar_id] = .{
                 .bar_id = pci_bar.bar_id,
                 .base_addr = base_addr,
-                .mem_mapped = pci_bar.mem_mapped.?,
+                .ioport = pci_bar.ioport.?,
                 .mem_64b = pci_bar.mem_64b.?,
             };
+
+            if (pci_bar.mem_64b == true) {
+                requested_bars[pci_bar.bar_id + 1] = .{
+                    .bar_id = pci_bar.bar_id,
+                    .base_addr = base_addr,
+                    .ioport = pci_bar.ioport.?,
+                    .mem_64b = pci_bar.mem_64b.?,
+                };
+            }
         }
     }
 

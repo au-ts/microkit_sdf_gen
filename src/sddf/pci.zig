@@ -30,6 +30,8 @@ pub const Pci = struct {
     ecam_size: u64,
     mmio_paddr_base: u64,
     mmio_paddr_top: u64,
+    ioport_paddr_base: u32,
+    ioport_paddr_top: u32,
 
     connected: bool = false,
     serialised: bool = false,
@@ -54,7 +56,7 @@ pub const Pci = struct {
         vendor_id: u16,
     };
 
-    pub fn init(allocator: Allocator, sdf: *SystemDescription, driver: *Pd, ecam_paddr: u64, ecam_size: u64, mmio_paddr: u64, mmio_size: u64) Pci {
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, driver: *Pd, ecam_paddr: u64, ecam_size: u64, mmio_paddr: u64, mmio_size: u64, ioport_paddr: u32, ioport_size: u32) Pci {
 
         return .{
             .allocator = allocator,
@@ -67,6 +69,8 @@ pub const Pci = struct {
             .ecam_size = ecam_size,
             .mmio_paddr_base = mmio_paddr,
             .mmio_paddr_top = mmio_paddr + mmio_size,
+            .ioport_paddr_base = ioport_paddr,
+            .ioport_paddr_top = ioport_paddr + ioport_size,
         };
     }
 

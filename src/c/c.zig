@@ -838,10 +838,10 @@ export fn sdfgen_sddf_gpu_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
-export fn sdfgen_sddf_pci(c_sdf: *align(8) anyopaque, driver: *align(8) anyopaque, ecam_paddr: u64, ecam_size: u64, mmio_paddr: u64, mmio_size: u64) *anyopaque {
+export fn sdfgen_sddf_pci(c_sdf: *align(8) anyopaque, driver: *align(8) anyopaque, ecam_paddr: u64, ecam_size: u64, mmio_paddr: u64, mmio_size: u64, ioport_paddr: u32, ioport_size: u32) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const pci = allocator.create(sddf.Pci) catch @panic("OOM");
-    pci.* = sddf.Pci.init(allocator, sdf, @ptrCast(driver), ecam_paddr, ecam_size, mmio_paddr, mmio_size);
+    pci.* = sddf.Pci.init(allocator, sdf, @ptrCast(driver), ecam_paddr, ecam_size, mmio_paddr, mmio_size, ioport_paddr, ioport_size);
     return pci;
 }
 

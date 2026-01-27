@@ -238,7 +238,7 @@ libsdfgen.sdfgen_sddf_gpu_serialise_config.restype = c_bool
 libsdfgen.sdfgen_sddf_gpu_serialise_config.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_sddf_pci.restype = c_void_p
-libsdfgen.sdfgen_sddf_pci.argtypes = [c_void_p, c_void_p, c_uint64, c_uint64, c_uint64, c_uint64]
+libsdfgen.sdfgen_sddf_pci.argtypes = [c_void_p, c_void_p, c_uint64, c_uint64, c_uint64, c_uint64, c_uint32, c_uint32]
 libsdfgen.sdfgen_sddf_pci_destroy.restype = None
 libsdfgen.sdfgen_sddf_pci_destroy.argtypes = [c_void_p]
 
@@ -1206,8 +1206,12 @@ class Sddf:
             ecam_size: int,
             mmio_paddr: int,
             mmio_size: int,
+            ioport_paddr: int,
+            ioport_size: int,
         ) -> None:
-            self._obj = libsdfgen.sdfgen_sddf_pci(sdf._obj, driver._obj, ecam_paddr, ecam_size, mmio_paddr, mmio_size)
+            print("ioport_addr: ", ioport_paddr)
+            print("ioport_size: ", ioport_size)
+            self._obj = libsdfgen.sdfgen_sddf_pci(sdf._obj, driver._obj, ecam_paddr, ecam_size, mmio_paddr, mmio_size, ioport_paddr, ioport_size)
 
         def add_client(
             self,
@@ -1229,9 +1233,6 @@ class Sddf:
             }
             if type(client) in CLASS_MAPPING:
                 driver_class = CLASS_MAPPING[type(client)]
-                print("driver class: ", driver_class)
-                print("type of pci: ", type(self))
-                print("type of client: ", type(client))
                 ret = libsdfgen.sdfgen_sddf_pci_add_client(self._obj, driver_class, client._obj, device_id, vendor_id, bus, dev, func)
                 if ret == SddfStatus.OK:
                     return

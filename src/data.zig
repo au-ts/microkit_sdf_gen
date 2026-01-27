@@ -73,7 +73,8 @@ pub const Resources = struct {
 
         pub const IoPort = extern struct {
             id: u8,
-            base_addr: u64,
+            addr: u16,
+            size: u16,
         };
 
         magic: [5]u8 = MAGIC,
@@ -367,7 +368,7 @@ pub const Resources = struct {
         pub const PciBar = extern struct {
             bar_id: u8,
             base_addr: u64,
-            mem_mapped: bool,
+            ioport: bool,
             mem_64b: bool,
         };
 
