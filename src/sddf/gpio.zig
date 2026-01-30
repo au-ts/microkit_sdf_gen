@@ -6,6 +6,7 @@ const log = @import("../log.zig");
 const sddf = @import("sddf.zig");
 
 const fmt = sddf.fmt;
+const assert = std.debug.assert;
 
 const Allocator = std.mem.Allocator;
 
@@ -17,14 +18,16 @@ const Channel = SystemDescription.Channel;
 
 const ConfigResources = data.Resources;
 
+const SystemError = sddf.SystemError;
+
 pub const Gpio = struct {
     allocator: Allocator,
     sdf: *SystemDescription,
     driver: *Pd,
     device: *dtb.Node,
     device_res: ConfigResources.Device,
-    clients: std.ArrayList(Client),
-    client_configs: std.ArrayList(ConfigResources.Gpio.Client),
+    clients: std.array_list.Managed(Client),
+    client_configs: std.array_list.Managed(ConfigResources.Gpio.Client),
     connected: bool = false,
     serialised: bool = false,
 
@@ -54,8 +57,8 @@ pub const Gpio = struct {
             .driver = driver,
             .device = device,
             .device_res = std.mem.zeroInit(ConfigResources.Device, .{}),
-            .clients = std.ArrayList(Client).init(allocator),
-            .client_configs = std.ArrayList(ConfigResources.Gpio.Client).init(allocator),
+            .clients = std.array_list.Managed(Client).init(allocator),
+            .client_configs = std.array_list.Managed(ConfigResources.Gpio.Client).init(allocator),
         };
     }
 
@@ -132,7 +135,7 @@ pub const Gpio = struct {
         // The driver must be passive
         assert(system.driver.passive.?);
 
-        try createDriver(system.sdf, system.driver, system.device, .gpio, &system.device_res);
+        try sddf.createDriver(system.sdf, system.driver, system.device, .gpio, &system.device_res);
 
         // For each client...
         for (system.clients.items, 0..) |client, i| {

@@ -11,7 +11,7 @@ pub const Net = @import("net.zig").Net;
 pub const Lwip = @import("net.zig").Lwip;
 pub const Gpu = @import("gpu.zig").Gpu;
 pub const Serial = @import("serial.zig").Serial;
-pub const Gpio = @import("gpio.zig").I2c;
+pub const Gpio = @import("gpio.zig").Gpio;
 
 const fs = std.fs;
 const assert = std.debug.assert;
