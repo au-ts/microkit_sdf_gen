@@ -123,8 +123,8 @@ pub fn probe(allocator: Allocator, path: []const u8) !void {
         for (@as(Config.Driver.Class, @enumFromInt(device_class.value)).dirs()) |dir| {
             const driver_dir = fmt(allocator, "drivers/{s}", .{dir});
             var device_class_dir = sddf.openDir(driver_dir, .{ .iterate = true }) catch |e| {
-                log.err("failed to open sDDF driver directory '{s}': {}", .{ driver_dir, e });
-                return e;
+                log.info("failed to open sDDF driver directory '{s}': {}", .{ driver_dir, e });
+                continue;
             };
             defer device_class_dir.close();
             var iter = device_class_dir.iterate();
