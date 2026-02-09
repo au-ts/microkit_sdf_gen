@@ -15,6 +15,7 @@ class SddfStatus(IntEnum):
     NET_DUPLICATE_COPIER = 100,
     NET_DUPLICATE_MAC_ADDR = 101,
     NET_INVALID_OPTIONS = 103,
+    GPIO_INVALID_OPTIONS = 203,
 
 
 # TOOD: double check
@@ -173,6 +174,19 @@ libsdfgen.sdfgen_sddf_i2c_connect.restype = c_bool
 libsdfgen.sdfgen_sddf_i2c_connect.argtypes = [c_void_p]
 libsdfgen.sdfgen_sddf_i2c_serialise_config.restype = c_bool
 libsdfgen.sdfgen_sddf_i2c_serialise_config.argtypes = [c_void_p, c_char_p]
+
+libsdfgen.sdfgen_sddf_gpio.restype = c_void_p
+libsdfgen.sdfgen_sddf_gpio.argtypes = [c_void_p, c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_gpio_destroy.restype = None
+libsdfgen.sdfgen_sddf_gpio_destroy.argtypes = [c_void_p]
+
+libsdfgen.sdfgen_sddf_gpio_add_client.restype = c_uint32
+libsdfgen.sdfgen_sddf_gpio_add_client.argtypes = [c_void_p, c_void_p, POINTER(c_uint8), c_uint8]
+
+libsdfgen.sdfgen_sddf_gpio_connect.restype = c_bool
+libsdfgen.sdfgen_sddf_gpio_connect.argtypes = [c_void_p]
+libsdfgen.sdfgen_sddf_gpio_serialise_config.restype = c_bool
+libsdfgen.sdfgen_sddf_gpio_serialise_config.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_sddf_blk.restype = c_void_p
 libsdfgen.sdfgen_sddf_blk.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p]
@@ -1120,6 +1134,61 @@ class Sddf:
         def __del__(self):
             if hasattr(self, "_obj"):
                 libsdfgen.sdfgen_sddf_timer_destroy(self._obj)
+
+    class Gpio:
+        _obj: c_void_p
+
+        def __init__(
+            self,
+            sdf: SystemDescription,
+            device: Optional[DeviceTree.Node],
+            driver: SystemDescription.ProtectionDomain
+        ) -> None:
+            if device is None:
+                device_obj = None
+            else:
+                device_obj = device._obj
+
+            self._obj: c_void_p = libsdfgen.sdfgen_sddf_gpio(sdf._obj, device_obj, driver._obj)
+
+        def add_client(
+            self,
+            client: SystemDescription.ProtectionDomain,
+            *,
+            driver_channel_ids: Optional[list[int]] = None,
+        ):
+            """
+            :param driver_channel_ids: must contain unique driver channel ids that no other client requests.
+            """
+            if driver_channel_ids is None or len(driver_channel_ids) == 0:
+                raise Exception(
+                    f"invalid driver_channel_ids for client '{client.name}', {driver_channel_ids}"
+                )
+
+            array_type = c_uint8 * len(driver_channel_ids)
+            c_driver_ids_array = array_type(*driver_channel_ids)
+
+            ret = libsdfgen.sdfgen_sddf_gpio_add_client(self._obj, client._obj, c_driver_ids_array, len(driver_channel_ids))
+            if ret == SddfStatus.OK:
+                return
+            elif ret == SddfStatus.DUPLICATE_CLIENT:
+                raise Exception(f"duplicate client given '{client}'")
+            elif ret == SddfStatus.INVALID_CLIENT:
+                raise Exception(f"invalid client given '{client}'")
+            elif ret == SddfStatus.GPIO_INVALID_OPTIONS:
+                raise Exception(f"invalid options given '{client}'")
+            else:
+                raise Exception(f"internal error: {ret}")
+
+        def connect(self) -> bool:
+            return libsdfgen.sdfgen_sddf_gpio_connect(self._obj)
+
+        def serialise_config(self, output_dir: str) -> bool:
+            c_output_dir = c_char_p(output_dir.encode("utf-8"))
+            return libsdfgen.sdfgen_sddf_gpio_serialise_config(self._obj, c_output_dir)
+
+        def __del__(self):
+            libsdfgen.sdfgen_sddf_gpio_destroy(self._obj)
 
     class Gpu:
         _obj: c_void_p
