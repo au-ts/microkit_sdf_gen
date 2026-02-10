@@ -25,6 +25,7 @@ pub const Net = struct {
     pub const Error = SystemError || error{
         InvalidClient,
         DuplicateCopier,
+        DuplicateVSwitch,
         DuplicateMacAddr,
         InvalidMacAddr,
         InvalidOptions,
@@ -59,6 +60,7 @@ pub const Net = struct {
     virt_rx: *Pd,
     virt_tx: *Pd,
     copiers: std.array_list.Managed(?*Pd),
+    vswitches: std.array_list.Managed(?*Pd),
     clients: std.array_list.Managed(*Pd),
 
     device_res: ConfigResources.Device,
@@ -66,6 +68,7 @@ pub const Net = struct {
     virt_rx_config: ConfigResources.Net.VirtRx,
     virt_tx_config: ConfigResources.Net.VirtTx,
     copy_configs: std.array_list.Managed(ConfigResources.Net.Copy),
+    vswitch_configs: std.array_list.Managed(ConfigResources.Net.VSwitch),
     client_configs: std.array_list.Managed(ConfigResources.Net.Client),
 
     connected: bool = false,
@@ -134,7 +137,7 @@ pub const Net = struct {
         }
     }
 
-    pub fn addClientWithCopier(system: *Net, client: *Pd, maybe_copier: ?*Pd, options: ClientOptions) Error!void {
+    pub fn addClientWithCopier(system: *Net, client: *Pd, maybe_copier: ?*Pd, maybe_vswitch: ?*Pd, options: ClientOptions) Error!void {
         const client_idx = system.clients.items.len;
 
         // Check that at least rx or tx is set in ClientOptions
@@ -171,12 +174,29 @@ pub const Net = struct {
             }
         }
 
+        if (maybe_vswitch) |new_vswitch| {
+            // TODO: extract util
+            // Check that the vswitch does not already exist
+            // TODO: do we allow to have multiple vswitches? probably yes, although I don't foresee the need for that if one has different allowlists per port
+            for (system.vswitches.items) |mabye_existing_vswitch| {
+                if (mabye_existing_vswitch) |existing_vswitch| {
+                    if (std.mem.eql(u8, existing_vswitch.name, new_vswitch.name)) {
+                        return Error.DuplicateVSwitch;
+                    }
+                }
+            }
+
+        }
+
         system.clients.append(client) catch @panic("Could not add client to Net");
         system.client_info.append(std.mem.zeroInit(ClientInfo, .{})) catch @panic("Could not add client to Net");
         system.client_configs.append(std.mem.zeroInit(ConfigResources.Net.Client, .{})) catch @panic("Could not add client to Net");
         // We still append null copier and config
         system.copiers.append(maybe_copier) catch @panic("Could not add client to Net");
         system.copy_configs.append(std.mem.zeroInit(ConfigResources.Net.Copy, .{})) catch @panic("Could not add client to Net");
+        // Same for vswitch
+        system.vswitches.append(maybe_vswitch) catch @panic("Could not add client to Net");
+        system.vswitch_configs.append(std.mem.zeroInit(ConfigResources.Net.VSwitch, .{})) catch @panic("Could not add client to Net");
 
         if (options.mac_addr) |mac_addr| {
             system.client_info.items[client_idx].mac_addr = parseMacAddr(mac_addr) catch {
@@ -189,7 +209,7 @@ pub const Net = struct {
             // If there is no copier, the number of rx buffers must be equal to the number of dma buffers
             system.client_info.items[client_idx].rx_buffers = system.rx_buffers;
         } else {
-            system.client_info.items[client_idx].rx_buffers = options.rx_buffers;
+            system.client_info.items[client_idx].rx_buffers = options.rx_buffers; // TODO: not sure about vswitch and buffers rn?
         }
         system.client_info.items[client_idx].tx = options.tx;
         system.client_info.items[client_idx].tx_buffers = options.tx_buffers;

@@ -277,6 +277,10 @@ pub const Resources = struct {
             tx_data: Region,
             mac_addr: [6]u8,
         };
+
+        pub const VSwitch = extern struct {
+            // TODO: fill it in - this is the elf data copied around?
+        };
     };
 
     pub const Timer = struct {
