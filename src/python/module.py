@@ -1349,8 +1349,10 @@ class Vmm:
         self,
         device: DeviceTree.Node,
         net: Sddf.Net,
-        copier: SystemDescription.ProtectionDomain,
         *,
+        copier: Optional[SystemDescription.ProtectionDomain],
+        vswitch: Optional[SystemDescription.ProtectionDomain],
+        port_id: Optional[int], # TODO: do we need the way to override the port ID?
         mac_addr: Optional[str] = None
     ):
         if mac_addr is not None and len(mac_addr) != 17:
@@ -1362,7 +1364,17 @@ class Vmm:
         if mac_addr is not None:
             c_mac_addr = c_char_p(mac_addr.encode("utf-8"))
 
-        return libsdfgen.sdfgen_vmm_add_virtio_mmio_net(self._obj, device._obj, net._obj, copier._obj, c_mac_addr)
+        if copier is None:
+            copier_obj = None
+        else
+            copier_obj = copier._obj
+
+        if vswitch is None:
+            vswitch_obj = None
+        else
+            vswitch_obj = vswitch._obj
+
+        return libsdfgen.sdfgen_vmm_add_virtio_mmio_net(self._obj, device._obj, net._obj, copier_obj, vswitch_obj, ffi_uint8_ptr(port_id), c_mac_addr)
 
     def connect(self) -> bool:
         return libsdfgen.sdfgen_vmm_connect(self._obj)
