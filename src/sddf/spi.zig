@@ -10,6 +10,7 @@ const fmt = sddf.fmt;
 const Allocator = std.mem.Allocator;
 
 const SystemDescription = mod_sdf.SystemDescription;
+const Arch = SystemDescription.Arch;
 const Mr = SystemDescription.MemoryRegion;
 const Map = SystemDescription.Map;
 const Pd = SystemDescription.ProtectionDomain;
@@ -26,7 +27,7 @@ pub const Spi = struct {
     device: ?*dtb.Node,
     device_res: ConfigResources.Device,
     virt: *Pd,
-    clients: std.ArrayList(Client),
+    clients: std.array_list.Managed(Client),
     connected: bool = false,
     serialised: bool = false,
     config: Spi.Config,
@@ -45,7 +46,7 @@ pub const Spi = struct {
     const Config = struct {
         driver: ConfigResources.Spi.Driver = undefined,
         virt: ConfigResources.Spi.Virt = undefined,
-        clients: std.ArrayList(ConfigResources.Spi.Client),
+        clients: std.array_list.Managed(ConfigResources.Spi.Client),
     };
 
     // TODO: move this up once config-time queue sizes are generally supported
@@ -63,7 +64,7 @@ pub const Spi = struct {
             .config = .{
                 .driver = std.mem.zeroInit(ConfigResources.Spi.Driver, .{}),
                 .virt = std.mem.zeroInit(ConfigResources.Spi.Virt, .{}),
-                .clients = std.ArrayList(ConfigResources.Spi.Client).init(allocator),
+                .clients = std.array_list.Managed(ConfigResources.Spi.Client).init(allocator),
             },
         };
     }
@@ -278,7 +279,7 @@ pub const Spi = struct {
 
         // 1. Create the device resources for the driver
         if (system.device) |device| {
-            try createDriver(sdf, system.driver, device, .spi, &system.device_res);
+            try sddf.createDriver(sdf, system.driver, device, .spi, &system.device_res);
         }
         // 2. Connect the driver to the virtualiser
         system.connectDriver();
