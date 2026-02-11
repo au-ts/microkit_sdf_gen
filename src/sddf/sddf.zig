@@ -5,6 +5,7 @@ const data = @import("../data.zig");
 const log = @import("../log.zig");
 
 pub const I2c = @import("i2c.zig").I2c;
+pub const Spi = @import("spi.zig").Spi;
 pub const Blk = @import("blk.zig").Blk;
 pub const Timer = @import("timer.zig").Timer;
 pub const Net = @import("net.zig").Net;
@@ -289,6 +290,7 @@ pub const Config = struct {
             timer,
             blk,
             i2c,
+            spi,
             gpu,
 
             pub fn fromStr(str: []const u8) ?Class {
@@ -308,6 +310,7 @@ pub const Config = struct {
                     .timer => &.{"timer"},
                     .blk => &.{ "blk", "blk/mmc", "blk/virtio" },
                     .i2c => &.{"i2c"},
+                    .spi => &.{"spi"},
                     .gpu => &.{"gpu"},
                 };
             }

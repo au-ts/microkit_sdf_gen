@@ -12,6 +12,7 @@ class SddfStatus(IntEnum):
     OK = 0,
     DUPLICATE_CLIENT = 1,
     INVALID_CLIENT = 2,
+    INVALID_QUEUE_CAPACITY = 3,
     NET_DUPLICATE_COPIER = 100,
     NET_DUPLICATE_MAC_ADDR = 101,
     NET_INVALID_OPTIONS = 103,
@@ -173,6 +174,20 @@ libsdfgen.sdfgen_sddf_i2c_connect.restype = c_bool
 libsdfgen.sdfgen_sddf_i2c_connect.argtypes = [c_void_p]
 libsdfgen.sdfgen_sddf_i2c_serialise_config.restype = c_bool
 libsdfgen.sdfgen_sddf_i2c_serialise_config.argtypes = [c_void_p, c_char_p]
+
+libsdfgen.sdfgen_sddf_spi.restype = c_void_p
+libsdfgen.sdfgen_sddf_spi.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_spi_destroy.restype = None
+libsdfgen.sdfgen_sddf_spi_destroy.argtypes = [c_void_p]
+
+libsdfgen.sdfgen_sddf_spi_add_client.restype = c_uint32
+libsdfgen.sdfgen_sddf_spi_add_client.argtypes = [c_void_p, c_void_p, c_uint8, POINTER(c_bool),
+    POINTER(c_bool), POINTER(c_uint64), POINTER(c_uint16), POINTER(c_uint32)]
+
+libsdfgen.sdfgen_sddf_spi_connect.restype = c_bool
+libsdfgen.sdfgen_sddf_spi_connect.argtypes = [c_void_p]
+libsdfgen.sdfgen_sddf_spi_serialise_config.restype = c_bool
+libsdfgen.sdfgen_sddf_spi_serialise_config.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_sddf_blk.restype = c_void_p
 libsdfgen.sdfgen_sddf_blk.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p]
@@ -939,6 +954,66 @@ class Sddf:
         def __del__(self):
             if hasattr(self, "_obj"):
                 libsdfgen.sdfgen_sddf_i2c_destroy(self._obj)
+
+    class Spi:
+        _obj: c_void_p
+
+        def __init__(
+            self,
+            sdf: SystemDescription,
+            device: Optional[DeviceTree.Node],
+            driver: SystemDescription.ProtectionDomain,
+            virt: SystemDescription.ProtectionDomain
+        ) -> None:
+            if device is None:
+                device_obj = None
+            else:
+                device_obj = device._obj
+
+            self._obj = libsdfgen.sdfgen_sddf_spi(
+                sdf._obj, device_obj, driver._obj, virt._obj)
+
+        def add_client(
+            self, 
+            client: SystemDescription.ProtectionDomain,
+            *,
+            cs: int,
+            cpha: Optional[bool] = None,
+            cpol: Optional[bool] = None,
+            freq_div: Optional[int] = None,
+            queue_capacity: Optional[int] = None,
+            data_size: Optional[int] = None
+        ):
+            ret = libsdfgen.sdfgen_sddf_spi_add_client(
+                self._obj, 
+                client._obj,
+                cs,
+                ffi_bool_ptr(cpha),
+                ffi_bool_ptr(cpol),
+                ffi_uint64_ptr(freq_div),
+                ffi_uint16_ptr(queue_capacity),
+                ffi_uint32_ptr(data_size)
+            )
+            if ret == SddfStatus.OK:
+                return
+            elif ret == SddfStatus.DUPLICATE_CLIENT:
+                raise Exception(f"duplicate client given '{client}'")
+            elif ret == SddfStatus.INVALID_CLIENT:
+                raise Exception(f"invalid client given '{client}'")
+            elif ret == SddfStatus.INVALID_QUEUE_CAPACITY:
+                raise Exception(f"invalid queue capacity given '{queue_capacity}'")
+            else:
+                raise Exception(f"internal error: {ret}")
+
+        def connect(self) -> bool:
+            return libsdfgen.sdfgen_sddf_spi_connect(self._obj)
+
+        def serialise_config(self, output_dir: str) -> bool:
+            c_output_dir = c_char_p(output_dir.encode("utf-8"))
+            return libsdfgen.sdfgen_sddf_spi_serialise_config(self._obj, c_output_dir)
+
+        def __del__(self):
+            libsdfgen.sdfgen_sddf_spi_destroy(self._obj)
 
     class Blk:
         _obj: c_void_p
