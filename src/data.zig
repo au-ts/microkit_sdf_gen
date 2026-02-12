@@ -279,7 +279,9 @@ pub const Resources = struct {
         };
 
         pub const VSwitch = extern struct {
+            magic: [5]u8 = MAGIC,
             // TODO: fill it in - this is the elf data copied around?
+            // first of all create it properly in the driver, previous version did not have it
         };
     };
 
