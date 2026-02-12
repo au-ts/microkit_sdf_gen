@@ -25,7 +25,6 @@ pub const Net = struct {
     pub const Error = SystemError || error{
         InvalidClient,
         DuplicateCopier,
-        DuplicateVSwitch,
         DuplicateMacAddr,
         InvalidMacAddr,
         InvalidOptions,
@@ -59,16 +58,16 @@ pub const Net = struct {
     driver: *Pd,
     virt_rx: *Pd,
     virt_tx: *Pd,
+    vswitch: *Pd,
     copiers: std.array_list.Managed(?*Pd),
-    vswitches: std.array_list.Managed(?*Pd),
     clients: std.array_list.Managed(*Pd),
 
     device_res: ConfigResources.Device,
     driver_config: ConfigResources.Net.Driver,
     virt_rx_config: ConfigResources.Net.VirtRx,
     virt_tx_config: ConfigResources.Net.VirtTx,
+    vswitch_config: ConfigResources.Net.VSwitch,
     copy_configs: std.array_list.Managed(ConfigResources.Net.Copy),
-    vswitch_configs: std.array_list.Managed(ConfigResources.Net.VSwitch),
     client_configs: std.array_list.Managed(ConfigResources.Net.Client),
 
     connected: bool = false,
@@ -77,6 +76,7 @@ pub const Net = struct {
     rx_buffers: usize,
     maybe_rx_dma_mr: ?*Mr,
     client_info: std.array_list.Managed(ClientInfo),
+    vswitch_client_ids: std.array_list.Managed(u8),
 
     pub fn init(allocator: Allocator, sdf: *SystemDescription, device: ?*dtb.Node, driver: *Pd, virt_tx: *Pd, virt_rx: *Pd, options: Options) Net {
         if (options.rx_dma_mr) |exists_rx_dma| {
@@ -92,23 +92,27 @@ pub const Net = struct {
         return .{
             .allocator = allocator,
             .sdf = sdf,
-            .clients = std.array_list.Managed(*Pd).init(allocator),
-            .copiers = std.array_list.Managed(?*Pd).init(allocator),
-            .driver = driver,
             .device = device,
-            .device_res = std.mem.zeroInit(ConfigResources.Device, .{}),
+
+            .driver = driver,
             .virt_rx = virt_rx,
             .virt_tx = virt_tx,
+            .vswitch = std.mem.zeroInit(ConfigResources.Net.VSwitch, .{}),
+            .copiers = std.array_list.Managed(?*Pd).init(allocator),
+            .clients = std.array_list.Managed(*Pd).init(allocator),
+            .device_res = std.mem.zeroInit(ConfigResources.Device, .{}),
 
             .driver_config = std.mem.zeroInit(ConfigResources.Net.Driver, .{}),
             .virt_rx_config = std.mem.zeroInit(ConfigResources.Net.VirtRx, .{}),
             .virt_tx_config = std.mem.zeroInit(ConfigResources.Net.VirtTx, .{}),
+            .vswitch_config = std.mem.zeroInit(ConfigResources.Net.VSwitch, .{}),
             .copy_configs = std.array_list.Managed(ConfigResources.Net.Copy).init(allocator),
             .client_configs = std.array_list.Managed(ConfigResources.Net.Client).init(allocator),
 
             .client_info = std.array_list.Managed(ClientInfo).init(allocator),
             .rx_buffers = options.rx_buffers,
             .maybe_rx_dma_mr = options.rx_dma_mr,
+            .vswitch_client_ids = std.array_list.Managed(u8).init(allocator),
         };
     }
 
@@ -175,17 +179,14 @@ pub const Net = struct {
         }
 
         if (maybe_vswitch) |new_vswitch| {
-            // TODO: extract util
-            // Check that the vswitch does not already exist
-            // TODO: do we allow to have multiple vswitches? probably yes, although I don't foresee the need for that if one has different allowlists per port
-            for (system.vswitches.items) |mabye_existing_vswitch| {
-                if (mabye_existing_vswitch) |existing_vswitch| {
-                    if (std.mem.eql(u8, existing_vswitch.name, new_vswitch.name)) {
-                        return Error.DuplicateVSwitch;
-                    }
-                }
+            // Check that the vswitch does not already exist, we don't need multiple per system
+            if (system.vswitch == null)
+                system.vswitch = new_vswitch catch @panic("Could not add client to Net");
+                system.vswitch_config.append(std.mem.zeroInit(ConfigResources.Net.VSwitch, .{})) catch @panic("Could not add client to Net");
+            } else {
+                // TODO:
             }
-
+            system.vswitch_client_ids.append(client_idx);
         }
 
         system.clients.append(client) catch @panic("Could not add client to Net");
@@ -194,9 +195,6 @@ pub const Net = struct {
         // We still append null copier and config
         system.copiers.append(maybe_copier) catch @panic("Could not add client to Net");
         system.copy_configs.append(std.mem.zeroInit(ConfigResources.Net.Copy, .{})) catch @panic("Could not add client to Net");
-        // Same for vswitch
-        system.vswitches.append(maybe_vswitch) catch @panic("Could not add client to Net");
-        system.vswitch_configs.append(std.mem.zeroInit(ConfigResources.Net.VSwitch, .{})) catch @panic("Could not add client to Net");
 
         if (options.mac_addr) |mac_addr| {
             system.client_info.items[client_idx].mac_addr = parseMacAddr(mac_addr) catch {
@@ -350,6 +348,29 @@ pub const Net = struct {
         client_config.tx_data = .createFromMap(data_mr_client_map);
     }
 
+    fn connectVSwitch(system: *Net) void {
+
+        // Connect Virts
+        system.createConnection(system.vswitch, system.virt_rx, &system.vswitch_config.virt_rx, &system.virt_rx_config.driver, system.rx_buffers); // TODO: how many of these buffers?
+        system.createConnection(system.vswitch, system.virt_tx, &system.vswitch_config.virt_tx, &system.virt_tx_config.driver, system.rx_buffers); // TODO: figure it out
+
+        // Iterate through all clients and copy data,
+        // The same for virts
+        for (system.vswitch_client_ids) |client_id| {
+            const client = system.clients.items[client_id];
+            const client_info = &system.client_info.items[client_id];
+            var client_config = &system.client_configs.items[client_id];
+            const num_clients = system.vswitch_config.num_clients;
+
+            system.vswitch_config.clients_rx.items[num_clients] =
+            system.vswitch_config.mac_addrs.items[num_clients*6] = client_info.items[client_id].mac_addr.?;
+            // TODO: what about data regions?
+            system.createConnection(system.vswitch, client, &system.vswitch_config.clients_rx.items[num_clients], &client_config.rx, client_info.rx_buffers);
+            system.createConnection(system.vswitch, client, &system.vswitch_config.clients_tx.items[num_clients], &client_config.tx, client_info.tx_buffers);
+            system.vswitch_config.num_clients += 1;
+        }
+    }
+
     /// Generate a LAA (locally administered adresss) for each client
     /// that does not already have one.
     pub fn generateMacAddrs(system: *Net) void {
@@ -405,6 +426,11 @@ pub const Net = struct {
             system.client_configs.items[i].mac_addr = system.client_info.items[i].mac_addr.?;
         }
 
+        // TODO: setup it before or after the loop?
+        if (system.vswitch) {
+            system.connectVSwitch();
+        }
+
         system.connected = true;
     }
 
@@ -418,6 +444,7 @@ pub const Net = struct {
         try data.serialize(allocator, system.driver_config, prefix, "net_driver");
         try data.serialize(allocator, system.virt_rx_config, prefix, "net_virt_rx");
         try data.serialize(allocator, system.virt_tx_config, prefix, "net_virt_tx");
+        try data.serialize(allocator, system.vswitch, prefix, "net_vswitch");
 
         for (system.copiers.items, 0..) |maybe_copier, i| {
             if (maybe_copier) |copier| {
