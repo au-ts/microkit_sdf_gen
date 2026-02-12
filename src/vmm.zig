@@ -15,6 +15,7 @@ const Arch = SystemDescription.Arch;
 const Mr = SystemDescription.MemoryRegion;
 const Pd = SystemDescription.ProtectionDomain;
 const Irq = SystemDescription.Irq;
+const Channel = SystemDescription.Channel;
 const Map = SystemDescription.Map;
 const Vm = SystemDescription.VirtualMachine;
 
@@ -52,21 +53,161 @@ pub const LinuxUioRegion = extern struct {
 const MAX_IRQS: usize = 32;
 const MAX_VCPUS: usize = 32;
 const MAX_LINUX_UIO_REGIONS: usize = 16;
-const MAX_VIRTIO_MMIO_DEVICES: usize = 32;
+const MAX_VIRTIO_MMIO_DEVICES_PER_TYPE: usize = 4;
+
+pub const VmmVirtioSocketConnection = struct {
+    allocator: Allocator,
+    sdf: *SystemDescription,
+    device: *dtb.Node,
+    vmm_a: *Self,
+    cid_a: u32,
+    vmm_b: *Self,
+    cid_b: u32,
+    connected: bool,
+    rx_buf_size: u32 = 0x1000,
+
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, device: *dtb.Node, vmm_a: *Self, cid_a: u32, vmm_b: *Self, cid_b: u32) VmmVirtioSocketConnection {
+        return .{
+            .allocator = allocator,
+            .sdf = sdf,
+            .device = device,
+            .vmm_a = vmm_a,
+            .cid_a = cid_a,
+            .vmm_b = vmm_b,
+            .cid_b = cid_b,
+            .connected = false,
+        };
+    }
+
+    fn is_cid_valid(cid: u32) bool {
+        switch (cid) {
+            0, 1, 2, 0xffffffff => {
+                return false;
+            },
+            else => {
+                return true;
+            },  
+        }
+    }
+
+    fn does_cid_exists(vmm: *Self, cid: u32) bool {
+        var i: usize = 0;
+        while (i < vmm.data.num_virtio_mmio_socket_devices) {
+            if (vmm.data.virtio_mmio_socket_devices[i].cid == cid) {
+                return true;
+            }
+            i += 1;
+        }
+        return false;
+    }
+
+    pub fn connect(vsock_connection: *VmmVirtioSocketConnection) !void {
+        const allocator = vsock_connection.allocator;
+        const sdf = vsock_connection.sdf;
+        const vsock_mmio_device = vsock_connection.device;
+        const vmm_a: *Self = vsock_connection.vmm_a;
+        const cid_a: u32 = vsock_connection.cid_a;
+        const vmm_b: *Self = vsock_connection.vmm_b;
+        const cid_b: u32 = vsock_connection.cid_b;
+
+        if (!is_cid_valid(cid_a)) {
+            log.err("error connecting virtIO socket connection between VMM '{s}' and '{s}': invalid CID '{d}'", .{vmm_a.vmm.name, vmm_b.vmm.name, cid_a});
+            return error.InvalidCid;
+        }
+        if (!is_cid_valid(cid_b)) {
+            log.err("error connecting virtIO socket connection between VMM '{s}' and '{s}': invalid CID '{d}'", .{vmm_a.vmm.name, vmm_b.vmm.name, cid_b});
+            return error.InvalidCid;
+        }
+
+        if (does_cid_exists(vmm_a, cid_a)) {
+            log.err("error connecting virtIO socket connection between VMM '{s}' and '{s}': CID '{d}' already exists on VMM '{s}'", .{vmm_a.vmm.name, vmm_b.vmm.name, cid_a, vmm_a.vmm.name});
+            return error.DuplicateCid;
+        }
+        if (does_cid_exists(vmm_a, cid_b)) {
+            log.err("error connecting virtIO socket connection between VMM '{s}' and '{s}': CID '{d}' already exists on VMM '{s}'", .{vmm_a.vmm.name, vmm_b.vmm.name, cid_b, vmm_a.vmm.name});
+            return error.DuplicateCid;
+        }
+        if (does_cid_exists(vmm_b, cid_b)) {
+            log.err("error connecting virtIO socket connection between VMM '{s}' and '{s}': CID '{d}' already exists on VMM '{s}'", .{vmm_a.vmm.name, vmm_b.vmm.name, cid_b, vmm_b.vmm.name});
+            return error.DuplicateCid;
+        }
+        if (does_cid_exists(vmm_b, cid_a)) {
+            log.err("error connecting virtIO socket connection between VMM '{s}' and '{s}': CID '{d}' already exists on VMM '{s}'", .{vmm_a.vmm.name, vmm_b.vmm.name, cid_a, vmm_b.vmm.name});
+            return error.DuplicateCid;
+        }
+
+        const ch_vsock = try Channel.create(vmm_a.vmm, vmm_b.vmm, .{});
+        vsock_connection.sdf.addChannel(ch_vsock);
+
+        const mr_a_rx_buf = Mr.create(allocator, fmt(allocator, "vsock_{s}_rx_{s}_tx", .{vmm_a.vmm.name, vmm_b.vmm.name}), vsock_connection.rx_buf_size, .{});
+        const mr_b_rx_buf = Mr.create(allocator, fmt(allocator, "vsock_{s}_tx_{s}_rx", .{vmm_a.vmm.name, vmm_b.vmm.name}), vsock_connection.rx_buf_size, .{});
+        sdf.addMemoryRegion(mr_a_rx_buf);
+        sdf.addMemoryRegion(mr_b_rx_buf);
+
+        const map_a_rx_buf = Map.create(mr_a_rx_buf, vmm_a.vmm.getMapVaddr(&mr_a_rx_buf), .rw, .{});
+        vmm_a.vmm.addMap(map_a_rx_buf);
+        const map_a_tx_buf = Map.create(mr_b_rx_buf, vmm_a.vmm.getMapVaddr(&mr_b_rx_buf), .rw, .{});
+        vmm_a.vmm.addMap(map_a_tx_buf);
+
+        const map_b_rx_buf = Map.create(mr_b_rx_buf, vmm_b.vmm.getMapVaddr(&mr_b_rx_buf), .rw, .{});
+        vmm_b.vmm.addMap(map_b_rx_buf);
+        const map_b_tx_buf = Map.create(mr_a_rx_buf, vmm_b.vmm.getMapVaddr(&mr_a_rx_buf), .rw, .{});
+        vmm_b.vmm.addMap(map_b_tx_buf);
+
+        vmm_a.data.virtio_mmio_socket_devices[vmm_a.data.num_virtio_mmio_socket_devices] = .{
+            .regs = try vmm_a.parseVirtioMmioDeviceRegs(vsock_mmio_device),
+            .cid = cid_a,
+            .shared_buffer_size = vsock_connection.rx_buf_size,
+            .buffer_our = map_a_rx_buf.vaddr,
+            .buffer_peer = map_a_tx_buf.vaddr,
+            .peer_channel = ch_vsock.pd_a_id,
+        };
+        vmm_a.data.num_virtio_mmio_socket_devices += 1;
+
+        vmm_b.data.virtio_mmio_socket_devices[vmm_b.data.num_virtio_mmio_socket_devices] = .{
+            .regs = try vmm_b.parseVirtioMmioDeviceRegs(vsock_mmio_device),
+            .cid = cid_b,
+            .shared_buffer_size = vsock_connection.rx_buf_size,
+            .buffer_our = map_b_rx_buf.vaddr,
+            .buffer_peer = map_b_tx_buf.vaddr,
+            .peer_channel = ch_vsock.pd_b_id,
+        };
+        vmm_b.data.num_virtio_mmio_socket_devices += 1;
+        
+        vsock_connection.connected = true;
+    }
+};
 
 const Data = extern struct {
-    const VirtioMmioDevice = extern struct {
-        pub const Type = enum(u8) {
-            net = 1,
-            blk = 2,
-            console = 3,
-            sound = 25,
-        };
-
-        type: u8,
+    const VirtioMmioDeviceRegs = extern struct {
         addr: u64,
         size: u32,
         irq: u32,
+    };
+
+    const VirtioMmioConsoleDevice = extern struct {
+        regs: VirtioMmioDeviceRegs,
+    };
+
+    const VirtioMmioBlockDevice = extern struct {
+        regs: VirtioMmioDeviceRegs,
+    };
+
+    const VirtioMmioNetDevice = extern struct {
+        regs: VirtioMmioDeviceRegs,
+    };
+
+    const VirtioMmioSocketDevice = extern struct {
+        regs: VirtioMmioDeviceRegs,
+        cid: u32,
+        shared_buffer_size: u32,
+        buffer_our: u64,
+        buffer_peer: u64,
+        peer_channel: u32,
+    };
+
+    const VirtioMmioSoundDevice = extern struct {
+        regs: VirtioMmioDeviceRegs,
     };
 
     const Irq = extern struct {
@@ -87,8 +228,22 @@ const Data = extern struct {
     irqs: [MAX_IRQS]Data.Irq,
     num_vcpus: u8,
     vcpus: [MAX_VCPUS]Vcpu,
-    num_virtio_mmio_devices: u8,
-    virtio_mmio_devices: [MAX_VIRTIO_MMIO_DEVICES]VirtioMmioDevice,
+
+    num_virtio_mmio_console_devices: u8,
+    virtio_mmio_console_devices: [MAX_VIRTIO_MMIO_DEVICES_PER_TYPE]VirtioMmioConsoleDevice,
+
+    num_virtio_mmio_block_devices: u8,
+    virtio_mmio_block_devices: [MAX_VIRTIO_MMIO_DEVICES_PER_TYPE]VirtioMmioBlockDevice,
+
+    num_virtio_mmio_net_devices: u8,
+    virtio_mmio_net_devices: [MAX_VIRTIO_MMIO_DEVICES_PER_TYPE]VirtioMmioNetDevice,
+
+    num_virtio_mmio_socket_devices: u8,
+    virtio_mmio_socket_devices: [MAX_VIRTIO_MMIO_DEVICES_PER_TYPE]VirtioMmioSocketDevice,
+
+    num_virtio_mmio_sound_devices: u8,
+    virtio_mmio_sound_devices: [MAX_VIRTIO_MMIO_DEVICES_PER_TYPE]VirtioMmioSoundDevice,
+
     num_linux_uio_regions: u8,
     linux_uios: [MAX_LINUX_UIO_REGIONS]LinuxUioRegion,
 };
@@ -231,7 +386,7 @@ pub fn addPassthroughDevice(system: *Self, device: *dtb.Node, options: Passthrou
     }
 }
 
-fn addVirtioMmioDevice(system: *Self, device: *dtb.Node, t: Data.VirtioMmioDevice.Type) !void {
+fn parseVirtioMmioDeviceRegs(system: *Self, device: *dtb.Node) !Data.VirtioMmioDeviceRegs {
     const device_reg = device.prop(.Reg) orelse {
         log.err("error adding virtIO device '{s}': missing 'reg' field on device node", .{device.name});
         return error.InvalidVirtioDevice;
@@ -255,28 +410,35 @@ fn addVirtioMmioDevice(system: *Self, device: *dtb.Node, t: Data.VirtioMmioDevic
 
     const irq = try dtb.parseIrq(system.sdf.arch, interrupts[0]);
     // TODO: maybe use device resources like everything else? idk
-    system.data.virtio_mmio_devices[system.data.num_virtio_mmio_devices] = .{
-        .type = @intFromEnum(t),
+    return .{
         .addr = device_paddr,
         .size = @intCast(device_size),
         .irq = irq.number().?,
     };
-    system.data.num_virtio_mmio_devices += 1;
 }
 
 pub fn addVirtioMmioConsole(system: *Self, device: *dtb.Node, serial: *sddf.Serial) !void {
     try serial.addClient(system.vmm);
-    try system.addVirtioMmioDevice(device, .console);
+    system.data.virtio_mmio_console_devices[system.data.num_virtio_mmio_console_devices] = .{
+        .regs = try system.parseVirtioMmioDeviceRegs(device),
+    };
+    system.data.num_virtio_mmio_console_devices += 1;
 }
 
 pub fn addVirtioMmioBlk(system: *Self, device: *dtb.Node, blk: *sddf.Blk, options: sddf.Blk.ClientOptions) !void {
     try blk.addClient(system.vmm, options);
-    try system.addVirtioMmioDevice(device, .blk);
+    system.data.virtio_mmio_block_devices[system.data.num_virtio_mmio_block_devices] = .{
+        .regs = try system.parseVirtioMmioDeviceRegs(device),
+    };
+    system.data.num_virtio_mmio_block_devices += 1;
 }
 
 pub fn addVirtioMmioNet(system: *Self, device: *dtb.Node, net: *sddf.Net, copier: *Pd, options: sddf.Net.ClientOptions) !void {
     try net.addClientWithCopier(system.vmm, copier, options);
-    try system.addVirtioMmioDevice(device, .net);
+    system.data.virtio_mmio_net_devices[system.data.num_virtio_mmio_net_devices] = .{
+        .regs = try system.parseVirtioMmioDeviceRegs(device),
+    };
+    system.data.num_virtio_mmio_net_devices += 1;
 }
 
 pub fn addPassthroughIrq(system: *Self, irq: Irq) !void {
@@ -383,7 +545,7 @@ pub fn connect(system: *Self) !void {
     if (sdf.arch.isArm()) {
         const gic = dtb.ArmGic.fromDtb(sdf.arch, system.guest_dtb) orelse {
             log.err("error connecting VMM '{s}' system: could not find GIC interrupt controller DTB node", .{vmm.name});
-            return error.MissinGicNode;
+            return error.MissingGicNode;
         };
         if (gic.hasMmioCpuInterface()) {
             const gic_vcpu_mr_name = fmt(allocator, "{s}/vcpu", .{gic.node.name});
