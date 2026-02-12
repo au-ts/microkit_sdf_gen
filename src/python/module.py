@@ -285,7 +285,7 @@ libsdfgen.sdfgen_vmm_add_virtio_mmio_console.argtypes = [c_void_p, c_void_p, c_v
 libsdfgen.sdfgen_vmm_add_virtio_mmio_blk.restype = c_bool
 libsdfgen.sdfgen_vmm_add_virtio_mmio_blk.argtypes = [c_void_p, c_void_p, c_void_p, c_uint32]
 libsdfgen.sdfgen_vmm_add_virtio_mmio_net.restype = c_bool
-libsdfgen.sdfgen_vmm_add_virtio_mmio_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_char_p]
+libsdfgen.sdfgen_vmm_add_virtio_mmio_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_char_p]
 libsdfgen.sdfgen_vmm_connect.restype = c_bool
 libsdfgen.sdfgen_vmm_connect.argtypes = [c_void_p]
 libsdfgen.sdfgen_vmm_serialise_config.restype = c_bool
@@ -1352,7 +1352,6 @@ class Vmm:
         *,
         copier: Optional[SystemDescription.ProtectionDomain],
         vswitch: Optional[SystemDescription.ProtectionDomain],
-        port_id: Optional[int], # TODO: do we need the way to override the port ID?
         mac_addr: Optional[str] = None
     ):
         if mac_addr is not None and len(mac_addr) != 17:
@@ -1374,7 +1373,7 @@ class Vmm:
         else
             vswitch_obj = vswitch._obj
 
-        return libsdfgen.sdfgen_vmm_add_virtio_mmio_net(self._obj, device._obj, net._obj, copier_obj, vswitch_obj, ffi_uint8_ptr(port_id), c_mac_addr)
+        return libsdfgen.sdfgen_vmm_add_virtio_mmio_net(self._obj, device._obj, net._obj, copier_obj, vswitch_obj, c_mac_addr)
 
     def connect(self) -> bool:
         return libsdfgen.sdfgen_vmm_connect(self._obj)
