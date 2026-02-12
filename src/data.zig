@@ -280,8 +280,14 @@ pub const Resources = struct {
 
         pub const VSwitch = extern struct {
             magic: [5]u8 = MAGIC,
-            // TODO: fill it in - this is the elf data copied around?
-            // first of all create it properly in the driver, previous version did not have it
+            clients_rx: [MAX_NUM_CLIENTS]Connection,
+            clients_tx: [MAX_NUM_CLIENTS]Connection,
+            clients_data_rx: [MAX_NUM_CLIENTS]Region,
+            clients_data_tx: [MAX_NUM_CLIENTS]Region,
+            mac_addrs: [6*MAX_NUM_CLIENTS]u8,
+            num_clients: u8,
+            virt_rx: Connection,
+            virt_tx: Connection,
         };
     };
 
