@@ -425,7 +425,8 @@ pub const SystemDescription = struct {
         arm_smc: ?bool,
         /// If this PD is a child of another PD, this ID identifies it to its parent PD
         child_id: ?u8,
-        child_pts: ?bool,
+        /// Child page tables variable
+        child_pts: ?[]const u8,
         /// CPU core
         cpu: ?u8,
 
@@ -446,7 +447,7 @@ pub const SystemDescription = struct {
             period: ?u32 = null,
             stack_size: ?u32 = null,
             arm_smc: ?bool = null,
-            child_pts: ?bool = null,
+            child_pts: ?[]const u8 = null,
             cpu: ?u8 = null,
         };
 
@@ -481,6 +482,9 @@ pub const SystemDescription = struct {
             pd.allocator.free(pd.name);
             if (pd.program_image) |program_image| {
                 pd.allocator.free(program_image);
+            }
+            if (pd.child_pts) |child_pts| {
+                pd.allocator.free(child_pts);
             }
             pd.maps.deinit();
             pd.child_pds.deinit();
@@ -575,6 +579,15 @@ pub const SystemDescription = struct {
             return child.child_id.?;
         }
 
+        pub fn setChildPts(pd: *ProtectionDomain, name: []const u8) void {
+            if (pd.child_pts != null) {
+                log.err("child_pts already set on '{s}'", .{pd.name});
+                return;
+            }
+
+            pd.child_pts = pd.allocator.dupe(u8, name) catch @panic("could not dupe");
+        }
+
         // TODO: get rid of this extra arg?
         pub fn getMapVaddr(pd: *ProtectionDomain, mr: *const MemoryRegion) u64 {
             // TODO: should make sure we don't have a way of giving an invalid vaddr back (e.g on 32-bit systems this is more of a concern)
@@ -652,7 +665,7 @@ pub const SystemDescription = struct {
                     log.err("attempted to enable child_pts mapping in a node with no children\n", .{});
                     return error.InvalidChildPts;
                 }
-                try std.fmt.format(writer, " child_pts=\"{}\"", .{child_pts});
+                try std.fmt.format(writer, " child_pts=\"{s}\"", .{child_pts});
             }
 
             if (pd.cpu) |cpu| {

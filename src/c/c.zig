@@ -217,9 +217,9 @@ export fn sdfgen_pd_set_cpu(c_pd: *align(8) anyopaque, cpu: u8) void {
     pd.cpu = cpu;
 }
 
-export fn sdfgen_pd_set_child_pts(c_pd: *align(8) anyopaque, child_pts: bool) void {
+export fn sdfgen_pd_set_child_pts(c_pd: *align(8) anyopaque, child_pts: [*c]u8) void {
     const pd: *Pd = @ptrCast(c_pd);
-    pd.child_pts = child_pts;
+    pd.setChildPts(std.mem.span(child_pts));
 }
 
 export fn sdfgen_pd_set_passive(c_pd: *align(8) anyopaque, passive: bool) void {

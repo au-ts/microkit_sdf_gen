@@ -58,7 +58,7 @@ libsdfgen.sdfgen_pd_set_stack_size.argtypes = [c_void_p, c_uint32]
 libsdfgen.sdfgen_pd_set_cpu.restype = None
 libsdfgen.sdfgen_pd_set_cpu.argtypes = [c_void_p, c_uint8]
 libsdfgen.sdfgen_pd_set_child_pts.restype = None
-libsdfgen.sdfgen_pd_set_child_pts.argtypes = [c_void_p, c_bool]
+libsdfgen.sdfgen_pd_set_child_pts.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_render.restype = c_char_p
 libsdfgen.sdfgen_render.argtypes = [c_void_p]
@@ -481,7 +481,7 @@ class SystemDescription:
             period: Optional[int] = None,
             passive: Optional[bool] = None,
             stack_size: Optional[int] = None,
-            child_pts: Optional[bool] = None,
+            child_pts: Optional[str] = None,
             cpu: Optional[int] = None,
         ) -> None:
             self._name = name
@@ -502,7 +502,8 @@ class SystemDescription:
             if cpu is not None:
                 libsdfgen.sdfgen_pd_set_cpu(self._obj, cpu)
             if child_pts is not None:
-                libsdfgen.sdfgen_pd_set_child_pts(self._obj, child_pts)
+                c_child_pts = c_char_p(child_pts.encode("utf-8"))
+                libsdfgen.sdfgen_pd_set_child_pts(self._obj, c_child_pts)
 
         @property
         def name(self) -> str:
