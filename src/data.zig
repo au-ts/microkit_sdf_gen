@@ -222,6 +222,7 @@ pub const Resources = struct {
     pub const Net = struct {
         const MAGIC: [5]u8 = MAGIC_START ++ .{0x5};
 
+        const TEMP_MAC_ADDR: u8 = 3; // TODO: this is so we can have vswitch act as a port to another vswitch
         pub const Connection = extern struct {
             free_queue: Region,
             active_queue: Region,
@@ -238,7 +239,8 @@ pub const Resources = struct {
         pub const VirtRx = extern struct {
             pub const VirtRxClient = extern struct {
                 conn: Connection,
-                mac_addr: [6]u8,
+                mac_addrs: [6*MAX_NUM_CLIENTS*TEMP_MAC_ADDR]u8, // TODO: this is just linear
+                num_macs: u8,
             };
 
             magic: [5]u8 = MAGIC,
@@ -252,7 +254,8 @@ pub const Resources = struct {
         pub const VirtTx = extern struct {
             pub const VirtTxClient = extern struct {
                 conn: Connection,
-                data: Device.Region,
+                data: [MAX_NUM_CLIENTS]Device.Region,
+                num_data: u8,
             };
 
             magic: [5]u8 = MAGIC,
@@ -279,15 +282,19 @@ pub const Resources = struct {
         };
 
         pub const VSwitch = extern struct {
+            pub const VSwitchPort = extern struct {
+                rx: Connection,
+                rx_data: Region, // TODO: might not need that
+                tx: Connection,
+                tx_data: Region
+                mac_addrs: [6*TEMP_MAC_ADDR],
+                id: u8,
+                connected: bool,
+            };
             magic: [5]u8 = MAGIC,
-            clients_rx: [MAX_NUM_CLIENTS]Connection,
-            clients_tx: [MAX_NUM_CLIENTS]Connection,
-            clients_data_rx: [MAX_NUM_CLIENTS]Region,
-            clients_data_tx: [MAX_NUM_CLIENTS]Region,
-            mac_addrs: [6*MAX_NUM_CLIENTS]u8,
-            num_clients: u8,
-            virt_rx: Connection,
-            virt_tx: Connection,
+            ports: [MAX_NUM_CLIENTS]VSwitchPort,
+            num_ports: u8,
+            buffer_metadata: Region,
         };
     };
 
