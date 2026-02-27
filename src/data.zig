@@ -18,6 +18,8 @@ comptime {
 const MAGIC_START: [4]u8 = .{ 's', 'D', 'D', 'F' };
 const LIONS_MAGIC_START: [7]u8 = .{ 'L', 'i', 'o', 'n', 's', 'O', 'S' };
 
+const TEMP_MAC_ADDR: u8 = 3; // TODO: this is so we can have vswitch act as a port to another vswitch
+
 /// Only emit JSON versions of the serialised configuration data
 /// in debug mode.
 pub const emit_json = builtin.mode == .Debug;
@@ -222,7 +224,6 @@ pub const Resources = struct {
     pub const Net = struct {
         const MAGIC: [5]u8 = MAGIC_START ++ .{0x5};
 
-        const TEMP_MAC_ADDR: u8 = 3; // TODO: this is so we can have vswitch act as a port to another vswitch
         pub const Connection = extern struct {
             free_queue: Region,
             active_queue: Region,
@@ -286,8 +287,8 @@ pub const Resources = struct {
                 rx: Connection,
                 rx_data: Region, // TODO: might not need that
                 tx: Connection,
-                tx_data: Region
-                mac_addrs: [6*TEMP_MAC_ADDR],
+                tx_data: Region,
+                mac_addrs: [6*TEMP_MAC_ADDR]u8,
                 id: u8,
                 connected: bool,
             };
