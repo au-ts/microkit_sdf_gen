@@ -204,7 +204,7 @@ pub const FileSystem = struct {
         pub fn connect(nfs: *Nfs) !void {
             const fs_pd = nfs.fs.fs;
             // NFS depends on being connected via the network, serial, and timer sub-sytems.
-            try nfs.net.addClientWithCopier(fs_pd, nfs.net_copier, .{
+            try nfs.net.addClientWithCopier(fs_pd, nfs.net_copier, null, .{
                 .mac_addr = nfs.mac_addr,
             });
             try nfs.serial.addClient(fs_pd);

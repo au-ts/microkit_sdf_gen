@@ -274,8 +274,8 @@ pub fn addVirtioMmioBlk(system: *Self, device: *dtb.Node, blk: *sddf.Blk, option
     try system.addVirtioMmioDevice(device, .blk);
 }
 
-pub fn addVirtioMmioNet(system: *Self, device: *dtb.Node, net: *sddf.Net, copier: *Pd, options: sddf.Net.ClientOptions) !void {
-    try net.addClientWithCopier(system.vmm, copier, options);
+pub fn addVirtioMmioNet(system: *Self, device: *dtb.Node, net: *sddf.Net, copier: *Pd, vswitch: *Pd, options: sddf.Net.ClientOptions) !void {
+    try net.addClientWithCopier(system.vmm, copier, vswitch, options);
     try system.addVirtioMmioDevice(device, .net);
 }
 
