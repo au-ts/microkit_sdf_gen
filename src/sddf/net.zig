@@ -22,6 +22,10 @@ const SystemError = sddf.SystemError;
 pub const Net = struct {
     const BUFFER_SIZE = 2048;
 
+    // TODO: later share them with data.zig
+    const TEMP_MAC_ADDR: u8 = 3; // TODO: this is so we can have vswitch act as a port to another vswitch
+    const MAX_NUM_CLIENTS: usize = 64;
+
     pub const Error = SystemError || error{
         InvalidClient,
         DuplicateCopier,
@@ -58,7 +62,7 @@ pub const Net = struct {
     driver: *Pd,
     virt_rx: *Pd,
     virt_tx: *Pd,
-    vswitch: *Pd, // TODO: theoritically we could have 2, think on extending them and distinguishing between them`
+    vswitch: ?*Pd, // TODO: theoritically we could have 2, think on extending them and distinguishing between them`
     copiers: std.array_list.Managed(?*Pd),
     clients: std.array_list.Managed(*Pd),
 
@@ -97,7 +101,7 @@ pub const Net = struct {
             .driver = driver,
             .virt_rx = virt_rx,
             .virt_tx = virt_tx,
-            .vswitch = std.mem.zeroInit(ConfigResources.Net.VSwitch, .{}),
+            .vswitch = null,
             .copiers = std.array_list.Managed(?*Pd).init(allocator),
             .clients = std.array_list.Managed(*Pd).init(allocator),
             .device_res = std.mem.zeroInit(ConfigResources.Device, .{}),
@@ -181,13 +185,13 @@ pub const Net = struct {
 
         if (maybe_vswitch) |new_vswitch| {
             // Check that the vswitch does not already exist, we don't need multiple per system
-            if (system.vswitch == null)
-                system.vswitch = new_vswitch catch @panic("Could not add client to Net");
-                system.vswitch_config.append(std.mem.zeroInit(ConfigResources.Net.VSwitch, .{})) catch @panic("Could not add client to Net");
+            if (system.vswitch == null) {
+                system.vswitch = new_vswitch;
+                system.vswitch_config = std.mem.zeroInit(ConfigResources.Net.VSwitch, .{});
             } else {
                 // TODO:
             }
-            system.vswitch_client_ids.append(client_idx); // TODO: should I remove the client from the other list then?
+            system.vswitch_client_ids.append(@intCast(client_idx)) catch @panic("Could not add vswitch client id");// TODO: should I remove the client from the other list then?
         }
 
         system.clients.append(client) catch @panic("Could not add client to Net");
@@ -350,14 +354,16 @@ pub const Net = struct {
     }
 
     // This also connects the copier
-    pub fn clientRxVSwitchConnect(system: *Net, rx_dma_mr: *Mr, client_id: usize) void {
+    pub fn clientRxVSwitchConnect(system: *Net, rx_dma_mr: Mr, client_id: usize) void {
         const client_info = system.client_info.items[client_id];
         const client = system.clients.items[client_id];
-        var client_config = &system.client_configs.items[client_idx];
-        var vswitch_config = &system.vswitch_config;
-        var copier_config = &system.copy_configs.items[client_idx];
+        const copier = system.copiers.items[client_id].?;
+        const vswitch = system.vswitch.?;
+        var client_config = &system.client_configs.items[client_id];
+        const vswitch_config = &system.vswitch_config;
+        var copier_config = &system.copy_configs.items[client_id];
 
-        system.createConnection(vswitch, copier, vswitch_config.ports.items[client_id].rx, copier_config.virt_rx, system.rx_buffers);
+        system.createConnection(vswitch, copier, &vswitch_config.ports[client_id].rx, &copier_config.virt_rx, system.rx_buffers);
         system.createConnection(copier, client, &copier_config.client, &client_config.rx, client_info.rx_buffers);
 
         const rx_dma_copier_map = Map.create(rx_dma_mr, copier.getMapVaddr(&rx_dma_mr), .rw, .{});
@@ -381,11 +387,11 @@ pub const Net = struct {
     pub fn clientTxVSwitchConnect(system: *Net, client_id: usize) void {
         const client_info = &system.client_info.items[client_id];
         const client = system.clients.items[client_id];
-        const vswitch = system.vswitch;
+        const vswitch = system.vswitch.?;
         var client_config = &system.client_configs.items[client_id];
         var vswitch_config = &system.vswitch_config;
 
-        system.createConnection(vswitch, client, &vswitch_config.ports.items[client_id].tx, &client_config.tx, client_info.tx_buffers);
+        system.createConnection(vswitch, client, &vswitch_config.ports[client_id].tx, &client_config.tx, client_info.tx_buffers);
 
         const data_mr_size = system.sdf.arch.roundUpToPage(client_info.tx_buffers * BUFFER_SIZE);
         const data_mr_name = fmt(system.allocator, "{s}/net/tx/data/client/{s}", .{ system.deviceName(), client.name });
@@ -394,8 +400,8 @@ pub const Net = struct {
 
         const data_mr_virt_map = Map.create(data_mr, system.virt_tx.getMapVaddr(&data_mr), .r, .{});
         system.virt_tx.addMap(data_mr_virt_map);
-        vswitch_config.ports.items[client_id].tx_data = .createFromMap(data_mr_virt_map); // TODO: not sure if I have to save it for vswitch as well?
-        vswitch_config.ports.items[client_id].id = client_id; // TODO: we use the id just for one thing... - mapping the Tx data for txvirt
+        vswitch_config.ports[client_id].tx_data = .createFromMap(data_mr_virt_map); // TODO: not sure if I have to save it for vswitch as well?
+        vswitch_config.ports[client_id].id = @intCast(client_id); // TODO: we use the id just for one thing... - mapping the Tx data for txvirt
 
         const data_mr_client_map = Map.create(data_mr, client.getMapVaddr(&data_mr), .rw, .{});
         client.addMap(data_mr_client_map);
@@ -403,7 +409,7 @@ pub const Net = struct {
     }
 
     pub fn vswitchRxConnect(system: *Net) void {
-        const vswitch = system.vswitch;
+        const vswitch = system.vswitch.?;
         var virt_client_config = &system.virt_rx_config.clients[system.virt_rx_config.num_clients]; // TODO: this should work just fine? It will be the last index there
                                                                                                     // (vswitch)
         // TODO: port 0 is assumed to always be the virts - I think it's not reserved yet
@@ -419,16 +425,16 @@ pub const Net = struct {
     }
 
     pub fn vswitchTxConnect(system: *Net) void {
-        const vswitch = system.vswitch;
+        const vswitch = system.vswitch.?;
         var virt_client_config = &system.virt_tx_config.clients[system.virt_rx_config.num_clients];
         // TODO: port 0 is assumed to always be the virts
         system.createConnection(system.virt_tx, vswitch, &virt_client_config.conn, &vswitch.ports[0].virt_tx, system.tx_buffers); // TODO: clarify buffers
 
         // for every client, we map in their TxData region
-        for (system.vswitch_config.ports.items, 1..) |port, _| {
+        for (system.vswitch_config.ports[1..]) |port| {
             if (!port.connected) continue;
             var data_mr = &port.tx_data;
-            var client_id = port.id;
+            const client_id = port.id;
             const data_mr_virt_map = Map.create(data_mr, system.virt_tx.getMapVaddr(&data_mr), .r, .{});
             system.virt_tx.addMap(data_mr_virt_map);
             virt_client_config.data.items[client_id] = .createFromMap(data_mr_virt_map); // TODO: the virt tx packs them up to num_clients
@@ -479,29 +485,30 @@ pub const Net = struct {
 
         for (system.clients.items, 0..) |_, i| {
             // we have to split it as vswitch presents as one client to virts
-            if (system.vswitch and std.mem.indexOfScalar(u32, system.vswitch_client_ids[0..], i) != null) {
+            if (system.vswitch != null and std.mem.indexOfScalar(u8, system.vswitch_client_ids.items[0..], @intCast(i)) != null) {
                 // Connect it to the vswitch
                 // TODO: ask Ivan - leaving these checks as they are, IMO pointless in this case, we always need RX/TX for a client?
                 if (system.client_info.items[i].rx) {
                     system.clientRxVSwitchConnect(rx_dma_mr, i);
 
-                    system.virt_rx_config.clients.items[i].mac_addrs[system.virt_rx_config.clients.items[i].num_macs * 6 * TEMP_MAC_ADDR] = system.client_info.items[i].mac_addr.?;
-                    system.virt_rx_config.clients.items[i].num_macs += 1;
-
+                    // Just append the MAC to existing ones
+                    const client = &system.virt_rx_config.clients[i];
+                    const base = client.num_macs * 6;
+                    std.mem.copyForwards(u8, client.mac_addrs[base .. base + 6], &system.client_info.items[i].mac_addr.?);
+                    client.num_macs += 1;
                 }
                 if (system.client_info.items[i].tx) {
                     system.clientTxVSwitchConnect(i);
-
                 }
                 system.vswitch_config.num_ports += 1; // TODO ;might be redundant
-                system.vswitch_config.items[i].connected = true;
+                system.vswitch_config.ports[i].connected = true;
                 system.client_configs.items[i].mac_addr = system.client_info.items[i].mac_addr.?;
             } else {
                 // TODO: we have an assumption that all copiers are RX copiers
                 if (system.client_info.items[i].rx) {
                     system.clientRxConnect(rx_dma_mr, i);
                     system.virt_rx_config.num_clients += 1;
-                    system.virt_rx_config.clients[i].mac_addrs[0] = system.client_info.items[i].mac_addr.?;
+                    std.mem.copyForwards(u8, system.virt_rx_config.clients[i].mac_addrs[0 .. 6], &system.client_info.items[i].mac_addr.?);
                     system.virt_rx_config.clients[i].num_macs += 1;
                 }
                 if (system.client_info.items[i].tx) {
@@ -512,7 +519,7 @@ pub const Net = struct {
             }
         }
 
-        if (system.vswitch) {
+        if (system.vswitch != null) {
             system.vswitchRxConnect();
             system.vswitchTxConnect();
             // Present itself just as one client to virts
@@ -520,7 +527,7 @@ pub const Net = struct {
             system.virt_tx_config.num_clients += 1;
             // TODO: do we need this? We need to expose mac addresses of the vswitch
             // Fill in Mac addresses
-            for (system.vswitch_client_ids, 0..) |id, _| {
+            for (system.vswitch_client_ids[0..]) |id| {
                 system.vswitch_config.mac_addrs[6*id] = system.client_info.items[id].mac_addr.?; // TODO: need to handle having multiple MACs under one client
             }
         }
@@ -538,7 +545,8 @@ pub const Net = struct {
         try data.serialize(allocator, system.driver_config, prefix, "net_driver");
         try data.serialize(allocator, system.virt_rx_config, prefix, "net_virt_rx");
         try data.serialize(allocator, system.virt_tx_config, prefix, "net_virt_tx");
-        try data.serialize(allocator, system.vswitch, prefix, "net_vswitch"); // TODO: extend to multiple later
+        if (system.vswitch != null)
+            try data.serialize(allocator, system.vswitch, prefix, "net_vswitch"); // TODO: extend to multiple later
 
         for (system.copiers.items, 0..) |maybe_copier, i| {
             if (maybe_copier) |copier| {

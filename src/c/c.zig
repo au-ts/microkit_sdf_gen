@@ -833,7 +833,7 @@ export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyop
     return net;
 }
 
-export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, client: *align(8) anyopaque, copier: *align(8) anyopaque, mac_addr: [*c]u8, rx: bool, tx: bool) bindings.sdfgen_sddf_status_t {
+export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, client: *align(8) anyopaque, copier: *align(8) anyopaque, vswitch: ?*align(8) anyopaque, mac_addr: [*c]u8, rx: bool, tx: bool) bindings.sdfgen_sddf_status_t {
     const net: *sddf.Net = @ptrCast(system);
     var options: sddf.Net.ClientOptions = .{};
     if (mac_addr) |a| {
@@ -841,7 +841,7 @@ export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, cl
     }
     options.rx = rx;
     options.tx = tx;
-    net.addClientWithCopier(@ptrCast(client), @ptrCast(copier), options) catch |e| {
+    net.addClientWithCopier(@ptrCast(client), @ptrCast(copier), @ptrCast(vswitch), options) catch |e| {
         switch (e) {
             sddf.Net.Error.DuplicateClient => return 1,
             sddf.Net.Error.InvalidClient => return 2,
@@ -1002,7 +1002,7 @@ export fn sdfgen_vmm_add_virtio_mmio_blk(c_vmm: *align(8) anyopaque, c_device: *
     return true;
 }
 
-export fn sdfgen_vmm_add_virtio_mmio_net(c_vmm: *align(8) anyopaque, c_device: *align(8) anyopaque, net: *align(8) anyopaque, copier: *align(8) anyopaque, vswitch: *align(8) anyopaque, mac_addr: [*c]u8) bool {
+export fn sdfgen_vmm_add_virtio_mmio_net(c_vmm: *align(8) anyopaque, c_device: *align(8) anyopaque, net: *align(8) anyopaque, copier: *align(8) anyopaque, vswitch: ?*align(8) anyopaque, mac_addr: [*c]u8) bool {
     const vmm: *Vmm = @ptrCast(c_vmm);
     const device: *dtb.Node = @ptrCast(c_device);
     var options: sddf.Net.ClientOptions = .{};
