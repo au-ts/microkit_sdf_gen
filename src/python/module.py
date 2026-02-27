@@ -1365,12 +1365,12 @@ class Vmm:
 
         if copier is None:
             copier_obj = None
-        else
+        else:
             copier_obj = copier._obj
 
         if vswitch is None:
             vswitch_obj = None
-        else
+        else:
             vswitch_obj = vswitch._obj
 
         return libsdfgen.sdfgen_vmm_add_virtio_mmio_net(self._obj, device._obj, net._obj, copier_obj, vswitch_obj, c_mac_addr)
