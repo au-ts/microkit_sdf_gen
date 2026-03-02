@@ -893,7 +893,7 @@ pub const SystemDescription = struct {
                         try std.fmt.format(writer, " ioapic=\"{}\"", .{ioapic});
                     }
                     if (i_irq.trigger) |t| {
-                        try std.fmt.format(writer, " level=\"{s}\"", .{@tagName(t)});
+                        try std.fmt.format(writer, " trigger=\"{s}\"", .{@tagName(t)});
                     }
                     if (i_irq.polarity) |polarity| {
                         try std.fmt.format(writer, " polarity=\"{s}\"", .{@tagName(polarity)});
