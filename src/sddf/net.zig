@@ -400,7 +400,12 @@ pub const Net = struct {
 
         const data_mr_virt_map = Map.create(data_mr, system.virt_tx.getMapVaddr(&data_mr), .r, .{});
         system.virt_tx.addMap(data_mr_virt_map);
-        vswitch_config.ports[client_id].tx_data = .createFromMap(data_mr_virt_map); // TODO: not sure if I have to save it for vswitch as well?
+
+        const data_mr_vswitch_map = Map.create(data_mr, vswitch.getMapVaddr(&data_mr), .r, .{});
+        vswitch.addMap(data_mr_vswitch_map);
+
+        vswitch_config.ports[client_id].id = @intCast(client_id);
+        vswitch_config.ports[client_id].tx_data = .createFromMap(data_mr_vswitch_map); // TODO: not sure if I have to save it for vswitch as well?
         vswitch_config.ports[client_id].id = @intCast(client_id); // TODO: we use the id just for one thing... - mapping the Tx data for txvirt
 
         const data_mr_client_map = Map.create(data_mr, client.getMapVaddr(&data_mr), .rw, .{});
@@ -408,32 +413,44 @@ pub const Net = struct {
         client_config.tx_data = .createFromMap(data_mr_client_map);
     }
 
-    pub fn vswitchRxConnect(system: *Net) void {
+    pub fn vswitchRxConnect(system: *Net, rx_dma_mr: Mr) void {
         const vswitch = system.vswitch.?;
-        var vswitch_config = system.vswitch_config;
+        var vswitch_config = &system.vswitch_config;
         var virt_client_config = &system.virt_rx_config.clients[system.virt_rx_config.num_clients]; // TODO: this should work just fine? It will be the last index there
                                                                                                     // (vswitch)
-        // TODO: port 0 is assumed to always be the virts - I think it's not reserved yet
-        system.createConnection(system.virt_rx, vswitch, &virt_client_config.conn, &vswitch_config.ports[0].rx, system.rx_buffers);
+        // TODO: port MAX_NUM_CLIENTS - 1 is assumed to always be the virts - I think it's not reserved yet
+        // TODO: swapping rx for tx in vswitch terminology
+        system.createConnection(system.virt_rx, vswitch, &virt_client_config.conn, &vswitch_config.ports[MAX_NUM_CLIENTS - 1].tx, system.rx_buffers);
+
+        std.log.info("VSwitchRxConnect, assigned the id {}", .{vswitch_config.ports[MAX_NUM_CLIENTS - 1].tx.id});
 
         const vswitch_metadata_mr_name = fmt(system.allocator, "{s}/net/vswitch/metadata", .{system.deviceName()});
         const vswitch_metadata_mr_size = system.sdf.arch.roundUpToPage(system.rx_buffers * 4 * MAX_NUM_CLIENTS);
         const vswitch_metadata_mr = Mr.create(system.allocator, vswitch_metadata_mr_name, vswitch_metadata_mr_size, .{});
         system.sdf.addMemoryRegion(vswitch_metadata_mr);
+
         const vswitch_metadata_map = Map.create(vswitch_metadata_mr, vswitch.getMapVaddr(&vswitch_metadata_mr), .rw, .{});
         vswitch.addMap(vswitch_metadata_map);
         vswitch_config.buffer_metadata = .createFromMap(vswitch_metadata_map);
+
+        // Map in the device DMA region (as Tx as we flip rx/tx for the virt port)
+        const rx_dma_vswitch_map = Map.create(rx_dma_mr, vswitch.getMapVaddr(&rx_dma_mr), .r, .{});
+        vswitch.addMap(rx_dma_vswitch_map);
+        vswitch_config.ports[MAX_NUM_CLIENTS - 1].tx_data = .createFromMap(rx_dma_vswitch_map);
     }
 
     pub fn vswitchTxConnect(system: *Net) void {
         const vswitch = system.vswitch.?;
-        var vswitch_config = system.vswitch_config;
+        var vswitch_config = &system.vswitch_config;
         var virt_client_config = &system.virt_tx_config.clients[system.virt_rx_config.num_clients];
-        // TODO: port 0 is assumed to always be the virts
-        system.createConnection(system.virt_tx, vswitch, &virt_client_config.conn, &vswitch_config.ports[0].tx, system.rx_buffers);
+        // TODO: port MAX_NUM_CLIENTS - 1 is assumed to always be the virts
+        // TODO: swapped tx for rx in vswitch terminology
+        system.createConnection(system.virt_tx, vswitch, &virt_client_config.conn, &vswitch_config.ports[MAX_NUM_CLIENTS - 1].rx, system.rx_buffers);
+        vswitch_config.ports[MAX_NUM_CLIENTS - 1].id = MAX_NUM_CLIENTS - 1;
 
+        std.log.info("VSwitchTxConnect, assigned the id {}", .{vswitch_config.ports[MAX_NUM_CLIENTS - 1].rx.id});
         // for every client, we map in their TxData region
-        for (system.vswitch_config.ports[1..]) |port| {
+        for (system.vswitch_config.ports[0..MAX_NUM_CLIENTS - 1]) |port| {
             if (!port.connected) continue;
             const client_id = port.id;
             virt_client_config.data[client_id] = port.tx_data; // TODO: do we need to create more maps? I think no
@@ -485,6 +502,7 @@ pub const Net = struct {
         for (system.clients.items, 0..) |_, i| {
             // we have to split it as vswitch presents as one client to virts
             if (system.vswitch != null and std.mem.indexOfScalar(u8, system.vswitch_client_ids.items[0..], @intCast(i)) != null) {
+                //std.log.info("Adding client with id ", .{});
                 // Connect it to the vswitch
                 // TODO: ask Ivan - leaving these checks as they are, IMO pointless in this case, we always need RX/TX for a client?
                 if (system.client_info.items[i].rx) {
@@ -519,11 +537,16 @@ pub const Net = struct {
         }
 
         if (system.vswitch != null) {
-            system.vswitchRxConnect();
+            system.vswitchRxConnect(rx_dma_mr);
             system.vswitchTxConnect();
             // Present itself just as one client to virts
             system.virt_rx_config.num_clients += 1;
             system.virt_tx_config.num_clients += 1;
+
+            // Mark it as index MAX_NUM_CLIENTS - 1
+            system.vswitch_config.ports[MAX_NUM_CLIENTS - 1].connected = true;
+            system.vswitch_config.num_ports += 1;
+
             // Fill in MAC addresses
             for (system.vswitch_client_ids.items[0..]) |id| { // TODO: later refine indexing by id
                 std.mem.copyForwards(u8, system.vswitch_config.ports[id].mac_addrs[0 .. 6],  &system.client_info.items[id].mac_addr.?); // TODO: later extend to multiple MACs behind a port
@@ -544,7 +567,7 @@ pub const Net = struct {
         try data.serialize(allocator, system.virt_rx_config, prefix, "net_virt_rx");
         try data.serialize(allocator, system.virt_tx_config, prefix, "net_virt_tx");
         if (system.vswitch != null)
-            try data.serialize(allocator, system.vswitch, prefix, "net_vswitch"); // TODO: extend to multiple later
+            try data.serialize(allocator, system.vswitch_config, prefix, "net_vswitch"); // TODO: extend to multiple later
 
         for (system.copiers.items, 0..) |maybe_copier, i| {
             if (maybe_copier) |copier| {
