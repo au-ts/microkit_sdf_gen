@@ -35,6 +35,7 @@ in
       src = nix-gitignore.gitignoreSource [] ./.;
 
       build-system = [ setuptools ];
+      pyproject = true;
 
       pythonImportsCheck = [ "sdfgen" ];
 
