@@ -95,12 +95,13 @@ pub const SystemDescription = struct {
 
         pub const Options = struct {
             page_size: ?PageSize = null,
-            backed: ?bool = false,
+            backed: ?bool = null,
         };
 
         pub const OptionsPhysical = struct {
             paddr: ?u64 = null,
             page_size: ?PageSize = null,
+            backed: ?bool = null,
         };
 
         // TODO: change to two API:
@@ -130,6 +131,7 @@ pub const SystemDescription = struct {
                 .size = size,
                 .paddr = paddr,
                 .page_size = options.page_size,
+                .backed = options.backed,
             };
         }
 
@@ -150,7 +152,7 @@ pub const SystemDescription = struct {
 
             if (mr.backed) |backed| {
                 if (!backed) {
-                    try std.fmt.format(writer, "backed=\"false\"");
+                    try std.fmt.format(writer, "backed=\"{x}\"", .{"false"});
                 }
             }
 
