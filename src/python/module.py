@@ -271,6 +271,7 @@ libsdfgen.sdfgen_vmm_add_passthrough_device_regions.argtypes = [
     c_void_p,
     POINTER(c_uint8),
     c_uint8,
+    c_bool
 ]
 libsdfgen.sdfgen_vmm_add_passthrough_device_irqs.argtypes = [
     c_void_p,
@@ -641,15 +642,16 @@ class SystemDescription:
             size: int,
             *,
             physical: Optional[bool] = None,
-            paddr: Optional[int] = None
+            paddr: Optional[int] = None,
+            backed: Optional[bool] = None
         ) -> None:
             c_name = c_char_p(name.encode("utf-8"))
             if paddr:
                 physical = True
             if physical:
-                self._obj = libsdfgen.sdfgen_mr_create_physical(sdf._obj, c_name, size, ffi_uint64_ptr(paddr))
+                self._obj = libsdfgen.sdfgen_mr_create_physical(sdf._obj, c_name, size, ffi_uint64_ptr(paddr), backed)
             else:
-                self._obj = libsdfgen.sdfgen_mr_create(c_name, size)
+                self._obj = libsdfgen.sdfgen_mr_create(c_name, size, backed)
             self._size = size
 
         @property
