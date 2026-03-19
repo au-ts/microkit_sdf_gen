@@ -107,22 +107,22 @@ pub const SystemDescription = struct {
             };
         }
 
-        pub fn addEntry(pt: PageTables, pd: []const u8, index: u64) !void {
+        pub fn addEntry(pt: *PageTables, pd: []const u8, index: u64) !void {
             try pt.tables.append(.{
-                .pd = pt.allocator.dupe(u8, pd) catch @panic("Could not allocate pd name"),
+                .name = pt.allocator.dupe(u8, pd) catch @panic("Could not allocate pd name"),
                 .index = index,
             });
         }
 
-        pub fn render(pt: PageTables, writer: ArrayList(u8).Writer, separator: []const u8) !void {
+        pub fn render(pt: *PageTables, writer: ArrayList(u8).Writer, separator: []const u8) !void {
             try std.fmt.format(writer, "{s}<page_tables setvar=\"{s}\" />\n", .{ separator, pt.setvar });
             for (pt.tables.items) |entry| {
-                entry.render();
+                try entry.render(writer, separator);
             }
-            try std.fmt.format(writer, "{s}</page_tables>\n");
+            try std.fmt.format(writer, "{s}</page_tables>\n", .{ separator });
         }
 
-        pub fn destroy(pt: PageTables) void {
+        pub fn destroy(pt: *PageTables) void {
             // TODO: free pd name in each entry
             pt.tables.deinit();
             pt.allocator.free(pt.setvar);

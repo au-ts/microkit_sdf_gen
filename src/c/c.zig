@@ -135,10 +135,10 @@ export fn sdfgen_pts_create(setvar: [*c]u8) *anyopaque {
 
 export fn sdfgen_pts_add_entry(c_pts: *align(8) anyopaque, pd: [*c]u8, index: u64) void {
     const pts: *Pts = @ptrCast(c_pts);
-    pts.addEntry(std.mem.span(pd), index);
+    pts.addEntry(std.mem.span(pd), index) catch @panic("OOM");
 }
 
-export fn sdfgen_pts_destroy(c_pts: *align(8) anyopaque) {
+export fn sdfgen_pts_destroy(c_pts: *align(8) anyopaque) void {
     const pts: *Pts = @ptrCast(c_pts);
     pts.destroy();
 }
