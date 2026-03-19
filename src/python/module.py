@@ -97,6 +97,13 @@ libsdfgen.sdfgen_mr_get_paddr.argtypes = [c_void_p, POINTER(c_uint64)]
 libsdfgen.sdfgen_mr_destroy.restype = None
 libsdfgen.sdfgen_mr_destroy.argtypes = [c_void_p]
 
+libsdfgen.sdfgen_pts_create.restype = c_void_p
+libsdfgen.sdfgen_pts_create.argtypes = [c_char_p]
+libsdfgen.sdfgen_pts_add_entry.restype = None
+libsdfgen.sdfgen_pts_add_entry.argtypes = [c_char_p, c_uint64]
+libsdfgen.sdfgen_pts_destroy.restype = None
+libsdfgen.sdfgen_pts_destroy.argtypes = [c_void_p]
+
 libsdfgen.sdfgen_irq_create.restype = c_void_p
 libsdfgen.sdfgen_irq_create.argtypes = [c_uint32, POINTER(c_uint32), POINTER(c_uint8)]
 libsdfgen.sdfgen_irq_ioapic_create.restype = c_void_p
@@ -146,6 +153,8 @@ libsdfgen.sdfgen_pd_add_irq.restype = c_int8
 libsdfgen.sdfgen_pd_add_irq.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_pd_set_virtual_machine.restype = c_bool
 libsdfgen.sdfgen_pd_set_virtual_machine.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_pd_set_page_table_copies.restype = c_bool
+libsdfgen.sdfgen_pd_set_page_table_copies.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_pd_add_ioport.restype = c_int8
 libsdfgen.sdfgen_pd_add_ioport.argtypes = [c_void_p, c_void_p]
 
@@ -551,6 +560,11 @@ class SystemDescription:
             if not ret:
                 raise Exception(f"ProtectionDomain '{self.name}' already has VirtualMachine")
 
+        def set_page_tables(self, pts: SystemDescription.PageTables):
+            ret = libsdfgen.sdfgen_pd_set_page_table_copies(self._obj, pts._obj)
+            if not ret:
+                raise Exception(f"ProtectionDomain '{self.name}' already has PageTables")
+
         def __del__(self):
             if hasattr(self, "_obj"):
                 libsdfgen.sdfgen_pd_destroy(self._obj)
@@ -680,6 +694,24 @@ class SystemDescription:
         def __del__(self):
             if hasattr(self, "_obj"):
                 libsdfgen.sdfgen_mr_destroy(self._obj)
+
+    class PageTables:
+        _obj: c_void_p
+
+        def __init__(
+            self,
+            *
+            setvar: str,
+        ) -> None:
+            c_setvar = c_char_p(setvar.encode("utf-8"))
+            self._obj = libsdfgen.sdfgen_pts_create(c_setvar)
+
+        def add_entry(pd: str, index: int):
+            libsdfgen.sdfgen_pts_add_entry(self._obj, c_char_p(pd.encode("utf-8")), index)
+
+        def __del__(self):
+            if hasattr(self, "_obj"):
+                libsdfgen.sdfgen_pts_destroy(self._obj)
 
     class Irq(ABC):
         _obj: c_void_p
