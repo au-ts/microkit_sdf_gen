@@ -100,7 +100,7 @@ libsdfgen.sdfgen_mr_destroy.argtypes = [c_void_p]
 libsdfgen.sdfgen_pts_create.restype = c_void_p
 libsdfgen.sdfgen_pts_create.argtypes = [c_char_p]
 libsdfgen.sdfgen_pts_add_entry.restype = None
-libsdfgen.sdfgen_pts_add_entry.argtypes = [c_char_p, c_uint64]
+libsdfgen.sdfgen_pts_add_entry.argtypes = [c_void_p, c_char_p, c_uint64]
 libsdfgen.sdfgen_pts_destroy.restype = None
 libsdfgen.sdfgen_pts_destroy.argtypes = [c_void_p]
 
@@ -700,13 +700,13 @@ class SystemDescription:
 
         def __init__(
             self,
-            *
+            *,
             setvar: str,
         ) -> None:
             c_setvar = c_char_p(setvar.encode("utf-8"))
             self._obj = libsdfgen.sdfgen_pts_create(c_setvar)
 
-        def add_entry(pd: str, index: int):
+        def add_entry(self, pd: str, index: int):
             libsdfgen.sdfgen_pts_add_entry(self._obj, c_char_p(pd.encode("utf-8")), index)
 
         def __del__(self):
