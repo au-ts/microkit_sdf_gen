@@ -15,6 +15,7 @@ const lionsos = modsdf.lionsos;
 const Vmm = modsdf.Vmm;
 const SystemDescription = modsdf.sdf.SystemDescription;
 const Pd = SystemDescription.ProtectionDomain;
+const Pts = SystemDescription.PageTables;
 const Irq = SystemDescription.Irq;
 const IoPort = SystemDescription.IoPort;
 const Vm = SystemDescription.VirtualMachine;
@@ -126,6 +127,22 @@ export fn sdfgen_dtb_destroy(c_blob: *align(8) anyopaque) void {
     blob.deinit(allocator);
 }
 
+export fn sdfgen_pts_create(setvar: [*c]u8) *anyopaque {
+    const pts = allocator.create(Pts) catch @panic("OOM");
+    pts.* = Pts.create(allocator, std.mem.span(setvar));
+    return pts;
+}
+
+export fn sdfgen_pts_add_entry(c_pts: *align(8) anyopaque, pd: [*c]u8, index: u64) void {
+    const pts: *Pts = @ptrCast(c_pts);
+    pts.addEntry(std.mem.span(pd), index);
+}
+
+export fn sdfgen_pts_destroy(c_pts: *align(8) anyopaque) {
+    const pts: *Pts = @ptrCast(c_pts);
+    pts.destroy();
+}
+
 export fn sdfgen_pd_create(name: [*c]u8, program_image: [*c]u8) *anyopaque {
     const pd = allocator.create(Pd) catch @panic("OOM");
     pd.* = Pd.create(allocator, std.mem.span(name), std.mem.span(program_image), .{});
@@ -226,6 +243,14 @@ export fn sdfgen_pd_set_virtual_machine(c_pd: *align(8) anyopaque, c_vm: *align(
     const pd: *Pd = @ptrCast(c_pd);
     const vm: *Vm = @ptrCast(c_vm);
     pd.setVirtualMachine(vm) catch return false;
+
+    return true;
+}
+
+export fn sdfgen_pd_set_page_table_copies(c_pd: *align(8) anyopaque, c_pts: *align(8) anyopaque) bool {
+    const pd: *Pd = @ptrCast(c_pd);
+    const pts: *Pts = @ptrCast(c_pts);
+    pd.setPageTableCopies(pts) catch return false;
 
     return true;
 }
@@ -338,7 +363,7 @@ export fn sdfgen_irq_ioapic_create(ioapic: u64, pin: u64, c_trigger: [*c]binding
                 log.err("failed to create IOAPIC IRQ at chip {}, pin {}, vector {}: invalid polarity '{}'", .{ ioapic, pin, vector, c_polarity.* });
                 allocator.destroy(irq);
                 return null;
-            }
+            },
         };
         options.polarity = polarity;
     }
@@ -570,12 +595,7 @@ export fn sdfgen_channel_add(c_sdf: *align(8) anyopaque, c_ch: *align(8) anyopaq
 export fn sdfgen_sddf_timer(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const timer = allocator.create(sddf.Timer) catch @panic("OOM");
-    timer.* = sddf.Timer.init(
-        allocator,
-        sdf,
-        if (c_device) |raw| @ptrCast(raw) else null,
-        @ptrCast(driver)
-    );
+    timer.* = sddf.Timer.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver));
 
     return timer;
 }
@@ -628,7 +648,7 @@ export fn sdfgen_sddf_serial(c_sdf: *align(8) anyopaque, c_device: ?*align(8) an
     }
     const serial = allocator.create(sddf.Serial) catch @panic("OOM");
     serial.* = sddf.Serial.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt_tx), options) catch |e| {
-        log.err("failed to initialiase serial system: {any}", .{ e });
+        log.err("failed to initialiase serial system: {any}", .{e});
         allocator.destroy(serial);
         return null;
     };
@@ -758,12 +778,11 @@ export fn sdfgen_sddf_gpio_serialise_config(system: *align(8) anyopaque, output_
     return true;
 }
 
-
 export fn sdfgen_sddf_blk(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt: *align(8) anyopaque) ?*anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const blk = allocator.create(sddf.Blk) catch @panic("OOM");
     blk.* = sddf.Blk.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt), .{}) catch |e| {
-        log.err("failed to initialiase blk system: {any}", .{ e });
+        log.err("failed to initialiase blk system: {any}", .{e});
         allocator.destroy(blk);
         return null;
     };

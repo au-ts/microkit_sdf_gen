@@ -85,6 +85,50 @@ pub const SystemDescription = struct {
         }
     };
 
+    pub const PageTables = struct {
+        allocator: Allocator,
+        tables: ArrayList(Entry),
+        setvar: []const u8,
+
+        const Entry = struct {
+            name: []const u8,
+            index: u64,
+
+            pub fn render(entry: Entry, writer: ArrayList(u8).Writer, separator: []const u8) !void {
+                try std.fmt.format(writer, "{s}<pd name=\"{s}\" index=\"{}\" />\n", .{ separator, entry.name, entry.index });
+            }
+        };
+
+        pub fn create(allocator: Allocator, setvar: []const u8) PageTables {
+            return .{
+                .allocator = allocator,
+                .tables = .init(allocator),
+                .setvar = allocator.dupe(u8, setvar) catch @panic("Could not allocate setvar for PageTables"),
+            };
+        }
+
+        pub fn addEntry(pt: PageTables, pd: []const u8, index: u64) !void {
+            try pt.tables.append(.{
+                .pd = pt.allocator.dupe(u8, pd) catch @panic("Could not allocate pd name"),
+                .index = index,
+            });
+        }
+
+        pub fn render(pt: PageTables, writer: ArrayList(u8).Writer, separator: []const u8) !void {
+            try std.fmt.format(writer, "{s}<page_tables setvar=\"{s}\" />\n", .{ separator, pt.setvar });
+            for (pt.tables.items) |entry| {
+                entry.render();
+            }
+            try std.fmt.format(writer, "{s}</page_tables>\n");
+        }
+
+        pub fn destroy(pt: PageTables) void {
+            // TODO: free pd name in each entry
+            pt.tables.deinit();
+            pt.allocator.free(pt.setvar);
+        }
+    };
+
     pub const MemoryRegion = struct {
         allocator: Allocator,
         name: []const u8,
@@ -427,6 +471,7 @@ pub const SystemDescription = struct {
         /// Keeping track of what IDs are available for channels, IRQs, etc
         channel_ids: std.bit_set.StaticBitSet(MAX_IDS),
         child_ids: std.bit_set.StaticBitSet(MAX_IDS),
+        page_table_copies: ?*PageTables,
 
         /// Whether or not ARM SMC is available
         arm_smc: ?bool,
@@ -467,6 +512,7 @@ pub const SystemDescription = struct {
                 .irqs = ArrayList(Irq).initCapacity(allocator, MAX_IRQS) catch @panic("Could not allocate irqs"),
                 .ioports = ArrayList(IoPort).initCapacity(allocator, MAX_IOPORTS) catch @panic("Could not allocate I/O Ports"),
                 .vm = null,
+                .page_table_copies = null,
                 .channel_ids = std.bit_set.StaticBitSet(MAX_IDS).initEmpty(),
                 .child_ids = std.bit_set.StaticBitSet(MAX_IDS).initEmpty(),
                 .setvars = ArrayList(SetVar).init(allocator),
@@ -490,6 +536,9 @@ pub const SystemDescription = struct {
             pd.child_pds.deinit();
             pd.irqs.deinit();
             pd.ioports.deinit();
+            if (pd.page_table_copies) |pts| {
+                pts.destroy();
+            }
         }
 
         /// There may be times where a PD resources is attached with an ID, such as a channel
@@ -522,6 +571,11 @@ pub const SystemDescription = struct {
         pub fn setVirtualMachine(pd: *ProtectionDomain, vm: *VirtualMachine) !void {
             if (pd.vm != null) return error.ProtectionDomainAlreadyHasVirtualMachine;
             pd.vm = vm;
+        }
+
+        pub fn setPageTableCopies(pd: *ProtectionDomain, pts: *PageTables) !void {
+            if (pd.page_table_copies != null) return error.ProtectionDomainAlreadyHasPageTableCopies;
+            pd.page_table_copies = pts;
         }
 
         pub fn addMap(pd: *ProtectionDomain, map: Map) void {
@@ -672,6 +726,9 @@ pub const SystemDescription = struct {
             if (pd.vm) |vm| {
                 try vm.render(sdf, writer, child_separator);
             }
+            if (pd.page_table_copies) |pts| {
+                try pts.render(writer, child_separator);
+            }
             for (pd.irqs.items) |irq| {
                 try irq.render(writer, child_separator);
             }
@@ -782,7 +839,7 @@ pub const SystemDescription = struct {
 
         const Kind = union(enum) {
             conventional: struct {
-                irq:     u32,
+                irq: u32,
                 trigger: ?Trigger,
             },
 
@@ -834,9 +891,9 @@ pub const SystemDescription = struct {
                     return s_irq.irq;
                 },
                 else => {
-                    log.err("number called on invalid IRQ kind {s}", .{ @tagName(irq.kind) });
+                    log.err("number called on invalid IRQ kind {s}", .{@tagName(irq.kind)});
                     return null;
-                }
+                },
             }
         }
 
@@ -849,9 +906,9 @@ pub const SystemDescription = struct {
                     return i_irq.trigger;
                 },
                 else => {
-                    log.err("trigger called on invalid IRQ kind {s}", .{ @tagName(irq.kind) });
+                    log.err("trigger called on invalid IRQ kind {s}", .{@tagName(irq.kind)});
                     return null;
-                }
+                },
             }
         }
 
@@ -931,7 +988,7 @@ pub const SystemDescription = struct {
                 },
                 .msi => |m_irq| {
                     try std.fmt.format(writer, "pcidev=\"{}:{}.{}\" handle=\"{}\" vector=\"{}\" id=\"{}\"", .{ m_irq.pci_bus, m_irq.pci_dev, m_irq.pci_func, m_irq.handle, m_irq.vector, irq.id.? });
-                }
+                },
             }
             if (irq.setvar_id) |setvar_id| {
                 try std.fmt.format(writer, " setvar_id=\"{s}\"", .{setvar_id});
@@ -963,7 +1020,7 @@ pub const SystemDescription = struct {
             // By the time we get here, something should have populated the 'id' field.
             std.debug.assert(ioport.id != null);
 
-            try std.fmt.format(writer, "{s}<ioport id=\"{}\" addr=\"{}\" size=\"{}\" />\n", .{separator, ioport.id.?, ioport.addr, ioport.size});
+            try std.fmt.format(writer, "{s}<ioport id=\"{}\" addr=\"{}\" size=\"{}\" />\n", .{ separator, ioport.id.?, ioport.addr, ioport.size });
         }
     };
 
