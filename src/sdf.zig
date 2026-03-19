@@ -115,7 +115,7 @@ pub const SystemDescription = struct {
         }
 
         pub fn render(pt: *PageTables, writer: ArrayList(u8).Writer, separator: []const u8) !void {
-            try std.fmt.format(writer, "{s}<page_tables setvar=\"{s}\" />\n", .{ separator, pt.setvar });
+            try std.fmt.format(writer, "{s}<page_tables setvar=\"{s}\">\n", .{ separator, pt.setvar });
             for (pt.tables.items) |entry| {
                 try entry.render(writer, separator);
             }
