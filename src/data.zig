@@ -268,7 +268,7 @@ pub const Resources = struct {
         pub const Copy = extern struct {
             magic: [5]u8 = MAGIC,
             virt_rx: Connection,
-            device_data: Region,
+            out_data: [MAX_NUM_CLIENTS]Region,
             client: Connection,
             client_data: Region,
         };

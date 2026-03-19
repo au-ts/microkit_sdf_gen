@@ -79,6 +79,7 @@ pub const Net = struct {
 
     rx_buffers: usize,
     maybe_rx_dma_mr: ?*Mr,
+    tx_data_mrs: [MAX_NUM_CLIENTS]?Mr,
     client_info: std.array_list.Managed(ClientInfo),
     vswitch_client_ids: std.array_list.Managed(u8),
 
@@ -116,6 +117,7 @@ pub const Net = struct {
             .client_info = std.array_list.Managed(ClientInfo).init(allocator),
             .rx_buffers = options.rx_buffers,
             .maybe_rx_dma_mr = options.rx_dma_mr,
+            .tx_data_mrs = [_]?Mr{null} ** MAX_NUM_CLIENTS,
             .vswitch_client_ids = std.array_list.Managed(u8).init(allocator),
         };
     }
@@ -192,6 +194,7 @@ pub const Net = struct {
                 // TODO:
             }
             system.vswitch_client_ids.append(@intCast(client_idx)) catch @panic("Could not add vswitch client id");// TODO: should I remove the client from the other list then?
+            std.log.info("Adding client with id {}", .{client_idx});
         }
 
         system.clients.append(client) catch @panic("Could not add client to Net");
@@ -306,7 +309,7 @@ pub const Net = struct {
 
             const rx_dma_copier_map = Map.create(rx_dma_mr, copier.getMapVaddr(&rx_dma_mr), .rw, .{});
             copier.addMap(rx_dma_copier_map);
-            copier_config.device_data = .createFromMap(rx_dma_copier_map);
+            copier_config.out_data[MAX_NUM_CLIENTS - 1] = .createFromMap(rx_dma_copier_map);
 
             const client_data_mr_size = system.sdf.arch.roundUpToPage(system.rx_buffers * BUFFER_SIZE);
             const client_data_mr_name = fmt(system.allocator, "{s}/net/rx/data/client/{s}", .{ system.deviceName(), client.name });
@@ -368,7 +371,7 @@ pub const Net = struct {
 
         const rx_dma_copier_map = Map.create(rx_dma_mr, copier.getMapVaddr(&rx_dma_mr), .rw, .{});
         copier.addMap(rx_dma_copier_map);
-        copier_config.device_data = .createFromMap(rx_dma_copier_map);
+        copier_config.out_data[MAX_NUM_CLIENTS - 1] = .createFromMap(rx_dma_copier_map);
 
         const client_data_mr_size = system.sdf.arch.roundUpToPage(system.rx_buffers * BUFFER_SIZE);
         const client_data_mr_name = fmt(system.allocator, "{s}/net/rx/data/client/{s}", .{ system.deviceName(), client.name });
@@ -397,6 +400,8 @@ pub const Net = struct {
         const data_mr_name = fmt(system.allocator, "{s}/net/tx/data/client/{s}", .{ system.deviceName(), client.name });
         const data_mr = Mr.physical(system.allocator, system.sdf, data_mr_name, data_mr_size, .{});
         system.sdf.addMemoryRegion(data_mr);
+
+        system.tx_data_mrs[client_id] = data_mr;
 
         const data_mr_virt_map = Map.create(data_mr, system.virt_tx.getMapVaddr(&data_mr), .r, .{});
         system.virt_tx.addMap(data_mr_virt_map);
@@ -437,6 +442,25 @@ pub const Net = struct {
         const rx_dma_vswitch_map = Map.create(rx_dma_mr, vswitch.getMapVaddr(&rx_dma_mr), .r, .{});
         vswitch.addMap(rx_dma_vswitch_map);
         vswitch_config.ports[MAX_NUM_CLIENTS - 1].tx_data = .createFromMap(rx_dma_vswitch_map);
+
+        // TODO: I think this should be swapped logicallv with the similar assignment in vswitchTxConnect
+        // Also fixup the existing connections for every connected Client's copier (except last one)
+        for (system.vswitch_config.ports[0..MAX_NUM_CLIENTS - 2], 0..) |port, i| {
+            if (!port.connected) continue;
+            const client_id = port.id;
+            var copier_config = &system.copy_configs.items[client_id];
+            const copier = system.copiers.items[client_id].?;
+            // Connect every other port under an ID
+            for (system.vswitch_config.ports[0..MAX_NUM_CLIENTS - 2], 0..) |other_port, j| {
+                if (!other_port.connected or i == j) continue;
+                // Map other PDs data into Copier's PD
+                const other_client_mr = system.tx_data_mrs[other_port.id].?;
+                const other_tx_copier_map = Map.create(other_client_mr, copier.getMapVaddr(&other_client_mr), .r, .{});
+                copier.addMap(other_tx_copier_map);
+                // Store the descriptor
+                copier_config.out_data[other_port.id] = .createFromMap(other_tx_copier_map); // TODO: do we need num_data? Probably not
+            }
+        }
     }
 
     pub fn vswitchTxConnect(system: *Net) void {
