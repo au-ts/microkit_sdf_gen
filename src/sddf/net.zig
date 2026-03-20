@@ -191,11 +191,11 @@ pub const Net = struct {
                 system.vswitch = new_vswitch;
                 system.vswitch_config = std.mem.zeroInit(ConfigResources.Net.VSwitch, .{});
             } else {
-                // TODO:
+                // TODO: support more vswitches?
             }
             system.vswitch_client_ids.append(@intCast(client_idx)) catch @panic("Could not add vswitch client id");// TODO: should I remove the client from the other list then?
-            std.log.info("Adding client with id {}", .{client_idx});
         }
+        std.log.info("Adding client with id {}", .{client_idx});
 
         system.clients.append(client) catch @panic("Could not add client to Net");
         system.client_info.append(std.mem.zeroInit(ClientInfo, .{})) catch @panic("Could not add client to Net");
@@ -340,6 +340,8 @@ pub const Net = struct {
         var client_config = &system.client_configs.items[client_id];
         const virt_client_config = &system.virt_tx_config.clients[system.virt_tx_config.num_clients];
 
+        std.log.info("ClientTxConnect, adding the client_id {}", .{client_id});
+
         system.createConnection(system.virt_tx, client, &virt_client_config.conn, &client_config.tx, client_info.tx_buffers);
 
         const data_mr_size = system.sdf.arch.roundUpToPage(client_info.tx_buffers * BUFFER_SIZE);
@@ -349,7 +351,9 @@ pub const Net = struct {
 
         const data_mr_virt_map = Map.create(data_mr, system.virt_tx.getMapVaddr(&data_mr), .r, .{});
         system.virt_tx.addMap(data_mr_virt_map);
-        virt_client_config.data[client_id] = .createFromMap(data_mr_virt_map);
+        virt_client_config.data[client_id] = .createFromMap(data_mr_virt_map); // TODO: this is broken - we have
+                                                                               // a client id 3 and yet it occupies second slot in virt_tx
+                                                                               // config
 
         const data_mr_client_map = Map.create(data_mr, client.getMapVaddr(&data_mr), .rw, .{});
         client.addMap(data_mr_client_map);
@@ -477,7 +481,7 @@ pub const Net = struct {
         for (system.vswitch_config.ports[0..MAX_NUM_CLIENTS - 1]) |port| {
             if (!port.connected) continue;
             const client_id = port.id;
-            virt_client_config.data[client_id] = port.tx_data; // TODO: do we need to create more maps? I think no
+            virt_client_config.data[client_id] = port.tx_data;
             virt_client_config.num_data += 1; // TODO: might need to add index mapping here
         }
     }
@@ -526,7 +530,7 @@ pub const Net = struct {
         for (system.clients.items, 0..) |_, i| {
             // we have to split it as vswitch presents as one client to virts
             if (system.vswitch != null and std.mem.indexOfScalar(u8, system.vswitch_client_ids.items[0..], @intCast(i)) != null) {
-                //std.log.info("Adding client with id ", .{});
+                std.log.info("Adding vswitch client with id {}", .{i});
                 // Connect it to the vswitch
                 // TODO: ask Ivan - leaving these checks as they are, IMO pointless in this case, we always need RX/TX for a client?
                 if (system.client_info.items[i].rx) {
@@ -545,6 +549,7 @@ pub const Net = struct {
                 system.vswitch_config.ports[i].connected = true;
                 system.client_configs.items[i].mac_addr = system.client_info.items[i].mac_addr.?;
             } else {
+                std.log.info("Adding regular client with id {}", .{i});
                 // TODO: we have an assumption that all copiers are RX copiers
                 if (system.client_info.items[i].rx) {
                     system.clientRxConnect(rx_dma_mr, i);
