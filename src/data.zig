@@ -281,10 +281,22 @@ pub const Resources = struct {
 
     pub const Timer = struct {
         const MAGIC: [5]u8 = MAGIC_START ++ .{0x6};
-
         pub const Client = extern struct {
             magic: [5]u8 = MAGIC,
+            time_page: Region,
+            virt_id: u8,
+        };
+
+        pub const Virt = extern struct {
+            magic: [5]u8 = MAGIC,
+            time_page: Region,
             driver_id: u8,
+        };
+
+        pub const Driver = extern struct {
+            magic: [5]u8 = MAGIC,
+            time_page: Region,
+            virt_id: u8,
         };
     };
 
