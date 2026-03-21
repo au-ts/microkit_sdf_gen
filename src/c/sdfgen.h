@@ -48,6 +48,7 @@ void sdfgen_pd_destroy(void *pd);
 int8_t sdfgen_pd_add_child(void *sdf, void *child_pd, uint8_t *child_id);
 uint64_t sdfgen_pd_get_map_vaddr(void *pd, void *map);
 void sdfgen_pd_add_map(void *pd, void *map);
+void sdfgen_pd_add_iomap(void *pd, void *iomap);
 uint8_t sdfgen_pd_add_irq(void *pd, void *irq);
 uint8_t sdfgen_pd_add_ioport(void *pd, void *ioport);
 void sdfgen_pd_set_priority(void *pd, uint8_t priority);
@@ -96,7 +97,16 @@ void sdfgen_mr_destroy(void *mr);
 
 void *sdfgen_map_create(void *mr, uint64_t vaddr, sdfgen_map_perms_t perms, bool cached);
 uint64_t sdfgen_map_get_vaddr(void *map);
-void *sdfgen_map_destroy(void *map);
+void *sdfgen_map_destroy(void *map); // should this be void rather than void*
+
+void *sdfgen_iomap_create(void *mr, uint64_t iovaddr, uint8_t pci_bus, uint8_t pci_dev, uint8_t pci_func, sdfgen_map_perms_t perms);
+uint64_t sdfgen_iomap_get_iovaddr(void *iomap);
+void sdfgen_iomap_destroy(void *map);
+
+const char* sdfgen_mr_get_name(void* mr, uint32_t* len);
+uint32_t sdfgen_pd_get_num_maps(void* pd);
+void* sdfgen_pd_get_map_at(void* pd, uint32_t index);
+void* sdfgen_mapping_get_mr(void* mapping);
 
 /*** sDDF ***/
 

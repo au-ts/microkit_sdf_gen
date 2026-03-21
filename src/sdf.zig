@@ -310,6 +310,34 @@ pub const SystemDescription = struct {
         }
     };
 
+    pub const IOMap = struct {
+        mr: MemoryRegion,
+        iovaddr: u64,
+        pci_bus: u8,
+        pci_dev: u8,
+        pci_func: u8,
+        _perms: Map.Perms,
+
+        pub fn create(mr: MemoryRegion, iovaddr: u64, pci_bus: u8, pci_dev: u8, pci_func: u8, perms: Map.Perms) IOMap {
+            return IOMap {
+                .mr = mr,
+                .iovaddr = iovaddr,
+                .pci_bus = pci_bus,
+                .pci_dev = pci_dev,
+                .pci_func = pci_func,
+                ._perms = perms,
+            };
+        }
+
+        pub fn render(io_map: *const IOMap, writer: ArrayList(u8).Writer, separator: []const u8) !void {
+            // callumb: TODO: add permission support to microkit
+            // var perms_buf = [_]u8{0} ** 3;
+            // const perms = io_map._perms.toString(&perms_buf);
+            try std.fmt.format(writer, "{s}<iomap mr=\"{s}\" pcidev=\"{x}:{x}.{x}\" addr=\"0x{x}\" />\n",
+                .{ separator, io_map.mr.name, io_map.pci_bus, io_map.pci_dev, io_map.pci_func, io_map.iovaddr });
+        }
+     };
+
     pub const VirtualMachine = struct {
         allocator: Allocator,
         name: []const u8,
@@ -410,6 +438,8 @@ pub const SystemDescription = struct {
         stack_size: ?u32,
         /// Memory mappings
         maps: ArrayList(Map),
+        /// IOMMU Memory mappings
+        io_maps: ArrayList(IOMap),
         /// The length of this array is bound by the maximum number of child PDs a PD can have.
         child_pds: ArrayList(*ProtectionDomain),
         /// The length of this array is bound by the maximum number of IRQs a PD can have.
@@ -456,6 +486,7 @@ pub const SystemDescription = struct {
                 .name = allocator.dupe(u8, name) catch @panic("Could not dupe PD name"),
                 .program_image = program_image_dupe,
                 .maps = ArrayList(Map).init(allocator),
+                .io_maps = ArrayList(IOMap).init(allocator),
                 .child_pds = ArrayList(*ProtectionDomain).initCapacity(allocator, MAX_CHILD_PDS) catch @panic("Could not allocate child_pds"),
                 .irqs = ArrayList(Irq).initCapacity(allocator, MAX_IRQS) catch @panic("Could not allocate irqs"),
                 .ioports = ArrayList(IoPort).initCapacity(allocator, MAX_IOPORTS) catch @panic("Could not allocate I/O Ports"),
@@ -480,6 +511,7 @@ pub const SystemDescription = struct {
                 pd.allocator.free(program_image);
             }
             pd.maps.deinit();
+            pd.io_maps.deinit();
             pd.child_pds.deinit();
             pd.irqs.deinit();
             pd.ioports.deinit();
@@ -519,6 +551,10 @@ pub const SystemDescription = struct {
 
         pub fn addMap(pd: *ProtectionDomain, map: Map) void {
             pd.maps.append(map) catch @panic("Could not add Map to ProtectionDomain");
+        }
+
+        pub fn addIOMap(pd: *ProtectionDomain, io_map: IOMap) void {
+            pd.io_maps.append(io_map) catch @panic("Could not add IOMap to ProtectionDomain");
         }
 
         pub fn addIrq(pd: *ProtectionDomain, irq: Irq) !u8 {
@@ -658,6 +694,9 @@ pub const SystemDescription = struct {
             }
             for (pd.maps.items) |map| {
                 try map.render(writer, child_separator);
+            }
+            for (pd.io_maps.items) |io_map| {
+                try io_map.render(writer, child_separator);
             }
             for (pd.child_pds.items) |child_pd| {
                 try child_pd.render(sdf, writer, child_separator, child_pd.child_id.?);
