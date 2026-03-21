@@ -85,6 +85,13 @@ libsdfgen.sdfgen_map_get_vaddr.argtypes = [c_void_p]
 libsdfgen.sdfgen_map_destroy.restype = None
 libsdfgen.sdfgen_map_destroy.argtypes = [c_void_p]
 
+libsdfgen.sdfgen_iomap_create.restype = c_void_p
+libsdfgen.sdfgen_iomap_create.argtypes = [c_void_p, c_uint64, c_uint8, c_uint8, c_uint8, MapPermsType]
+libsdfgen.sdfgen_iomap_get_iovaddr.restype = c_uint64
+libsdfgen.sdfgen_iomap_get_iovaddr.argtypes = [c_void_p]
+libsdfgen.sdfgen_iomap_destroy.restype = None
+libsdfgen.sdfgen_iomap_destroy.argtypes = [c_void_p]
+
 libsdfgen.sdfgen_mr_create.restype = c_void_p
 libsdfgen.sdfgen_mr_create.argtypes = [c_char_p, c_uint64]
 libsdfgen.sdfgen_mr_create_physical.restype = c_void_p
@@ -142,6 +149,8 @@ libsdfgen.sdfgen_pd_get_map_vaddr.restype = c_uint64
 libsdfgen.sdfgen_pd_get_map_vaddr.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_pd_add_map.restype = None
 libsdfgen.sdfgen_pd_add_map.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_pd_add_iomap.restype = None
+libsdfgen.sdfgen_pd_add_iomap.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_pd_add_irq.restype = c_int8
 libsdfgen.sdfgen_pd_add_irq.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_pd_set_virtual_machine.restype = c_bool
@@ -330,6 +339,14 @@ libsdfgen.sdfgen_sddf_lwip_connect.argtypes = [c_void_p]
 libsdfgen.sdfgen_sddf_lwip_serialise_config.restype = c_bool
 libsdfgen.sdfgen_sddf_lwip_serialise_config.argtypes = [c_void_p, c_char_p]
 
+libsdfgen.sdfgen_pd_get_num_maps.restype = c_uint32
+libsdfgen.sdfgen_pd_get_num_maps.argtypes = [c_void_p]
+libsdfgen.sdfgen_pd_get_map_at.restype = c_void_p
+libsdfgen.sdfgen_pd_get_map_at.argtypes = [c_void_p, c_uint32]
+libsdfgen.sdfgen_mapping_get_mr.restype = c_void_p
+libsdfgen.sdfgen_mapping_get_mr.argtypes = [c_void_p]
+libsdfgen.sdfgen_mr_get_name.restype = c_void_p
+libsdfgen.sdfgen_mr_get_name.argtypes = [c_void_p, POINTER(c_uint32)]
 
 def ffi_uint8_ptr(n: Optional[int]):
     """
@@ -528,6 +545,9 @@ class SystemDescription:
         def add_map(self, map: SystemDescription.Map):
             libsdfgen.sdfgen_pd_add_map(self._obj, map._obj)
 
+        def add_iomap(self, iomap: SystemDescription.IOMap):
+            libsdfgen.sdfgen_pd_add_iomap(self._obj, iomap._obj)
+
         def add_irq(self, irq: SystemDescription.Irq) -> int:
             id = libsdfgen.sdfgen_pd_add_irq(self._obj, irq._obj)
             if id < 0:
@@ -546,6 +566,13 @@ class SystemDescription:
             ret = libsdfgen.sdfgen_pd_set_virtual_machine(self._obj, vm._obj)
             if not ret:
                 raise Exception(f"ProtectionDomain '{self.name}' already has VirtualMachine")
+
+        @property
+        def mappings(self):
+            result = []
+            for i in range(libsdfgen.sdfgen_pd_get_num_maps(self._obj)):
+                result.append(SystemDescription.MapView(libsdfgen.sdfgen_pd_get_map_at(self._obj, i)))
+            return result
 
         def __del__(self):
             if hasattr(self, "_obj"):
@@ -629,6 +656,32 @@ class SystemDescription:
         @property
         def vaddr(self):
             return libsdfgen.sdfgen_map_get_vaddr(self._obj)
+
+    class IOMap:
+        _obj: c_void_p
+
+        def __init__(
+                self,
+                *,
+                mr: SystemDescription.MemoryRegion,
+                iovaddr: int,
+                pci_bus: int,
+                pci_dev: int,
+                pci_func: int,
+                perms: str
+        ):
+            c_perms = SystemDescription.Map._perms_to_c_bindings(perms)
+            self._obj = libsdfgen.sdfgen_iomap_create(mr._obj, iovaddr, pci_bus, pci_dev, pci_func, c_perms)
+            if self._obj is None:
+                raise Exception("Failed to create IO Mapping")
+
+        @property
+        def iovaddr(self):
+            return libsdfgen.sdfgen_iomap_get_iovaddr(self._obj)
+
+        def __del__(self):
+            if hasattr(self, "_obj"):
+                libsdfgen.sdfgen_iomap_destroy(self._obj)
 
     class MemoryRegion:
         _obj: c_void_p
@@ -822,6 +875,34 @@ class SystemDescription:
         """
         return libsdfgen.sdfgen_render(self._obj).decode("utf-8")
 
+    class MemoryRegionView:
+        def __init__(self, obj):
+            self._obj = obj
+
+        @property
+        def name(self):
+            length = c_uint32(0)
+            name_ptr = libsdfgen.sdfgen_mr_get_name(self._obj, pointer(length))
+            return ctypes.string_at(name_ptr, length.value).decode("utf-8")
+
+        @property
+        def paddr(self):
+            paddr = c_uint64(0)
+            if libsdfgen.sdfgen_mr_get_paddr(self._obj, pointer(paddr)):
+                return paddr.value
+            return None
+
+    class MapView:
+        def __init__(self, obj):
+            self._obj = obj
+
+        @property
+        def vaddr(self):
+            return libsdfgen.sdfgen_map_get_vaddr(self._obj)
+
+        @property
+        def mr(self):
+            return SystemDescription.MemoryRegionView(libsdfgen.sdfgen_mapping_get_mr(self._obj))
 
 class Sddf:
     """

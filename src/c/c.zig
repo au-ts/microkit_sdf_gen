@@ -21,6 +21,7 @@ const Vm = SystemDescription.VirtualMachine;
 const Channel = SystemDescription.Channel;
 const Mr = SystemDescription.MemoryRegion;
 const Map = SystemDescription.Map;
+const IOMap = SystemDescription.IOMap;
 const Arch = SystemDescription.Arch;
 
 fn helper_c_arch_to_enum(c_arch: bindings.sdfgen_arch_t) Arch {
@@ -164,6 +165,19 @@ export fn sdfgen_pd_add_map(c_pd: *align(8) anyopaque, c_map: *align(8) anyopaqu
     const map: *Map = @ptrCast(c_map);
 
     pd.addMap(map.*);
+}
+
+export fn sdfgen_iomap_get_iovaddr(c_iomap: *align(8) anyopaque) u64 {
+    const iomap: *IOMap = @ptrCast(c_iomap);
+
+    return iomap.iovaddr;
+}
+
+export fn sdfgen_pd_add_iomap(c_pd: *align(8) anyopaque, c_iomap: *align(8) anyopaque) void {
+    const pd: *Pd = @ptrCast(c_pd);
+    const iomap: *IOMap = @ptrCast(c_iomap);
+
+    pd.addIOMap(iomap.*);
 }
 
 export fn sdfgen_pd_add_irq(c_pd: *align(8) anyopaque, c_irq: *align(8) anyopaque) i8 {
@@ -474,6 +488,19 @@ export fn sdfgen_map_get_vaddr(c_map: *align(8) anyopaque) u64 {
 export fn sdfgen_map_destroy(c_map: *align(8) anyopaque) void {
     const map: *Map = @ptrCast(c_map);
     allocator.destroy(map);
+}
+
+export fn sdfgen_iomap_create(c_mr: *align(8) anyopaque, iovaddr: u64, pci_bus: u8, pci_dev: u8, pci_func: u8, c_perms: bindings.sdfgen_map_perms_t) ?*anyopaque {
+    const mr: *Mr = @ptrCast(c_mr);
+    const perms: Map.Perms = @bitCast(@as(u3, @truncate(c_perms)));
+    const iomap = allocator.create(IOMap) catch @panic("OOM");
+    iomap.* = IOMap.create(mr.*, iovaddr, pci_bus, pci_dev, pci_func, perms);
+    return iomap;
+}
+
+export fn sdfgen_iomap_destroy(c_iomap: *align(8) anyopaque) void {
+    const iomap: *IOMap = @ptrCast(c_iomap);
+    allocator.destroy(iomap);
 }
 
 export fn sdfgen_channel_create(c_pd_a: *align(8) anyopaque, c_pd_b: *align(8) anyopaque, pd_a_id: [*c]u8, pd_b_id: [*c]u8, pd_a_notify: [*c]bool, pd_b_notify: [*c]bool, c_pp: [*c]u8) ?*anyopaque {
@@ -1126,4 +1153,26 @@ export fn sdfgen_sddf_lwip_serialise_config(c_lib: *align(8) anyopaque, output_d
     lib.serialiseConfig(std.mem.span(output_dir)) catch return false;
 
     return true;
+}
+
+export fn sdfgen_mr_get_name(c_mr: *align(8) anyopaque, len: *u32) [*c]const u8 {
+    const mr: *Mr = @ptrCast(c_mr);
+    len.* = @intCast(mr.name.len);
+    return mr.name.ptr;
+}
+
+export fn sdfgen_pd_get_num_maps(c_pd: *align(8) anyopaque) u32 {
+    const pd: *Pd = @ptrCast(c_pd);
+    return @intCast(pd.maps.items.len);
+}
+
+export fn sdfgen_pd_get_map_at(c_pd: *align(8) anyopaque, index: u32) ?*anyopaque {
+    const pd: *Pd = @ptrCast(c_pd);
+    if (index >= pd.maps.items.len) return null;
+    return &pd.maps.items[index];
+}
+
+export fn sdfgen_mapping_get_mr(c_map: *align(8) anyopaque) ?*anyopaque {
+    const map: *Map = @ptrCast(c_map);
+    return &map.mr;
 }
