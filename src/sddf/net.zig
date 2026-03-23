@@ -82,6 +82,9 @@ pub const Net = struct {
     tx_data_mrs: [MAX_NUM_CLIENTS]?Mr,
     client_info: std.array_list.Managed(ClientInfo),
     vswitch_client_ids: std.array_list.Managed(u8),
+    client_id_to_virt_rx_tx: [MAX_NUM_CLIENTS]u8, // helper for properly managing indices for virts
+    unique_virt_clients: u8, // number of unique virt clients from their perspective
+    vswitch_virt_id: u8, // client index of vswitch presenting itself to virts
 
     pub fn init(allocator: Allocator, sdf: *SystemDescription, device: ?*dtb.Node, driver: *Pd, virt_tx: *Pd, virt_rx: *Pd, options: Options) Net {
         if (options.rx_dma_mr) |exists_rx_dma| {
@@ -119,6 +122,9 @@ pub const Net = struct {
             .maybe_rx_dma_mr = options.rx_dma_mr,
             .tx_data_mrs = [_]?Mr{null} ** MAX_NUM_CLIENTS,
             .vswitch_client_ids = std.array_list.Managed(u8).init(allocator),
+            .client_id_to_virt_rx_tx = [_]u8{0} ** MAX_NUM_CLIENTS,
+            .unique_virt_clients = 0,
+            .vswitch_virt_id = 0,
         };
     }
 
@@ -190,12 +196,24 @@ pub const Net = struct {
             if (system.vswitch == null) {
                 system.vswitch = new_vswitch;
                 system.vswitch_config = std.mem.zeroInit(ConfigResources.Net.VSwitch, .{});
+
+                system.vswitch_virt_id = system.unique_virt_clients;
+                system.client_id_to_virt_rx_tx[client_idx] = system.vswitch_virt_id;
+                system.unique_virt_clients += 1;
+                std.log.info("Adding first client for vswitch with id {} unique_virt_clients {} vswitch virt_id {}", .{client_idx, system.unique_virt_clients, system.vswitch_virt_id});
             } else {
                 // TODO: support more vswitches?
+                system.client_id_to_virt_rx_tx[client_idx] = system.vswitch_virt_id;
+                std.log.info("Adding NEXT client for vswitch with id {} unique_virt_clients {} vswitch virt_id {}", .{client_idx, system.unique_virt_clients, system.vswitch_virt_id});
             }
             system.vswitch_client_ids.append(@intCast(client_idx)) catch @panic("Could not add vswitch client id");// TODO: should I remove the client from the other list then?
+        } else {
+            system.client_id_to_virt_rx_tx[client_idx] = system.unique_virt_clients;
+            system.unique_virt_clients += 1;
+            std.log.info("Adding STANDARD client with id {} unique_virt_clients {} vswitch virt_id {}", .{client_idx, system.unique_virt_clients, system.vswitch_virt_id});
         }
-        std.log.info("Adding client with id {}", .{client_idx});
+
+        std.log.info("Adding client with id {} unique_virt_clients {}", .{client_idx, system.unique_virt_clients});
 
         system.clients.append(client) catch @panic("Could not add client to Net");
         system.client_info.append(std.mem.zeroInit(ClientInfo, .{})) catch @panic("Could not add client to Net");
@@ -296,12 +314,15 @@ pub const Net = struct {
     }
 
     fn clientRxConnect(system: *Net, rx_dma_mr: Mr, client_idx: usize) void {
+        const virt_client_id = system.client_id_to_virt_rx_tx[client_idx]; // different index as we may have multiple client ids as one rx/tx client
         const client_info = system.client_info.items[client_idx];
         const client = system.clients.items[client_idx];
         const maybe_copier = system.copiers.items[client_idx];
         var client_config = &system.client_configs.items[client_idx];
         var copier_config = &system.copy_configs.items[client_idx];
-        var virt_client_config = &system.virt_rx_config.clients[system.virt_rx_config.num_clients];
+        var virt_client_config = &system.virt_rx_config.clients[virt_client_id];
+
+        std.log.info("ClientRxConnect, adding the client_id {} with virt_client_id {}", .{client_idx, virt_client_id});
 
         if (maybe_copier) |copier| {
             system.createConnection(system.virt_rx, copier, &virt_client_config.conn, &copier_config.virt_rx, system.rx_buffers);
@@ -335,12 +356,13 @@ pub const Net = struct {
     }
 
     fn clientTxConnect(system: *Net, client_id: usize) void {
+        const virt_client_id = system.client_id_to_virt_rx_tx[client_id]; // different index as we may have multiple client ids as one rx/tx client
         const client_info = &system.client_info.items[client_id];
         const client = system.clients.items[client_id];
         var client_config = &system.client_configs.items[client_id];
-        const virt_client_config = &system.virt_tx_config.clients[system.virt_tx_config.num_clients];
+        const virt_client_config = &system.virt_tx_config.clients[virt_client_id];
 
-        std.log.info("ClientTxConnect, adding the client_id {}", .{client_id});
+        std.log.info("ClientTxConnect, adding the client_id {} with virt_client_id {}", .{client_id, virt_client_id});
 
         system.createConnection(system.virt_tx, client, &virt_client_config.conn, &client_config.tx, client_info.tx_buffers);
 
@@ -351,9 +373,8 @@ pub const Net = struct {
 
         const data_mr_virt_map = Map.create(data_mr, system.virt_tx.getMapVaddr(&data_mr), .r, .{});
         system.virt_tx.addMap(data_mr_virt_map);
-        virt_client_config.data[client_id] = .createFromMap(data_mr_virt_map); // TODO: this is broken - we have
-                                                                               // a client id 3 and yet it occupies second slot in virt_tx
-                                                                               // config
+        virt_client_config.data[0] = .createFromMap(data_mr_virt_map);
+        virt_client_config.num_data = 1; // always 1 for one connection
 
         const data_mr_client_map = Map.create(data_mr, client.getMapVaddr(&data_mr), .rw, .{});
         client.addMap(data_mr_client_map);
@@ -425,9 +446,8 @@ pub const Net = struct {
     pub fn vswitchRxConnect(system: *Net, rx_dma_mr: Mr) void {
         const vswitch = system.vswitch.?;
         var vswitch_config = &system.vswitch_config;
-        var virt_client_config = &system.virt_rx_config.clients[system.virt_rx_config.num_clients]; // TODO: this should work just fine? It will be the last index there
-                                                                                                    // (vswitch)
-        // TODO: port MAX_NUM_CLIENTS - 1 is assumed to always be the virts - I think it's not reserved yet
+        var virt_client_config = &system.virt_rx_config.clients[system.vswitch_virt_id];
+
         // TODO: swapping rx for tx in vswitch terminology
         system.createConnection(system.virt_rx, vswitch, &virt_client_config.conn, &vswitch_config.ports[MAX_NUM_CLIENTS - 1].tx, system.rx_buffers);
 
@@ -470,17 +490,18 @@ pub const Net = struct {
     pub fn vswitchTxConnect(system: *Net) void {
         const vswitch = system.vswitch.?;
         var vswitch_config = &system.vswitch_config;
-        var virt_client_config = &system.virt_tx_config.clients[system.virt_rx_config.num_clients];
-        // TODO: port MAX_NUM_CLIENTS - 1 is assumed to always be the virts
+        var virt_client_config = &system.virt_tx_config.clients[system.vswitch_virt_id];
+
         // TODO: swapped tx for rx in vswitch terminology
         system.createConnection(system.virt_tx, vswitch, &virt_client_config.conn, &vswitch_config.ports[MAX_NUM_CLIENTS - 1].rx, system.rx_buffers);
         vswitch_config.ports[MAX_NUM_CLIENTS - 1].id = MAX_NUM_CLIENTS - 1;
 
-        std.log.info("VSwitchTxConnect, assigned the id {}", .{vswitch_config.ports[MAX_NUM_CLIENTS - 1].rx.id});
+        std.log.info("VSwitchTxConnect, assigned the id {} at virt_id {}", .{vswitch_config.ports[MAX_NUM_CLIENTS - 1].rx.id, system.vswitch_virt_id});
         // for every client, we map in their TxData region
         for (system.vswitch_config.ports[0..MAX_NUM_CLIENTS - 1]) |port| {
             if (!port.connected) continue;
             const client_id = port.id;
+            std.log.info("VSwitchTxConnect, mapping in port id {}", .{client_id});
             virt_client_config.data[client_id] = port.tx_data;
             virt_client_config.num_data += 1; // TODO: might need to add index mapping here
         }
@@ -517,6 +538,173 @@ pub const Net = struct {
         }
     }
 
+    fn dumpRegion(label: []const u8, r: anytype) void {
+    std.log.info("{s}: io=0x{x} vaddr=0x{x} size=0x{x}", .{
+        label,
+        r.io_addr,
+        r.region.vaddr,
+        r.region.size,
+    });
+}
+
+fn dumpRegionish(label: []const u8, r: anytype) void {
+    const T = @TypeOf(r);
+
+    if (comptime @hasField(T, "io_addr") and @hasField(T, "region")) {
+        std.log.info("{s}: io=0x{x} vaddr=0x{x} size=0x{x}", .{
+            label,
+            r.io_addr,
+            r.region.vaddr,
+            r.region.size,
+        });
+    } else if (comptime @hasField(T, "vaddr") and @hasField(T, "size")) {
+        std.log.info("{s}: vaddr=0x{x} size=0x{x}", .{
+            label,
+            r.vaddr,
+            r.size,
+        });
+    } else {
+        @compileError("dumpRegionish: unsupported region-like type");
+    }
+}
+
+fn isZeroRegionish(r: anytype) bool {
+    const T = @TypeOf(r);
+
+    if (comptime @hasField(T, "io_addr") and @hasField(T, "region")) {
+        return r.io_addr == 0 and r.region.vaddr == 0 and r.region.size == 0;
+    } else if (comptime @hasField(T, "vaddr") and @hasField(T, "size")) {
+        return r.vaddr == 0 and r.size == 0;
+    } else {
+        @compileError("isZeroRegionish: unsupported region-like type");
+    }
+}
+
+fn dumpConn(label: []const u8, c: anytype) void {
+    std.log.info("{s}: id={} num_bufs={}", .{
+        label,
+        c.id,
+        c.num_buffers,
+    });
+    dumpRegionish("  free", c.free_queue);
+    dumpRegionish("  active", c.active_queue);
+}
+
+fn dumpClientMappings(system: *Net) void {
+    std.log.info("========== NET CONFIG DUMP ==========", .{});
+    std.log.info("unique_virt_clients={} vswitch_virt_id={} virt_rx.num_clients={} virt_tx.num_clients={} vswitch.num_ports={}", .{
+        system.unique_virt_clients,
+        system.vswitch_virt_id,
+        system.virt_rx_config.num_clients,
+        system.virt_tx_config.num_clients,
+        system.vswitch_config.num_ports,
+    });
+
+    for (system.clients.items, 0..) |client, client_id| {
+        const virt_id = system.client_id_to_virt_rx_tx[client_id];
+        const is_vswitch_client =
+            std.mem.indexOfScalar(u8, system.vswitch_client_ids.items, @intCast(client_id)) != null;
+
+        std.log.info("--- logical client_id={} name={s} virt_id={} via_vswitch={} ---", .{
+            client_id,
+            client.name,
+            virt_id,
+            is_vswitch_client,
+        });
+
+        const ccfg = &system.client_configs.items[client_id];
+        dumpConn("client.rx", ccfg.rx);
+        dumpConn("client.tx", ccfg.tx);
+        dumpRegionish("client.rx_data", ccfg.rx_data);
+        dumpRegionish("client.tx_data", ccfg.tx_data);
+
+        if (system.copiers.items[client_id]) |copier| {
+            const copy_cfg = &system.copy_configs.items[client_id];
+            std.log.info("copier={s}", .{copier.name});
+            dumpConn("copy.virt_rx", copy_cfg.virt_rx);
+            dumpConn("copy.client", copy_cfg.client);
+            dumpRegionish("copy.client_data", copy_cfg.client_data);
+
+            for (copy_cfg.out_data, 0..) |od, i| {
+                if (isZeroRegionish(od)) continue;
+                std.log.info("copy.out_data[{}]", .{i});
+                dumpRegionish("  out", od);
+            }
+        }
+
+        const vrx = &system.virt_rx_config.clients[virt_id];
+        std.log.info("virt_rx.clients[{}]: num_macs={}", .{ virt_id, vrx.num_macs });
+        dumpConn("virt_rx.conn", vrx.conn);
+        for (0..vrx.num_macs) |m| {
+            const base = m * 6;
+            std.log.info("  mac[{}]={x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}", .{
+                m,
+                vrx.mac_addrs[base + 0],
+                vrx.mac_addrs[base + 1],
+                vrx.mac_addrs[base + 2],
+                vrx.mac_addrs[base + 3],
+                vrx.mac_addrs[base + 4],
+                vrx.mac_addrs[base + 5],
+            });
+        }
+
+        const vtx = &system.virt_tx_config.clients[virt_id];
+        std.log.info("virt_tx.clients[{}]: num_data={}", .{ virt_id, vtx.num_data });
+        dumpConn("virt_tx.conn", vtx.conn);
+        for (0..vtx.num_data) |d| {
+            std.log.info("virt_tx.data[{}]", .{d});
+            dumpRegionish("  data", vtx.data[d]);
+        }
+    }
+
+    if (system.vswitch != null) {
+        std.log.info("========== VSWITCH PORTS ==========", .{});
+        for (system.vswitch_config.ports, 0..) |port, port_idx| {
+            if (!port.connected) continue;
+
+            std.log.info("port[{}]: id={} connected={}", .{
+                port_idx,
+                port.id,
+                port.connected,
+            });
+
+            dumpConn("  rx", port.rx);
+            dumpConn("  tx", port.tx);
+            dumpRegionish("  tx_data", port.tx_data);
+
+            for (0..1) |_| {} // keeps formatting block tidy
+            for (0..@min(1, 1)) |_| {} // no-op
+
+            // dump MACs if present; adjust num_macs field name if needed
+            if (@hasField(@TypeOf(port), "num_macs")) {
+                const num_macs = @field(port, "num_macs");
+                const mac_addrs = @field(port, "mac_addrs");
+                for (0..num_macs) |m| {
+                    const base = m * 6;
+                    std.log.info("  mac[{}]={x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}", .{
+                        m,
+                        mac_addrs[base + 0],
+                        mac_addrs[base + 1],
+                        mac_addrs[base + 2],
+                        mac_addrs[base + 3],
+                        mac_addrs[base + 4],
+                        mac_addrs[base + 5],
+                    });
+                }
+            }
+        }
+
+        std.log.info("========== VIRT RX / TX ROOT ==========", .{});
+        dumpConn("virt_rx.driver", system.virt_rx_config.driver);
+        dumpRegionish("virt_rx.data_region", system.virt_rx_config.data_region);
+        dumpRegionish("virt_rx.buffer_metadata", system.virt_rx_config.buffer_metadata);
+
+        dumpConn("virt_tx.driver", system.virt_tx_config.driver);
+    }
+
+    std.log.info("=====================================", .{});
+}
+
     pub fn connect(system: *Net) !void {
         if (system.device) |dtb_node| {
             try sddf.createDriver(system.sdf, system.driver, dtb_node, .network, &system.device_res);
@@ -530,14 +718,15 @@ pub const Net = struct {
         for (system.clients.items, 0..) |_, i| {
             // we have to split it as vswitch presents as one client to virts
             if (system.vswitch != null and std.mem.indexOfScalar(u8, system.vswitch_client_ids.items[0..], @intCast(i)) != null) {
-                std.log.info("Adding vswitch client with id {}", .{i});
+                std.log.info("Connect: Connecting vswitch client with id {}", .{i});
                 // Connect it to the vswitch
                 // TODO: ask Ivan - leaving these checks as they are, IMO pointless in this case, we always need RX/TX for a client?
                 if (system.client_info.items[i].rx) {
                     system.clientRxVSwitchConnect(rx_dma_mr, i);
 
                     // Just append the MAC to existing ones
-                    const client = &system.virt_rx_config.clients[i];
+                    const virt_client_id = system.client_id_to_virt_rx_tx[i];
+                    const client = &system.virt_rx_config.clients[virt_client_id];
                     const base = client.num_macs * 6;
                     std.mem.copyForwards(u8, client.mac_addrs[base .. base + 6], &system.client_info.items[i].mac_addr.?);
                     client.num_macs += 1;
@@ -554,8 +743,11 @@ pub const Net = struct {
                 if (system.client_info.items[i].rx) {
                     system.clientRxConnect(rx_dma_mr, i);
                     system.virt_rx_config.num_clients += 1;
-                    std.mem.copyForwards(u8, system.virt_rx_config.clients[i].mac_addrs[0 .. 6], &system.client_info.items[i].mac_addr.?);
-                    system.virt_rx_config.clients[i].num_macs += 1;
+
+                    const virt_client_id = system.client_id_to_virt_rx_tx[i];
+                    const client = &system.virt_rx_config.clients[virt_client_id];
+                    std.mem.copyForwards(u8, client.mac_addrs[0 .. 6], &system.client_info.items[i].mac_addr.?);
+                    client.num_macs += 1;
                 }
                 if (system.client_info.items[i].tx) {
                     system.clientTxConnect(i);
@@ -588,6 +780,7 @@ pub const Net = struct {
     pub fn serialiseConfig(system: *Net, prefix: []const u8) !void {
         if (!system.connected) return Error.NotConnected;
 
+        dumpClientMappings(system);
         const allocator = system.allocator;
 
         const device_res_data_name = fmt(allocator, "{s}_device_resources", .{system.driver.name});
