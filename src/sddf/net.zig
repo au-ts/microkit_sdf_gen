@@ -446,9 +446,6 @@ pub const Net = struct {
 
         system.tx_data_mrs[port_slot] = data_mr;
 
-        const data_mr_virt_map = Map.create(data_mr, system.virt_tx.getMapVaddr(&data_mr), .r, .{});
-        system.virt_tx.addMap(data_mr_virt_map);
-
         const data_mr_vswitch_map = Map.create(data_mr, vswitch.getMapVaddr(&data_mr), .r, .{});
         vswitch.addMap(data_mr_vswitch_map);
 
@@ -516,7 +513,11 @@ pub const Net = struct {
         // for every client, we map in their TxData region
         for (0..system.next_vswitch_port_slot) |slot| {
             std.log.info("VSwitchTxConnect, mapping in port id {}", .{slot});
-            virt_client_config.data[slot] = vswitch_config.ports[slot].tx_data;
+            const client_tx_mr = system.tx_data_mrs[slot].?;
+            const virt_tx_client_map = Map.create(client_tx_mr, system.virt_tx.getMapVaddr(&client_tx_mr), .r, .{});
+            system.virt_tx.addMap(virt_tx_client_map);
+
+            virt_client_config.data[slot] = .createFromMap(virt_tx_client_map);
         }
         virt_client_config.num_data = system.next_vswitch_port_slot;
     }
