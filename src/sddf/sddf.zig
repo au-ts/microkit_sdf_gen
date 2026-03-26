@@ -438,12 +438,12 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: *dtb.Node, class: 
                 }
             }
             if (mr == null) {
-                mr = Mr.physical(sdf.allocator, sdf, mr_name, mr_size, .{ .paddr = device_paddr });
+                mr = Mr.physical(sdf.allocator, sdf, mr_name, mr_size, true,  .paddr = device_paddr });
                 sdf.addMemoryRegion(mr.?);
             }
         } else {
             const mr_size = region_resource.size.?;
-            mr = Mr.physical(sdf.allocator, sdf, mr_name, mr_size, .{});
+            mr = Mr.physical(sdf.allocator, sdf, mr_name, mr_size, true, .{});
             sdf.addMemoryRegion(mr.?);
         }
 

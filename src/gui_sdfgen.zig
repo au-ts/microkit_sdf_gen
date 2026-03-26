@@ -156,7 +156,7 @@ fn parseMRFromJson(sdf: *SystemDescription, mr_config: anytype) !Mr {
         }
     }
     // const page_size: Mr.PageSize = @intCast(mr_config.get("page_size").?.integer);
-    const mr_new = Mr.create(sdf.allocator, name, size, .{});
+    const mr_new = Mr.create(sdf.allocator, name, size, true, .{});
 
     return mr_new;
 }

@@ -96,8 +96,8 @@ pub const I2c = struct {
         var virt = system.virt;
 
         // Create all the MRs between the driver and virtualiser
-        const mr_req = Mr.create(allocator, "i2c_driver_request", system.region_req_size, .{});
-        const mr_resp = Mr.create(allocator, "i2c_driver_response", system.region_resp_size, .{});
+        const mr_req = Mr.create(allocator, "i2c_driver_request", system.region_req_size, true, .{});
+        const mr_resp = Mr.create(allocator, "i2c_driver_response", system.region_resp_size, true, .{});
 
         sdf.addMemoryRegion(mr_req);
         sdf.addMemoryRegion(mr_resp);
@@ -140,9 +140,9 @@ pub const I2c = struct {
 
         system.virt_config.num_clients += 1;
 
-        const mr_req = Mr.create(allocator, fmt(allocator, "i2c_client_request_{s}", .{client.name}), system.region_req_size, .{});
-        const mr_resp = Mr.create(allocator, fmt(allocator, "i2c_client_response_{s}", .{client.name}), system.region_resp_size, .{});
-        const mr_data = Mr.create(allocator, fmt(allocator, "i2c_client_data_{s}", .{client.name}), system.region_data_size, .{});
+        const mr_req = Mr.create(allocator, fmt(allocator, "i2c_client_request_{s}", .{client.name}), system.region_req_size, true, .{});
+        const mr_resp = Mr.create(allocator, fmt(allocator, "i2c_client_response_{s}", .{client.name}), system.region_resp_size, true, .{});
+        const mr_data = Mr.create(allocator, fmt(allocator, "i2c_client_data_{s}", .{client.name}), system.region_data_size, true, .{});
 
         sdf.addMemoryRegion(mr_req);
         sdf.addMemoryRegion(mr_resp);

@@ -263,8 +263,8 @@ fn parseArgs(args: []const []const u8, allocator: Allocator) !void {
 fn i2c(allocator: Allocator, sdf: *SystemDescription, blob: *dtb.Node) !void {
     const i2c_node = board.defaultI2cNode(blob);
 
-    const clk_mr = Mr.physical(allocator, sdf, "clk", 0x1000, .{ .paddr = 0xFF63C000 });
-    const gpio_mr = Mr.physical(allocator, sdf, "gpio", 0x4000, .{ .paddr = 0xFF634000 });
+    const clk_mr = Mr.physical(allocator, sdf, "clk", 0x1000, true, .{ .paddr = 0xFF63C000 });
+    const gpio_mr = Mr.physical(allocator, sdf, "gpio", 0x4000, true, .{ .paddr = 0xFF634000 });
 
     sdf.addMemoryRegion(clk_mr);
     sdf.addMemoryRegion(gpio_mr);
@@ -457,7 +457,7 @@ fn webserver(allocator: Allocator, sdf: *SystemDescription, blob: *dtb.Node) !vo
     try serial_system.connect();
     _ = try blk_system.connect();
 
-    const fatfs_metadata = Mr.create(allocator, "fatfs_metadata", 0x200_000, .{});
+    const fatfs_metadata = Mr.create(allocator, "fatfs_metadata", 0x200_000, true, .{});
     // TODO: fix
     fatfs.addMap(.create(fatfs_metadata, 0x40_000_000, .rw, .{ .setvar_vaddr = "fs_metadata" }));
     sdf.addMemoryRegion(fatfs_metadata);
@@ -560,7 +560,7 @@ fn echo_server(allocator: Allocator, sdf: *SystemDescription, blob: *dtb.Node) !
         stop_channel: u8,
     };
 
-    const cycle_counters_mr = Mr.create(allocator, "cyclecounters", 0x1000, .{});
+    const cycle_counters_mr = Mr.create(allocator, "cyclecounters", 0x1000, true, .{});
     sdf.addMemoryRegion(cycle_counters_mr);
 
     const cycle_counters_bench_idle_vaddr = bench_idle.getMapVaddr(&cycle_counters_mr);

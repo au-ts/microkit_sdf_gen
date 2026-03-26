@@ -133,7 +133,7 @@ pub const Serial = struct {
 
     fn createConnection(system: *Serial, server: *Pd, client: *Pd, data_size: usize, server_conn: *ConfigResources.Serial.Connection, client_conn: *ConfigResources.Serial.Connection) void {
         const queue_mr_name = fmt(system.allocator, "{s}/serial/queue/{s}/{s}", .{ system.deviceName(), server.name, client.name });
-        const queue_mr = Mr.create(system.allocator, queue_mr_name, system.queue_size, .{});
+        const queue_mr = Mr.create(system.allocator, queue_mr_name, system.queue_size, true, .{});
         system.sdf.addMemoryRegion(queue_mr);
 
         const queue_mr_server_map = Map.create(queue_mr, server.getMapVaddr(&queue_mr), .rw, .{});
@@ -145,7 +145,7 @@ pub const Serial = struct {
         client_conn.queue = .createFromMap(queue_mr_client_map);
 
         const data_mr_name = fmt(system.allocator, "{s}/serial/data/{s}/{s}", .{ system.deviceName(), server.name, client.name });
-        const data_mr = Mr.create(system.allocator, data_mr_name, data_size, .{});
+        const data_mr = Mr.create(system.allocator, data_mr_name, data_size, true, .{});
         system.sdf.addMemoryRegion(data_mr);
 
         // TOOD: the permissions are incorrect, virtualisers should not have write access to the data

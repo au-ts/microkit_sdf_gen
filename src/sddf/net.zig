@@ -202,7 +202,7 @@ pub const Net = struct {
         client_conn.num_buffers = @intCast(num_buffers);
 
         const free_mr_name = fmt(system.allocator, "{s}/net/queue/{s}/{s}/free", .{ system.deviceName(), server.name, client.name });
-        const free_mr = Mr.create(system.allocator, free_mr_name, queue_mr_size, .{});
+        const free_mr = Mr.create(system.allocator, free_mr_name, queue_mr_size, true, .{});
         system.sdf.addMemoryRegion(free_mr);
 
         const free_mr_server_map = Map.create(free_mr, server.getMapVaddr(&free_mr), .rw, .{});
@@ -214,7 +214,7 @@ pub const Net = struct {
         client_conn.free_queue = .createFromMap(free_mr_client_map);
 
         const active_mr_name = fmt(system.allocator, "{s}/net/queue/{s}/{s}/active", .{ system.deviceName(), server.name, client.name });
-        const active_mr = Mr.create(system.allocator, active_mr_name, queue_mr_size, .{});
+        const active_mr = Mr.create(system.allocator, active_mr_name, queue_mr_size, true, .{});
         system.sdf.addMemoryRegion(active_mr);
 
         const active_mr_server_map = Map.create(active_mr, server.getMapVaddr(&active_mr), .rw, .{});
@@ -240,7 +240,7 @@ pub const Net = struct {
         } else {
             const rx_dma_mr_name = fmt(system.allocator, "{s}/net/rx/data/device", .{system.deviceName()});
             const rx_dma_mr_size = system.sdf.arch.roundUpToPage(system.rx_buffers * BUFFER_SIZE);
-            rx_dma_mr = Mr.physical(system.allocator, system.sdf, rx_dma_mr_name, rx_dma_mr_size, .{});
+            rx_dma_mr = Mr.physical(system.allocator, system.sdf, rx_dma_mr_name, rx_dma_mr_size, true, .{});
             system.sdf.addMemoryRegion(rx_dma_mr);
         }
         const rx_dma_virt_map = Map.create(rx_dma_mr, system.virt_rx.getMapVaddr(&rx_dma_mr), .r, .{});
@@ -249,7 +249,7 @@ pub const Net = struct {
 
         const virt_rx_metadata_mr_name = fmt(system.allocator, "{s}/net/rx/virt_metadata", .{system.deviceName()});
         const virt_rx_metadata_mr_size = system.sdf.arch.roundUpToPage(system.rx_buffers * 4);
-        const virt_rx_metadata_mr = Mr.create(system.allocator, virt_rx_metadata_mr_name, virt_rx_metadata_mr_size, .{});
+        const virt_rx_metadata_mr = Mr.create(system.allocator, virt_rx_metadata_mr_name, virt_rx_metadata_mr_size, true, .{});
         system.sdf.addMemoryRegion(virt_rx_metadata_mr);
         const virt_rx_metadata_map = Map.create(virt_rx_metadata_mr, system.virt_rx.getMapVaddr(&virt_rx_metadata_mr), .rw, .{});
         system.virt_rx.addMap(virt_rx_metadata_map);
@@ -287,7 +287,7 @@ pub const Net = struct {
 
             const client_data_mr_size = system.sdf.arch.roundUpToPage(system.rx_buffers * BUFFER_SIZE);
             const client_data_mr_name = fmt(system.allocator, "{s}/net/rx/data/client/{s}", .{ system.deviceName(), client.name });
-            const client_data_mr = Mr.create(system.allocator, client_data_mr_name, client_data_mr_size, .{});
+            const client_data_mr = Mr.create(system.allocator, client_data_mr_name, client_data_mr_size, true, .{});
             system.sdf.addMemoryRegion(client_data_mr);
 
             const client_data_client_map = Map.create(client_data_mr, client.getMapVaddr(&client_data_mr), .rw, .{});
@@ -318,7 +318,7 @@ pub const Net = struct {
 
         const data_mr_size = system.sdf.arch.roundUpToPage(client_info.tx_buffers * BUFFER_SIZE);
         const data_mr_name = fmt(system.allocator, "{s}/net/tx/data/client/{s}", .{ system.deviceName(), client.name });
-        const data_mr = Mr.physical(system.allocator, system.sdf, data_mr_name, data_mr_size, .{});
+        const data_mr = Mr.physical(system.allocator, system.sdf, data_mr_name, data_mr_size, true, .{});
         system.sdf.addMemoryRegion(data_mr);
 
         const data_mr_virt_map = Map.create(data_mr, system.virt_tx.getMapVaddr(&data_mr), .r, .{});
@@ -440,7 +440,7 @@ pub const Lwip = struct {
     pub fn connect(lib: *Lwip) !void {
         const pbuf_pool_mr_size = lib.num_pbufs * PBUF_STRUCT_SIZE;
         const pbuf_pool_mr_name = fmt(lib.allocator, "{s}/net/lib_sddf_lwip/{s}", .{ lib.net.deviceName(), lib.pd.name });
-        const pbuf_pool_mr = Mr.create(lib.allocator, pbuf_pool_mr_name, pbuf_pool_mr_size, .{});
+        const pbuf_pool_mr = Mr.create(lib.allocator, pbuf_pool_mr_name, pbuf_pool_mr_size, true, .{});
         lib.sdf.addMemoryRegion(pbuf_pool_mr);
 
         const pbuf_pool_mr_map = Map.create(pbuf_pool_mr, lib.pd.getMapVaddr(&pbuf_pool_mr), .rw, .{});

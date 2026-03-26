@@ -89,28 +89,28 @@ pub const Gpu = struct {
         const driver = system.driver;
         const virt = system.virt;
 
-        const mr_events = Mr.create(allocator, "gpu_driver_events", system.queue_region_size, .{});
+        const mr_events = Mr.create(allocator, "gpu_driver_events", system.queue_region_size, true, .{});
         const map_events_driver = Map.create(mr_events, driver.getMapVaddr(&mr_events), .rw, .{});
         const map_events_virt = Map.create(mr_events, virt.getMapVaddr(&mr_events), .rw, .{});
         sdf.addMemoryRegion(mr_events);
         driver.addMap(map_events_driver);
         virt.addMap(map_events_virt);
 
-        const mr_req = Mr.create(allocator, "gpu_driver_request", system.queue_region_size, .{});
+        const mr_req = Mr.create(allocator, "gpu_driver_request", system.queue_region_size, true, .{});
         const map_req_driver = Map.create(mr_req, driver.getMapVaddr(&mr_req), .rw, .{});
         const map_req_virt = Map.create(mr_req, virt.getMapVaddr(&mr_req), .rw, .{});
         sdf.addMemoryRegion(mr_req);
         driver.addMap(map_req_driver);
         virt.addMap(map_req_virt);
 
-        const mr_resp = Mr.create(allocator, "gpu_driver_response", system.queue_region_size, .{});
+        const mr_resp = Mr.create(allocator, "gpu_driver_response", system.queue_region_size, true, .{});
         const map_resp_driver = Map.create(mr_resp, driver.getMapVaddr(&mr_resp), .rw, .{});
         const map_resp_virt = Map.create(mr_resp, virt.getMapVaddr(&mr_resp), .rw, .{});
         sdf.addMemoryRegion(mr_resp);
         driver.addMap(map_resp_driver);
         virt.addMap(map_resp_virt);
 
-        const mr_data = Mr.physical(allocator, sdf, "gpu_driver_data", system.data_region_size, .{});
+        const mr_data = Mr.physical(allocator, sdf, "gpu_driver_data", system.data_region_size, true, .{});
         const map_data_driver = Map.create(mr_data, driver.getMapVaddr(&mr_data), .rw, .{});
         const map_data_virt = Map.create(mr_data, virt.getMapVaddr(&mr_data), .rw, .{});
         sdf.addMemoryRegion(mr_data);
@@ -147,28 +147,28 @@ pub const Gpu = struct {
         const sdf = system.sdf;
         const allocator = system.allocator;
 
-        const mr_events = Mr.create(allocator, fmt(allocator, "gpu_client_{s}_events", .{client.name}), system.queue_region_size, .{});
+        const mr_events = Mr.create(allocator, fmt(allocator, "gpu_client_{s}_events", .{client.name}), system.queue_region_size, true, .{});
         const map_events_virt = Map.create(mr_events, system.virt.getMapVaddr(&mr_events), .rw, .{});
         const map_events_client = Map.create(mr_events, client.getMapVaddr(&mr_events), .r, .{});
         system.sdf.addMemoryRegion(mr_events);
         system.virt.addMap(map_events_virt);
         client.addMap(map_events_client);
 
-        const mr_req = Mr.create(allocator, fmt(allocator, "gpu_client_{s}_request", .{client.name}), system.queue_region_size, .{});
+        const mr_req = Mr.create(allocator, fmt(allocator, "gpu_client_{s}_request", .{client.name}), system.queue_region_size, true, .{});
         const map_req_virt = Map.create(mr_req, system.virt.getMapVaddr(&mr_req), .rw, .{});
         const map_req_client = Map.create(mr_req, client.getMapVaddr(&mr_req), .rw, .{});
         system.sdf.addMemoryRegion(mr_req);
         system.virt.addMap(map_req_virt);
         client.addMap(map_req_client);
 
-        const mr_resp = Mr.create(allocator, fmt(allocator, "gpu_client_{s}_response", .{client.name}), system.queue_region_size, .{});
+        const mr_resp = Mr.create(allocator, fmt(allocator, "gpu_client_{s}_response", .{client.name}), system.queue_region_size, true, .{});
         const map_resp_virt = Map.create(mr_resp, system.virt.getMapVaddr(&mr_resp), .rw, .{});
         const map_resp_client = Map.create(mr_resp, client.getMapVaddr(&mr_resp), .rw, .{});
         system.sdf.addMemoryRegion(mr_resp);
         system.virt.addMap(map_resp_virt);
         client.addMap(map_resp_client);
 
-        const mr_data = Mr.physical(allocator, sdf, fmt(allocator, "gpu_client_{s}_data", .{client.name}), system.data_region_size, .{});
+        const mr_data = Mr.physical(allocator, sdf, fmt(allocator, "gpu_client_{s}_data", .{client.name}), system.data_region_size, true, .{});
         const map_data_virt = Map.create(mr_data, system.virt.getMapVaddr(&mr_data), .rw, .{});
         const map_data_client = Map.create(mr_data, client.getMapVaddr(&mr_data), .rw, .{});
         system.sdf.addMemoryRegion(mr_data);

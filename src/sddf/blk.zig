@@ -225,7 +225,7 @@ pub const Blk = struct {
         system.virt.addMap(map_resp_virt);
         client_pd.addMap(map_resp_client);
 
-        const mr_data = Mr.physical(allocator, sdf, fmt(allocator, "blk_client_{s}_data", .{client_pd.name}), data_mr_size, .{});
+        const mr_data = Mr.physical(allocator, sdf, fmt(allocator, "blk_client_{s}_data", .{client_pd.name}), data_mr_size, true, .{});
         const map_data_virt = Map.create(mr_data, system.virt.getMapVaddr(&mr_data), .rw, .{});
         const map_data_client = Map.create(mr_data, client_pd.getMapVaddr(&mr_data), .rw, .{});
 
