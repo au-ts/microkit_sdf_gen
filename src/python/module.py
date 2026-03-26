@@ -697,8 +697,8 @@ class SystemDescription:
             LEVEL = 1,
 
         class Polarity(IntEnum):
-            ACTIVELOW = 0,
-            ACTIVEHIGH = 1,
+            ACTIVEHIGH = 0,
+            ACTIVELOW = 1,
 
         def __init__(
             self,

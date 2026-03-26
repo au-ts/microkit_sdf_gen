@@ -753,8 +753,8 @@ pub const SystemDescription = struct {
         };
 
         pub const IoapicPolarity = enum(u8) {
-            low = 0,
-            high = 1,
+            high = 0,
+            low = 1,
         };
 
         const Kind = union(enum) {
