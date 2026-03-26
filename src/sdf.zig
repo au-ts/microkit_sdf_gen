@@ -148,10 +148,8 @@ pub const SystemDescription = struct {
                 try std.fmt.format(writer, " page_size=\"0x{x}\"", .{page_size.toInt(sdf.arch)});
             }
 
-            if (mr.backed) |backed| {
-                if (!backed) {
-                    try std.fmt.format(writer, "backed=\"{x}\"", .{"false"});
-                }
+            if (mr.backed) {
+                try std.fmt.format(writer, "backed=\"{x}\"", .{"false"});
             }
 
             _ = try writer.write(" />\n");
