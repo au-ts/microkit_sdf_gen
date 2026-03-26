@@ -407,21 +407,21 @@ export fn sdfgen_ioport_destroy(c_ioport: *align(8) anyopaque) void {
     allocator.destroy(ioport);
 }
 
-export fn sdfgen_mr_create(name: [*c]u8, size: u64) *anyopaque {
+export fn sdfgen_mr_create(name: [*c]u8, size: u64, backed: bool) *anyopaque {
     const mr = allocator.create(Mr) catch @panic("OOM");
-    mr.* = Mr.create(allocator, std.mem.span(name), size, true, .{});
+    mr.* = Mr.create(allocator, std.mem.span(name), size, backed, .{});
 
     return mr;
 }
 
-export fn sdfgen_mr_create_physical(c_sdf: *align(8) anyopaque, name: [*c]u8, size: u64, paddr: [*c]u64) *anyopaque {
+export fn sdfgen_mr_create_physical(c_sdf: *align(8) anyopaque, name: [*c]u8, size: u64, paddr: [*c]u64, backed: bool) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const mr = allocator.create(Mr) catch @panic("OOM");
     var options: Mr.OptionsPhysical = .{};
     if (paddr != null) {
         options.paddr = paddr.*;
     }
-    mr.* = Mr.physical(allocator, sdf, std.mem.span(name), size, true, options);
+    mr.* = Mr.physical(allocator, sdf, std.mem.span(name), size, backed, options);
 
     return mr;
 }
