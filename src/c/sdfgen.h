@@ -76,12 +76,12 @@ typedef enum {
 } sdfgen_irq_trigger_t;
 
 typedef enum {
-    IRQ_IOAPIC_POLARITY_ACTIVE_LOW = 0,
-    IRQ_IOAPIC_POLARITY_ACTIVE_HIGH = 1,
+    IRQ_IOAPIC_POLARITY_ACTIVE_HIGH = 0,
+    IRQ_IOAPIC_POLARITY_ACTIVE_LOW = 1,
 } sdfgen_irq_ioapic_polarity_t;
 
 void *sdfgen_irq_create(uint32_t number, sdfgen_irq_trigger_t *trigger, uint8_t *id);
-void *sdfgen_irq_ioapic_create(uint64_t ioapic_id, uint64_t pin, sdfgen_irq_trigger_t *trigger, sdfgen_irq_ioapic_polarity_t *polarity, uint8_t *id);
+void *sdfgen_irq_ioapic_create(uint64_t ioapic_id, uint64_t pin, sdfgen_irq_trigger_t *trigger, sdfgen_irq_ioapic_polarity_t *polarity, uint64_t vector, uint8_t *id);
 void *sdfgen_irq_msi_create(uint8_t pci_bus, uint8_t pci_device, uint8_t pci_func, uint64_t vector, uint64_t handle, uint8_t *id);
 void sdfgen_irq_destroy(void *irq);
 
