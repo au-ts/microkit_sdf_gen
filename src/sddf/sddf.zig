@@ -305,7 +305,7 @@ pub const Config = struct {
 
             pub fn dirs(comptime self: Class) []const []const u8 {
                 return switch (self) {
-                    .network => &.{"network", "network/virtio"},
+                    .network => &.{ "network", "network/virtio" },
                     .serial => &.{"serial"},
                     .timer => &.{"timer"},
                     .blk => &.{ "blk", "blk/mmc", "blk/virtio" },
@@ -493,13 +493,10 @@ pub fn createDriver(sdf: *SystemDescription, pd: *Pd, device: *dtb.Node, class: 
         const dt_irq = dt_irqs[driver_irq.dt_index];
 
         const irq = try dtb.parseIrq(sdf.arch, dt_irq);
-        const irq_id = try pd.addIrq(Irq.create(
-            irq.number().?,
-            .{
-                .id = driver_irq.channel_id,
-                .trigger = irq.trigger(),
-            }
-        ));
+        const irq_id = try pd.addIrq(Irq.create(irq.number().?, .{
+            .id = driver_irq.channel_id,
+            .trigger = irq.trigger(),
+        }));
 
         device_res.irqs[device_res.num_irqs] = .{
             .id = irq_id,

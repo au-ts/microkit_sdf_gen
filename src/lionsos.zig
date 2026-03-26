@@ -98,8 +98,8 @@ pub const FileSystem = struct {
         const fs = system.fs;
         const client = system.client;
 
-        const fs_command_queue = Mr.create(allocator, fmt(allocator, "fs_{s}_command_queue", .{fs.name}), system.command_queue_size, .{});
-        const fs_completion_queue = Mr.create(allocator, fmt(allocator, "fs_{s}_completion_queue", .{fs.name}), system.completion_queue_size, .{});
+        const fs_command_queue = Mr.create(allocator, fmt(allocator, "fs_{s}_command_queue", .{fs.name}), system.command_queue_size, true, .{});
+        const fs_completion_queue = Mr.create(allocator, fmt(allocator, "fs_{s}_completion_queue", .{fs.name}), system.completion_queue_size, true, .{});
 
         system.sdf.addMemoryRegion(fs_command_queue);
         system.sdf.addMemoryRegion(fs_completion_queue);
@@ -108,7 +108,7 @@ pub const FileSystem = struct {
             if (system.data_mr) |data_mr| {
                 break :blk data_mr;
             } else {
-                const mr = Mr.create(allocator, fmt(allocator, "fs_{s}_share", .{fs.name}), system.data_size, .{});
+                const mr = Mr.create(allocator, fmt(allocator, "fs_{s}_share", .{fs.name}), system.data_size, true, .{});
                 system.sdf.addMemoryRegion(mr);
                 break :blk mr;
             }
@@ -250,10 +250,10 @@ pub const FileSystem = struct {
             });
             fat.fs.connect(.{});
             // Special things for FATFS
-            const stack1 = Mr.create(allocator, fmt(allocator, "{s}_stack1", .{fs_pd.name}), 0x40_000, .{});
-            const stack2 = Mr.create(allocator, fmt(allocator, "{s}_stack2", .{fs_pd.name}), 0x40_000, .{});
-            const stack3 = Mr.create(allocator, fmt(allocator, "{s}_stack3", .{fs_pd.name}), 0x40_000, .{});
-            const stack4 = Mr.create(allocator, fmt(allocator, "{s}_stack4", .{fs_pd.name}), 0x40_000, .{});
+            const stack1 = Mr.create(allocator, fmt(allocator, "{s}_stack1", .{fs_pd.name}), 0x40_000, true, .{});
+            const stack2 = Mr.create(allocator, fmt(allocator, "{s}_stack2", .{fs_pd.name}), 0x40_000, true, .{});
+            const stack3 = Mr.create(allocator, fmt(allocator, "{s}_stack3", .{fs_pd.name}), 0x40_000, true, .{});
+            const stack4 = Mr.create(allocator, fmt(allocator, "{s}_stack4", .{fs_pd.name}), 0x40_000, true, .{});
             sdf.addMemoryRegion(stack1);
             sdf.addMemoryRegion(stack2);
             sdf.addMemoryRegion(stack3);
@@ -361,7 +361,7 @@ pub const FileSystem = struct {
             const allocator = vmfs.fs.allocator;
             const config_share_size = conf_uio_reg.size;
             const config_share_guest_paddr = conf_uio_reg.guest_paddr;
-            const config_share_region = Mr.create(allocator, fmt(allocator, "fs_{s}_guest_conf_share", .{vmfs.fs_vm_sys.guest.name}), config_share_size, .{});
+            const config_share_region = Mr.create(allocator, fmt(allocator, "fs_{s}_guest_conf_share", .{vmfs.fs_vm_sys.guest.name}), config_share_size, true, .{});
             vmfs.fs_vm_sys.sdf.addMemoryRegion(config_share_region);
 
             // Finally map everything in

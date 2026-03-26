@@ -86,9 +86,9 @@ libsdfgen.sdfgen_map_destroy.restype = None
 libsdfgen.sdfgen_map_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_mr_create.restype = c_void_p
-libsdfgen.sdfgen_mr_create.argtypes = [c_char_p, c_uint64]
+libsdfgen.sdfgen_mr_create.argtypes = [c_char_p, c_uint64, c_bool]
 libsdfgen.sdfgen_mr_create_physical.restype = c_void_p
-libsdfgen.sdfgen_mr_create_physical.argtypes = [c_void_p, c_char_p, c_uint64, POINTER(c_uint64)]
+libsdfgen.sdfgen_mr_create_physical.argtypes = [c_void_p, c_char_p, c_uint64, POINTER(c_uint64), c_bool]
 libsdfgen.sdfgen_mr_get_size.restype = c_uint64
 libsdfgen.sdfgen_mr_get_size.argtypes = [c_void_p]
 libsdfgen.sdfgen_mr_get_paddr.restype = c_bool
@@ -643,7 +643,7 @@ class SystemDescription:
             *,
             physical: Optional[bool] = None,
             paddr: Optional[int] = None,
-            backed: Optional[bool] = None
+            backed: bool = True
         ) -> None:
             c_name = c_char_p(name.encode("utf-8"))
             if paddr:
@@ -669,7 +669,7 @@ class SystemDescription:
 
         def __del__(self):
             if hasattr(self, "_obj"):
-                libsdfgen.sdfgen_mr_destroy(self._obj)
+                libsdfgen._destroy(self._obj)
 
     class Irq(ABC):
         _obj: c_void_p
