@@ -846,9 +846,11 @@ class SystemDescription:
             libsdfgen.sdfgen_destroy(self._obj)
 
     def add_pd(self, pd: ProtectionDomain):
+        self.keep_alive.add(pd)
         libsdfgen.sdfgen_add_pd(self._obj, pd._obj)
 
     def add_mr(self, mr: MemoryRegion):
+        self.keep_alive.add(mr)
         libsdfgen.sdfgen_add_mr(self._obj, mr._obj)
 
     def add_channel(self, ch: Channel):
