@@ -833,15 +833,17 @@ export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyop
     return net;
 }
 
-export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, client: *align(8) anyopaque, copier: *align(8) anyopaque, vswitch: ?*align(8) anyopaque, mac_addr: [*c]u8, rx: bool, tx: bool) bindings.sdfgen_sddf_status_t {
+export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, client: *align(8) anyopaque, copier: *align(8) anyopaque, c_vswitch: ?*align(8) anyopaque, mac_addr: [*c]u8, rx: bool, tx: bool) bindings.sdfgen_sddf_status_t {
     const net: *sddf.Net = @ptrCast(system);
     var options: sddf.Net.ClientOptions = .{};
     if (mac_addr) |a| {
         options.mac_addr = std.mem.span(a);
     }
+    const vswitch: ?*Pd = if (c_vswitch) |p| @ptrCast(p) else null;
     options.rx = rx;
     options.tx = tx;
-    net.addClientWithCopier(@ptrCast(client), @ptrCast(copier), @ptrCast(vswitch), options) catch |e| {
+
+    net.addClientWithCopier(@ptrCast(client), @ptrCast(copier), vswitch, options) catch |e| {
         switch (e) {
             sddf.Net.Error.DuplicateClient => return 1,
             sddf.Net.Error.InvalidClient => return 2,

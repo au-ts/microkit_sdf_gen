@@ -226,6 +226,7 @@ libsdfgen.sdfgen_sddf_net_add_client_with_copier.argtypes = [
     c_void_p,
     c_void_p,
     c_void_p,
+    c_void_p,
     c_char_p,
     c_bool,
     c_bool
@@ -1079,14 +1080,16 @@ class Sddf:
             client: SystemDescription.ProtectionDomain,
             copier: Optional[SystemDescription.ProtectionDomain] = None,
             *,
+            vswitch: Optional[SystemDescription.ProtectionDomain] = None,
             mac_addr: Optional[str] = None,
             rx: Optional[bool] = None,
             tx: Optional[bool] = None
         ) -> None:
             """
-            Add a client connected to a copier component for RX traffic.
+            Add a client connected to a copier component for RX traffic. Optionally connected to a vswitch.
 
             :param copier: must be unique to this client, cannot be used with any other client.
+            :param vswitch: can be shared with other clients.
             :param mac_addr: must be unique to the Network system.
             """
             if mac_addr is not None and len(mac_addr) != 17:
@@ -1101,6 +1104,10 @@ class Sddf:
                 copier_obj = None
             else:
                 copier_obj = copier._obj
+            if vswitch is None:
+                vswitch_obj = None
+            else:
+                vswitch_obj = vswitch._obj
             if rx is None or rx is True:
                 rx_arg = True
             else:
@@ -1109,8 +1116,9 @@ class Sddf:
                 tx_arg = True
             else:
                 tx_arg = False
+
             ret = libsdfgen.sdfgen_sddf_net_add_client_with_copier(
-                self._obj, client._obj, copier_obj, c_mac_addr, rx_arg, tx_arg
+                self._obj, client._obj, copier_obj, vswitch_obj, c_mac_addr, rx_arg, tx_arg
             )
             if ret == SddfStatus.OK:
                 return
