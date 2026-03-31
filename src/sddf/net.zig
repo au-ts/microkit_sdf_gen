@@ -23,7 +23,6 @@ pub const Net = struct {
     const BUFFER_SIZE = 2048;
 
     // TODO: later share them with data.zig
-    const TEMP_MAC_ADDR: u8 = 3; // TODO: this is so we can have vswitch act as a port to another vswitch
     const MAX_NUM_CLIENTS: usize = 64;
     const VSWITCH_VIRT_PORT: usize = MAX_NUM_CLIENTS - 1;
     const MAX_VSWITCH_CLIENT_PORTS: usize = MAX_NUM_CLIENTS - 1;
@@ -792,7 +791,7 @@ fn dumpClientMappings(system: *Net) void {
             // Fill in MAC addresses
             for (system.vswitch_client_ids.items[0..]) |id| {
                 const port_slot = system.client_id_to_port[id].?;
-                std.mem.copyForwards(u8, system.vswitch_config.ports[port_slot].mac_addrs[0 .. 6],  &system.client_info.items[id].mac_addr.?); // TODO: later extend to multiple MACs behind a port
+                std.mem.copyForwards(u8, system.vswitch_config.ports[port_slot].mac_addr[0 .. 6],  &system.client_info.items[id].mac_addr.?);
             }
         }
 
