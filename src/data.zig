@@ -18,8 +18,6 @@ comptime {
 const MAGIC_START: [4]u8 = .{ 's', 'D', 'D', 'F' };
 const LIONS_MAGIC_START: [7]u8 = .{ 'L', 'i', 'o', 'n', 's', 'O', 'S' };
 
-const TEMP_MAC_ADDR: u8 = 3; // TODO: this is so we can have vswitch act as a port to another vswitch
-
 /// Only emit JSON versions of the serialised configuration data
 /// in debug mode.
 pub const emit_json = builtin.mode == .Debug;
@@ -240,7 +238,7 @@ pub const Resources = struct {
         pub const VirtRx = extern struct {
             pub const VirtRxClient = extern struct {
                 conn: Connection,
-                mac_addrs: [6*MAX_NUM_CLIENTS*TEMP_MAC_ADDR]u8, // TODO: this is just linear
+                mac_addrs: [6*MAX_NUM_CLIENTS]u8,
                 num_macs: u8,
             };
 
@@ -287,7 +285,7 @@ pub const Resources = struct {
                 rx: Connection,
                 tx: Connection,
                 tx_data: Device.Region,
-                mac_addrs: [6*TEMP_MAC_ADDR]u8,
+                mac_addr: [6]u8,
                 id: u8,
                 connected: bool,
             };
