@@ -64,7 +64,7 @@ pub const Net = struct {
     driver: *Pd,
     virt_rx: *Pd,
     virt_tx: *Pd,
-    vswitch: ?*Pd, // TODO: theoritically we could have 2, think on extending them and distinguishing between them`
+    vswitch: ?*Pd,
     copiers: std.array_list.Managed(?*Pd),
     clients: std.array_list.Managed(*Pd),
 
@@ -221,7 +221,6 @@ pub const Net = struct {
             system.client_id_to_virt_rx_tx[client_idx] = system.vswitch_virt_id;
             system.vswitch_client_ids.append(@intCast(client_idx)) catch @panic("Could not add vswitch client id");
 
-            // TODO: support more vswitches?
             std.log.info("Adding NEXT client for vswitch with id {} unique_virt_clients {} vswitch virt_id {}", .{client_idx, system.unique_virt_clients, system.vswitch_virt_id});
         } else {
             system.client_id_to_virt_rx_tx[client_idx] = system.unique_virt_clients;
@@ -249,7 +248,7 @@ pub const Net = struct {
             // If there is no copier, the number of rx buffers must be equal to the number of dma buffers
             system.client_info.items[client_idx].rx_buffers = system.rx_buffers;
         } else {
-            system.client_info.items[client_idx].rx_buffers = options.rx_buffers; // TODO: not sure about vswitch and buffers rn?
+            system.client_info.items[client_idx].rx_buffers = options.rx_buffers;
         }
         system.client_info.items[client_idx].tx = options.tx;
         system.client_info.items[client_idx].tx_buffers = options.tx_buffers;
@@ -450,7 +449,7 @@ pub const Net = struct {
         vswitch.addMap(data_mr_vswitch_map);
 
         vswitch_config.ports[port_slot].id = @intCast(port_slot);
-        vswitch_config.ports[port_slot].tx_data = .createFromMap(data_mr_vswitch_map); // TODO: not sure if I have to save it for vswitch as well?
+        vswitch_config.ports[port_slot].tx_data = .createFromMap(data_mr_vswitch_map);
 
         const data_mr_client_map = Map.create(data_mr, client.getMapVaddr(&data_mr), .rw, .{});
         client.addMap(data_mr_client_map);
@@ -495,7 +494,7 @@ pub const Net = struct {
                 const other_tx_copier_map = Map.create(other_client_mr, copier.getMapVaddr(&other_client_mr), .r, .{});
                 copier.addMap(other_tx_copier_map);
                 // Store the descriptor
-                copier_config.out_data[src_slot] = .createFromMap(other_tx_copier_map); // TODO: do we need num_data? Probably not
+                copier_config.out_data[src_slot] = .createFromMap(other_tx_copier_map);
             }
         }
     }
@@ -505,11 +504,18 @@ pub const Net = struct {
         var vswitch_config = &system.vswitch_config;
         var virt_client_config = &system.virt_tx_config.clients[system.vswitch_virt_id];
 
-        // TODO: swapped tx for rx in vswitch terminology
-        system.createConnection(system.virt_tx, vswitch, &virt_client_config.conn, &vswitch_config.ports[VSWITCH_VIRT_PORT].rx, system.rx_buffers);
+        var num_buffers: usize = 0;
+        for (system.vswitch_client_ids.items) |cid| {
+            const client_info = system.client_info.items[cid];
+            if (client_info.tx) {
+                num_buffers += client_info.tx_buffers;
+            }
+        }
+
+        system.createConnection(system.virt_tx, vswitch, &virt_client_config.conn, &vswitch_config.ports[VSWITCH_VIRT_PORT].rx, num_buffers);
         vswitch_config.ports[VSWITCH_VIRT_PORT].id = VSWITCH_VIRT_PORT;
 
-        std.log.info("VSwitchTxConnect, assigned the id {} at virt_id {}", .{vswitch_config.ports[VSWITCH_VIRT_PORT].rx.id, system.vswitch_virt_id});
+        std.log.info("VSwitchTxConnect, assigned the id {} at virt_id {} num_buffers {}", .{vswitch_config.ports[VSWITCH_VIRT_PORT].rx.id, system.vswitch_virt_id, num_buffers});
         // for every client, we map in their TxData region
         for (0..system.next_vswitch_port_slot) |slot| {
             std.log.info("VSwitchTxConnect, mapping in port id {}", .{slot});
