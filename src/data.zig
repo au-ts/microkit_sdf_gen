@@ -285,7 +285,6 @@ pub const Resources = struct {
         pub const VSwitch = extern struct {
             pub const VSwitchPort = extern struct {
                 rx: Connection,
-                rx_data: Region, // TODO: might not need that
                 tx: Connection,
                 tx_data: Device.Region,
                 mac_addrs: [6*TEMP_MAC_ADDR]u8,
