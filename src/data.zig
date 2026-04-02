@@ -293,6 +293,7 @@ pub const Resources = struct {
             ports: [MAX_NUM_CLIENTS]VSwitchPort,
             num_ports: u8,
             buffer_metadata: Region,
+            buffers_per_client: u16,
         };
     };
 
