@@ -33,7 +33,6 @@ pub const Timer = struct {
     /// Config structs
     driver_config: ConfigResources.Timer.Driver,
     virt_config: ConfigResources.Timer.Virt,
-    client_configs: std.array_list.Managed(ConfigResources.I2c.Client),
     /// Client PDs serviced by the timer driver
     clients: std.array_list.Managed(*Pd),
     client_configs: std.array_list.Managed(ConfigResources.Timer.Client),
@@ -44,6 +43,7 @@ pub const Timer = struct {
 
     pub const Options = struct {
         time_page_size: usize = 0x1000,
+    };
 
     pub fn init(allocator: Allocator, sdf: *SystemDescription, device: ?*dtb.Node, driver: *Pd, virt: *Pd, options: Options) Timer {
         // Virt should be passive
@@ -99,8 +99,7 @@ pub const Timer = struct {
         system.client_configs.append(std.mem.zeroInit(ConfigResources.Timer.Client, .{})) catch @panic("Could not add client to Timer");
     }
 
-    pub fn connectDriver(system: *I2c, mr_time_page: MemoryRegion) void {
-        const allocator = system.allocator;
+    pub fn connectDriver(system: *Timer, mr_time_page: Mr) void {
         var sdf = system.sdf;
         var driver = system.driver;
         var virt = system.virt;
@@ -116,10 +115,10 @@ pub const Timer = struct {
         virt.addMap(virt_map_time_page);
 
         const ch = Channel.create(system.driver, system.virt, .{
-                // virt must be able to ppc to driver, not notify.
-                .pp = .b,
-                .pd_b_notify = false,
-            }) catch unreachable;
+            // virt must be able to ppc to driver, not notify.
+            .pp = .b,
+            .pd_b_notify = false,
+        }) catch unreachable;
         sdf.addChannel(ch);
 
         system.driver_config = .{
@@ -127,37 +126,36 @@ pub const Timer = struct {
             .virt_id = ch.pd_a_id,
         };
 
-        system.virt_config.driver = .{
+        system.virt_config = .{
             .time_page = .createFromMap(virt_map_time_page),
             .driver_id = ch.pd_b_id,
         };
     }
 
-    pub fn connectClient(system: *Timer, client: *Pd, i: usize, mr_time_page: MemoryRegion) void {
-        const allocator = system.allocator;
+    pub fn connectClient(system: *Timer, client: *Pd, i: usize, mr_time_page: Mr) void {
         var sdf = system.sdf;
         const virt = system.virt;
-        var driver = system.driver;
 
-        system.virt_config.num_clients += 1;
+        // system.virt_config.num_clients += 1;
 
-        const client_time_page_map client_time_page_map = Map.create(mr_time_page, client.getMapVaddr(&mr_time_page), .r, .{});
+        const client_time_page_map = Map.create(mr_time_page, client.getMapVaddr(&mr_time_page), .r, .{});
+        client.addMap(client_time_page_map);
 
         // Create a channel between the virtualiser and client
         const ch = Channel.create(virt, client, .{
-                .pp = .b,
-                .pd_b_notify = false,
-            }) catch unreachable;
+            .pp = .b,
+            .pd_b_notify = false,
+        }) catch unreachable;
         sdf.addChannel(ch);
 
         system.client_configs.items[i] = .{
-                .virt_id = ch.pd_a_id
-                .time_page = .createFromMap(mr_time_page),
+            .virt_id = ch.pd_b_id,
+            .time_page = .createFromMap(client_time_page_map),
         };
     }
 
-
     pub fn connect(system: *Timer) !void {
+        const allocator = system.allocator;
         // The virt must be passive
         std.debug.assert(system.virt.passive.?);
 
@@ -167,14 +165,7 @@ pub const Timer = struct {
         }
         system.connectDriver(mr_time_page);
         for (system.clients.items, 0..) |client, i| {
-            const ch = Channel.create(system.driver, client, .{
-                // Client needs to be able to PPC into driver
-                .pp = .b,
-                // Client does not need to notify driver
-                .pd_b_notify = false,
-            }) catch unreachable;
-            system.sdf.addChannel(ch);
-            system.client_configs.items[i].driver_id = ch.pd_b_id;
+            system.connectClient(client, i, mr_time_page);
         }
 
         system.connected = true;
@@ -187,6 +178,8 @@ pub const Timer = struct {
 
         const device_res_data_name = fmt(allocator, "{s}_device_resources", .{system.driver.name});
         try data.serialize(allocator, system.device_res, prefix, device_res_data_name);
+        try data.serialize(allocator, system.driver_config, prefix, "timer_driver");
+        try data.serialize(allocator, system.virt_config, prefix, "timer_virt");
 
         for (system.clients.items, 0..) |client, i| {
             const data_name = fmt(allocator, "timer_client_{s}", .{client.name});

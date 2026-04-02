@@ -335,7 +335,7 @@ export fn sdfgen_irq_ioapic_create(ioapic: u64, pin: u64, c_trigger: [*c]binding
                 log.err("failed to create IOAPIC IRQ at chip {}, pin {}, vector {}: invalid polarity '{}'", .{ ioapic, pin, vector, c_polarity.* });
                 allocator.destroy(irq);
                 return null;
-            }
+            },
         };
         options.polarity = polarity;
     }
@@ -535,14 +535,16 @@ export fn sdfgen_channel_add(c_sdf: *align(8) anyopaque, c_ch: *align(8) anyopaq
     sdf.addChannel(ch.*);
 }
 
-export fn sdfgen_sddf_timer(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque) *anyopaque {
+export fn sdfgen_sddf_timer(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt: *align(8) anyopaque) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const timer = allocator.create(sddf.Timer) catch @panic("OOM");
     timer.* = sddf.Timer.init(
         allocator,
         sdf,
         if (c_device) |raw| @ptrCast(raw) else null,
-        @ptrCast(driver)
+        @ptrCast(driver),
+        @ptrCast(virt),
+        .{},
     );
 
     return timer;
@@ -596,7 +598,7 @@ export fn sdfgen_sddf_serial(c_sdf: *align(8) anyopaque, c_device: ?*align(8) an
     }
     const serial = allocator.create(sddf.Serial) catch @panic("OOM");
     serial.* = sddf.Serial.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt_tx), options) catch |e| {
-        log.err("failed to initialiase serial system: {any}", .{ e });
+        log.err("failed to initialiase serial system: {any}", .{e});
         allocator.destroy(serial);
         return null;
     };
@@ -726,12 +728,11 @@ export fn sdfgen_sddf_gpio_serialise_config(system: *align(8) anyopaque, output_
     return true;
 }
 
-
 export fn sdfgen_sddf_blk(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt: *align(8) anyopaque) ?*anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const blk = allocator.create(sddf.Blk) catch @panic("OOM");
     blk.* = sddf.Blk.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt), .{}) catch |e| {
-        log.err("failed to initialiase blk system: {any}", .{ e });
+        log.err("failed to initialiase blk system: {any}", .{e});
         allocator.destroy(blk);
         return null;
     };

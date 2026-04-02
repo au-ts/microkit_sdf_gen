@@ -1104,14 +1104,15 @@ class Sddf:
             self,
             sdf: SystemDescription,
             device: Optional[DeviceTree.Node],
-            driver: SystemDescription.ProtectionDomain
+            driver: SystemDescription.ProtectionDomain,
+            virt: SystemDescription.ProtectionDomain
         ) -> None:
             if device is None:
                 device_obj = None
             else:
                 device_obj = device._obj
 
-            self._obj: c_void_p = libsdfgen.sdfgen_sddf_timer(sdf._obj, device_obj, driver._obj)
+            self._obj: c_void_p = libsdfgen.sdfgen_sddf_timer(sdf._obj, device_obj, driver._obj, virt._obj)
 
         def add_client(self, client: SystemDescription.ProtectionDomain):
             ret = libsdfgen.sdfgen_sddf_timer_add_client(self._obj, client._obj)
