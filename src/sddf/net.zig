@@ -473,6 +473,7 @@ pub const Net = struct {
         const vswitch_metadata_map = Map.create(vswitch_metadata_mr, vswitch.getMapVaddr(&vswitch_metadata_mr), .rw, .{});
         vswitch.addMap(vswitch_metadata_map);
         vswitch_config.buffer_metadata = .createFromMap(vswitch_metadata_map);
+        vswitch_config.buffers_per_client = @intCast(system.rx_buffers);
 
         // Map in the device DMA region (as Tx as we flip rx/tx for the virt port)
         const rx_dma_vswitch_map = Map.create(rx_dma_mr, vswitch.getMapVaddr(&rx_dma_mr), .r, .{});
