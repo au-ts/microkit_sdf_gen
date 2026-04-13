@@ -24,7 +24,6 @@ pub const Net = struct {
 
     // TODO: later share them with data.zig
     const MAX_NUM_CLIENTS: usize = 64;
-    const VSWITCH_VIRT_PORT: usize = MAX_NUM_CLIENTS - 1;
     const MAX_VSWITCH_CLIENT_PORTS: usize = MAX_NUM_CLIENTS - 1;
 
     pub const Error = SystemError || error{
@@ -412,7 +411,7 @@ pub const Net = struct {
 
         const rx_dma_copier_map = Map.create(rx_dma_mr, copier.getMapVaddr(&rx_dma_mr), .rw, .{});
         copier.addMap(rx_dma_copier_map);
-        copier_config.out_data[VSWITCH_VIRT_PORT] = .createFromMap(rx_dma_copier_map);
+        copier_config.out_data[system.next_vswitch_port_slot] = .createFromMap(rx_dma_copier_map);
 
         const client_data_mr_size = system.sdf.arch.roundUpToPage(system.rx_buffers * BUFFER_SIZE);
         const client_data_mr_name = fmt(system.allocator, "{s}/net/rx/data/client/{s}", .{ system.deviceName(), client.name });
@@ -448,7 +447,6 @@ pub const Net = struct {
         const data_mr_vswitch_map = Map.create(data_mr, vswitch.getMapVaddr(&data_mr), .r, .{});
         vswitch.addMap(data_mr_vswitch_map);
 
-        vswitch_config.ports[port_slot].id = @intCast(port_slot);
         vswitch_config.ports[port_slot].tx_data = .createFromMap(data_mr_vswitch_map);
 
         const data_mr_client_map = Map.create(data_mr, client.getMapVaddr(&data_mr), .rw, .{});
@@ -460,11 +458,12 @@ pub const Net = struct {
         const vswitch = system.vswitch.?;
         var vswitch_config = &system.vswitch_config;
         var virt_client_config = &system.virt_rx_config.clients[system.vswitch_virt_id];
+        const virt_port_idx = system.next_vswitch_port_slot;
 
         // TODO: swapping rx for tx in vswitch terminology
-        system.createConnection(system.virt_rx, vswitch, &virt_client_config.conn, &vswitch_config.ports[VSWITCH_VIRT_PORT].tx, system.rx_buffers);
+        system.createConnection(system.virt_rx, vswitch, &virt_client_config.conn, &vswitch_config.ports[virt_port_idx].tx, system.rx_buffers);
 
-        std.log.info("VSwitchRxConnect, reserved virt port={}", .{VSWITCH_VIRT_PORT});
+        std.log.info("VSwitchRxConnect, reserved virt port={}", .{virt_port_idx});
 
         const vswitch_metadata_mr_name = fmt(system.allocator, "{s}/net/vswitch/metadata", .{system.deviceName()});
         const vswitch_metadata_mr_size = system.sdf.arch.roundUpToPage(system.rx_buffers * 4 * MAX_NUM_CLIENTS);
@@ -479,7 +478,7 @@ pub const Net = struct {
         // Map in the device DMA region (as Tx as we flip rx/tx for the virt port)
         const rx_dma_vswitch_map = Map.create(rx_dma_mr, vswitch.getMapVaddr(&rx_dma_mr), .r, .{});
         vswitch.addMap(rx_dma_vswitch_map);
-        vswitch_config.ports[VSWITCH_VIRT_PORT].tx_data = .createFromMap(rx_dma_vswitch_map);
+        vswitch_config.ports[virt_port_idx].tx_data = .createFromMap(rx_dma_vswitch_map);
 
         // TODO: I think this should be swapped logicallv with the similar assignment in vswitchTxConnect
         // Also fixup the existing connections for every connected Client's copier (except last one)
@@ -504,6 +503,7 @@ pub const Net = struct {
         const vswitch = system.vswitch.?;
         var vswitch_config = &system.vswitch_config;
         var virt_client_config = &system.virt_tx_config.clients[system.vswitch_virt_id];
+        const virt_port_idx = system.next_vswitch_port_slot;
 
         var num_buffers: usize = 0;
         for (system.vswitch_client_ids.items) |cid| {
@@ -513,10 +513,9 @@ pub const Net = struct {
             }
         }
 
-        system.createConnection(system.virt_tx, vswitch, &virt_client_config.conn, &vswitch_config.ports[VSWITCH_VIRT_PORT].rx, num_buffers);
-        vswitch_config.ports[VSWITCH_VIRT_PORT].id = VSWITCH_VIRT_PORT;
+        system.createConnection(system.virt_tx, vswitch, &virt_client_config.conn, &vswitch_config.ports[virt_port_idx].rx, num_buffers);
 
-        std.log.info("VSwitchTxConnect, assigned the id {} at virt_id {} num_buffers {}", .{vswitch_config.ports[VSWITCH_VIRT_PORT].rx.id, system.vswitch_virt_id, num_buffers});
+        std.log.info("VSwitchTxConnect, assigned the id {} at virt_id {} num_buffers {}", .{vswitch_config.ports[virt_port_idx].rx.id, system.vswitch_virt_id, num_buffers});
         // for every client, we map in their TxData region
         for (0..system.next_vswitch_port_slot) |slot| {
             std.log.info("VSwitchTxConnect, mapping in port id {}", .{slot});
@@ -681,13 +680,9 @@ fn dumpClientMappings(system: *Net) void {
 
     if (system.vswitch != null) {
         std.log.info("========== VSWITCH PORTS ==========", .{});
-        for (system.vswitch_config.ports, 0..) |port, port_idx| {
-            if (!port.connected) continue;
-
-            std.log.info("port[{}]: id={} connected={}", .{
+        for (system.vswitch_config.ports[0..@as(usize, @intCast(system.vswitch_config.num_ports + 1))], 0..) |port, port_idx| {
+            std.log.info("port[{}]:", .{
                 port_idx,
-                port.id,
-                port.connected,
             });
 
             dumpConn("  rx", port.rx);
@@ -756,8 +751,6 @@ fn dumpClientMappings(system: *Net) void {
                 if (system.client_info.items[i].tx) {
                     system.clientTxVSwitchConnect(i);
                 }
-                const port_slot = system.client_id_to_port[i].?;
-                system.vswitch_config.ports[port_slot].connected = true;
                 system.client_configs.items[i].mac_addr = system.client_info.items[i].mac_addr.?;
             } else {
                 std.log.info("Adding regular client with id {}", .{i});
@@ -786,9 +779,7 @@ fn dumpClientMappings(system: *Net) void {
             system.virt_rx_config.num_clients += 1;
             system.virt_tx_config.num_clients += 1;
 
-            // Mark it as index MAX_NUM_CLIENTS - 1
-            system.vswitch_config.ports[VSWITCH_VIRT_PORT].connected = true;
-            system.vswitch_config.num_ports = system.next_vswitch_port_slot + 1;
+            system.vswitch_config.num_ports = system.next_vswitch_port_slot;
 
             // Fill in MAC addresses
             for (system.vswitch_client_ids.items[0..]) |id| {

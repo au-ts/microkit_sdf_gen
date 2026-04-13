@@ -286,8 +286,6 @@ pub const Resources = struct {
                 tx: Connection,
                 tx_data: Device.Region,
                 mac_addr: [6]u8,
-                id: u8,
-                connected: bool,
             };
             magic: [5]u8 = MAGIC,
             ports: [MAX_NUM_CLIENTS]VSwitchPort,
