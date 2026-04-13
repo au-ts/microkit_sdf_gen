@@ -344,7 +344,8 @@ pub const Net = struct {
 
             const rx_dma_copier_map = Map.create(rx_dma_mr, copier.getMapVaddr(&rx_dma_mr), .rw, .{});
             copier.addMap(rx_dma_copier_map);
-            copier_config.out_data[VSWITCH_VIRT_PORT] = .createFromMap(rx_dma_copier_map);
+            // Use the first data region when just a single connection
+            copier_config.out_data[0] = .createFromMap(rx_dma_copier_map);
 
             const client_data_mr_size = system.sdf.arch.roundUpToPage(system.rx_buffers * BUFFER_SIZE);
             const client_data_mr_name = fmt(system.allocator, "{s}/net/rx/data/client/{s}", .{ system.deviceName(), client.name });
