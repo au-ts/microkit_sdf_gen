@@ -255,6 +255,7 @@ pub const Resources = struct {
                 conn: Connection,
                 data: [MAX_NUM_CLIENTS]Device.Region,
                 num_data: u8,
+                num_buffers: u64,
             };
 
             magic: [5]u8 = MAGIC,
