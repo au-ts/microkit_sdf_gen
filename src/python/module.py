@@ -6,7 +6,7 @@ from ctypes import (
 )
 from typing import Optional, List, Tuple
 from enum import IntEnum
-from abc import ABC, abstractmethod
+from abc import ABC
 
 class SddfStatus(IntEnum):
     OK = 0,
@@ -15,6 +15,7 @@ class SddfStatus(IntEnum):
     NET_DUPLICATE_COPIER = 100,
     NET_DUPLICATE_MAC_ADDR = 101,
     NET_INVALID_OPTIONS = 103,
+    NET_DUPLICATE_VSWITCH = 104,
     GPIO_INVALID_OPTIONS = 203,
 
 
@@ -231,6 +232,8 @@ libsdfgen.sdfgen_sddf_net_add_client_with_copier.argtypes = [
     c_bool,
     c_bool
 ]
+libsdfgen.sdfgen_sddf_net_add_acl_rule.restype = c_bool
+libsdfgen.sdfgen_sddf_net_add_acl_rule.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_bool, c_bool]
 
 libsdfgen.sdfgen_sddf_net_connect.restype = c_bool
 libsdfgen.sdfgen_sddf_net_connect.argtypes = [c_void_p]
@@ -1132,6 +1135,29 @@ class Sddf:
                 raise Exception(f"duplicate MAC address given '{mac_addr}'")
             elif ret == SddfStatus.NET_INVALID_OPTIONS:
                 raise Exception(f"client must have rx or tx access")
+            elif ret == SddfStatus.NET_DUPLICATE_VSWITCH:
+                raise Exception(f"duplicate vswitch given '{vswitch}'")
+            else:
+                raise Exception(f"internal error: {ret}")
+
+        # TODO: alternative is to have a list of clients but dunno how to pass it
+        def add_acl_rule(
+                self,
+                client0: SystemDescription.ProtectionDomain,
+                client1: SystemDescription.ProtectionDomain,
+                vswitch: SystemDescription.ProtectionDomain,
+                zeroToOne: bool = True,
+                oneToZero: bool = True
+            ) -> None:
+            ret = libsdfgen.sdfgen_sddf_net_add_acl_rule(self._obj, client0._obj, client1._obj, vswitch._obj, c_bool(zeroToOne), c_bool(oneToZero))
+            if ret == SddfStatus.OK:
+                return
+            elif ret == SddfStatus.DUPLICATE_CLIENT:
+                raise Exception(f"duplicate client given '{client0}'")
+            elif ret == SddfStatus.INVALID_CLIENT:
+                raise Exception(f"either client not connected to vswitch")
+            elif ret == SddfStatus.NET_DUPLICATE_VSWITCH:
+                raise Exception(f"duplicate vswitch given '{vswitch}'")
             else:
                 raise Exception(f"internal error: {ret}")
 
