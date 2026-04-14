@@ -389,6 +389,7 @@ pub const Net = struct {
         system.virt_tx.addMap(data_mr_virt_map);
         virt_client_config.data[0] = .createFromMap(data_mr_virt_map);
         virt_client_config.num_data = 1; // always 1 for one connection
+        virt_client_config.num_buffers = client_info.tx_buffers;
 
         const data_mr_client_map = Map.create(data_mr, client.getMapVaddr(&data_mr), .rw, .{});
         client.addMap(data_mr_client_map);
@@ -526,6 +527,7 @@ pub const Net = struct {
             virt_client_config.data[slot] = .createFromMap(virt_tx_client_map);
         }
         virt_client_config.num_data = system.next_vswitch_port_slot;
+        virt_client_config.num_buffers = num_buffers;
     }
 
     /// Generate a LAA (locally administered adresss) for each client
