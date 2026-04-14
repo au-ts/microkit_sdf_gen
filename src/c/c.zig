@@ -851,8 +851,25 @@ export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, cl
             sddf.Net.Error.DuplicateMacAddr => return 101,
             sddf.Net.Error.InvalidMacAddr => return 102,
             sddf.Net.Error.InvalidOptions => return 103,
+            sddf.Net.Error.DuplicateVSwitch => return 104,
             // Should never happen when adding a client
             sddf.Net.Error.NotConnected => @panic("internal error"),
+        }
+    };
+
+    return 0;
+}
+
+export fn sdfgen_sddf_net_add_acl_rule(system: *align(8) anyopaque, client0: *align(8) anyopaque, client1: *align(8) anyopaque, vswitch: *align(8) anyopaque, zeroToOne: bool, oneToZero: bool) bindings.sdfgen_sddf_status_t {
+    const net: *sddf.Net = @ptrCast(system);
+
+    net.addAclRule(@ptrCast(client0), @ptrCast(client1), @ptrCast(vswitch), zeroToOne, oneToZero) catch |e| {
+        switch (e) {
+            sddf.Net.Error.DuplicateClient => return 1,
+            sddf.Net.Error.InvalidClient => return 2,
+            // Should be always called after connect()
+            sddf.Net.Error.NotConnected => @panic("internal error"),
+            else => @panic("impossible error reached"),
         }
     };
 

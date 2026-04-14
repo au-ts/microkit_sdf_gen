@@ -32,6 +32,7 @@ pub const Net = struct {
         DuplicateMacAddr,
         InvalidMacAddr,
         InvalidOptions,
+        DuplicateVSwitch,
     };
 
     pub const Options = struct {
@@ -206,6 +207,8 @@ pub const Net = struct {
                 system.vswitch_virt_id = system.unique_virt_clients;
                 system.unique_virt_clients += 1;
                 std.log.info("Adding first client for vswitch with id {} unique_virt_clients {} vswitch virt_id {}", .{client_idx, system.unique_virt_clients, system.vswitch_virt_id});
+            } else if (!std.mem.eql(u8, system.vswitch.?.name, new_vswitch.name)) {
+                return Error.DuplicateVSwitch;
             }
 
             const port_slot = system.next_vswitch_port_slot;
@@ -250,6 +253,65 @@ pub const Net = struct {
         }
         system.client_info.items[client_idx].tx = options.tx;
         system.client_info.items[client_idx].tx_buffers = options.tx_buffers;
+    }
+
+    pub fn addAclRule(system: *Net, client0: *Pd, client1: *Pd, vswitch: *Pd, zeroToOne: bool, oneToZero: bool) Error!void {
+        // Check that the clients are not the same
+        if (std.mem.eql(u8, client0.name, client1.name)) {
+            return Error.DuplicateClient;
+        }
+
+        if (!std.mem.eql(u8, system.vswitch.?.name, vswitch.name)) {
+            return Error.DuplicateVSwitch;
+        }
+
+        // The system must be connected, otherwise we don't yet know what clients are connected to the vswitch
+        if (!system.connected) {
+            return Error.NotConnected;
+        }
+
+        // find the ACLs for these clients and mark them
+        // TODO: is there a better way to find index of matching element in Zig?
+        var client0Id: ?u8 = null;
+        var client1Id: ?u8 = null;
+        for (system.clients.items, 0..) |client, i| {
+            if (std.mem.eql(u8, client.name, client0.name)) {
+                client0Id = @intCast(i);
+            } else if (std.mem.eql(u8, client.name, client1.name)) {
+                client1Id = @intCast(i);
+            }
+        }
+        var client0port: u8 = 0;
+        var client1port: u8 = 0;
+        // If a client is still unmatched it might be a virt, TODO: matching against string is weak!
+        if (std.mem.indexOf(u8, client0.name, "virt") != null) {
+            client0port = system.vswitch_config.num_ports;
+        } else {
+            if (client0Id != null) {
+                client0port = system.client_id_to_port[client0Id.?].?;
+            } else {
+                return Error.InvalidClient;
+            }
+        }
+
+        if (std.mem.indexOf(u8, client1.name, "virt") != null) {
+            client1port = system.vswitch_config.num_ports;
+        } else {
+            if (client1Id != null) {
+                client1port = system.client_id_to_port[client1Id.?].?;
+            } else {
+                return Error.InvalidClient;
+            }
+        }
+
+        if (zeroToOne) {
+            const bit: u6 = @intCast(client1port);
+            system.vswitch_config.ports[client0port].acl |= (@as(u64, 1) << bit);
+        }
+        if (oneToZero) {
+            const bit: u6 = @intCast(client0port);
+            system.vswitch_config.ports[client1port].acl |= (@as(u64, 1) << bit);
+        }
     }
 
     fn createConnection(system: *Net, server: *Pd, client: *Pd, server_conn: *ConfigResources.Net.Connection, client_conn: *ConfigResources.Net.Connection, num_buffers: u64) void {
@@ -613,6 +675,36 @@ fn dumpConn(label: []const u8, c: anytype) void {
     dumpRegionish("  active", c.active_queue);
 }
 
+fn dumpAcl(label: []const u8, acl: u64) void {
+    std.log.info("{s}: acl=0x{x:0>16} bits={b:0>64}", .{
+        label,
+        acl,
+        acl,
+    });
+
+    std.debug.print("  allowed ports:", .{});
+    var any = false;
+    inline for (0..64) |i| {
+        const bit: u6 = @intCast(i);
+        if ((acl & (@as(u64, 1) << bit)) != 0) {
+            std.debug.print(" {}", .{i});
+            any = true;
+        }
+    }
+    if (!any) {
+        std.debug.print(" <none>", .{});
+    }
+    std.debug.print("\n", .{});
+}
+
+fn dumpAcls(system: *const Net) void {
+    for (system.vswitch_config.ports[0..system.vswitch_config.num_ports], 0..) |port, i| {
+        var buf: [64]u8 = undefined;
+        const label = std.fmt.bufPrint(&buf, "port {}", .{i}) catch "port ?";
+        dumpAcl(label, port.acl);
+    }
+}
+
 fn dumpClientMappings(system: *Net) void {
     std.log.info("========== NET CONFIG DUMP ==========", .{});
     std.log.info("unique_virt_clients={} vswitch_virt_id={} virt_rx.num_clients={} virt_tx.num_clients={} vswitch.num_ports={}", .{
@@ -797,6 +889,7 @@ fn dumpClientMappings(system: *Net) void {
         if (!system.connected) return Error.NotConnected;
 
         dumpClientMappings(system);
+        dumpAcls(system);
         const allocator = system.allocator;
 
         const device_res_data_name = fmt(allocator, "{s}_device_resources", .{system.driver.name});
