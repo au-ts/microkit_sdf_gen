@@ -251,11 +251,15 @@ pub const Resources = struct {
         };
 
         pub const VirtTx = extern struct {
+            pub const VirtTxDataRegion = extern struct {
+                data: Device.Region,
+                num_buffers: u32,
+            };
+
             pub const VirtTxClient = extern struct {
                 conn: Connection,
-                data: [MAX_NUM_CLIENTS]Device.Region,
-                num_data: u8,
-                num_buffers: u64,
+                regions: [MAX_NUM_CLIENTS]VirtTxDataRegion,
+                num_regions: u8,
             };
 
             magic: [5]u8 = MAGIC,
@@ -293,7 +297,6 @@ pub const Resources = struct {
             ports: [MAX_NUM_CLIENTS]VSwitchPort,
             num_ports: u8,
             buffer_metadata: Region,
-            buffers_per_client: u16,
         };
     };
 

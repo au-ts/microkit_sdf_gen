@@ -449,9 +449,9 @@ pub const Net = struct {
 
         const data_mr_virt_map = Map.create(data_mr, system.virt_tx.getMapVaddr(&data_mr), .r, .{});
         system.virt_tx.addMap(data_mr_virt_map);
-        virt_client_config.data[0] = .createFromMap(data_mr_virt_map);
-        virt_client_config.num_data = 1; // always 1 for one connection
-        virt_client_config.num_buffers = client_info.tx_buffers;
+        virt_client_config.regions[0].data = .createFromMap(data_mr_virt_map);
+        virt_client_config.regions[0].num_buffers = @intCast(client_info.tx_buffers);
+        virt_client_config.num_regions = 1; // always 1 for one connection
 
         const data_mr_client_map = Map.create(data_mr, client.getMapVaddr(&data_mr), .rw, .{});
         client.addMap(data_mr_client_map);
@@ -536,7 +536,6 @@ pub const Net = struct {
         const vswitch_metadata_map = Map.create(vswitch_metadata_mr, vswitch.getMapVaddr(&vswitch_metadata_mr), .rw, .{});
         vswitch.addMap(vswitch_metadata_map);
         vswitch_config.buffer_metadata = .createFromMap(vswitch_metadata_map);
-        vswitch_config.buffers_per_client = @intCast(system.rx_buffers);
 
         // Map in the device DMA region (as Tx as we flip rx/tx for the virt port)
         const rx_dma_vswitch_map = Map.create(rx_dma_mr, vswitch.getMapVaddr(&rx_dma_mr), .r, .{});
@@ -586,10 +585,11 @@ pub const Net = struct {
             const virt_tx_client_map = Map.create(client_tx_mr, system.virt_tx.getMapVaddr(&client_tx_mr), .r, .{});
             system.virt_tx.addMap(virt_tx_client_map);
 
-            virt_client_config.data[slot] = .createFromMap(virt_tx_client_map);
+            const client_id = system.port_to_client_id[slot].?;
+            virt_client_config.regions[slot].data = .createFromMap(virt_tx_client_map);
+            virt_client_config.regions[slot].num_buffers = @intCast(system.client_info.items[client_id].tx_buffers);
         }
-        virt_client_config.num_data = system.next_vswitch_port_slot;
-        virt_client_config.num_buffers = num_buffers;
+        virt_client_config.num_regions = system.next_vswitch_port_slot;
     }
 
     /// Generate a LAA (locally administered adresss) for each client
@@ -764,11 +764,11 @@ fn dumpClientMappings(system: *Net) void {
         }
 
         const vtx = &system.virt_tx_config.clients[virt_id];
-        std.log.info("virt_tx.clients[{}]: num_data={}", .{ virt_id, vtx.num_data });
+        std.log.info("virt_tx.clients[{}]: num_regions={}", .{ virt_id, vtx.num_regions});
         dumpConn("virt_tx.conn", vtx.conn);
-        for (0..vtx.num_data) |d| {
-            std.log.info("virt_tx.data[{}]", .{d});
-            dumpRegionish("  data", vtx.data[d]);
+        for (0..vtx.num_regions) |d| {
+            std.log.info("virt_tx.regions[{}].data", .{d});
+            dumpRegionish("  data", vtx.regions[d].data);
         }
     }
 
