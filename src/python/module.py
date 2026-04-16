@@ -6,7 +6,7 @@ from ctypes import (
 )
 from typing import Optional, List, Tuple
 from enum import IntEnum
-from abc import ABC, abstractmethod
+from abc import ABC
 
 class SddfStatus(IntEnum):
     OK = 0,
@@ -15,6 +15,7 @@ class SddfStatus(IntEnum):
     NET_DUPLICATE_COPIER = 100,
     NET_DUPLICATE_MAC_ADDR = 101,
     NET_INVALID_OPTIONS = 103,
+    NET_DUPLICATE_VSWITCH = 104,
     GPIO_INVALID_OPTIONS = 203,
 
 
@@ -226,10 +227,13 @@ libsdfgen.sdfgen_sddf_net_add_client_with_copier.argtypes = [
     c_void_p,
     c_void_p,
     c_void_p,
+    c_void_p,
     c_char_p,
     c_bool,
     c_bool
 ]
+libsdfgen.sdfgen_sddf_net_add_acl_rule.restype = c_bool
+libsdfgen.sdfgen_sddf_net_add_acl_rule.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_bool, c_bool]
 
 libsdfgen.sdfgen_sddf_net_connect.restype = c_bool
 libsdfgen.sdfgen_sddf_net_connect.argtypes = [c_void_p]
@@ -285,7 +289,7 @@ libsdfgen.sdfgen_vmm_add_virtio_mmio_console.argtypes = [c_void_p, c_void_p, c_v
 libsdfgen.sdfgen_vmm_add_virtio_mmio_blk.restype = c_bool
 libsdfgen.sdfgen_vmm_add_virtio_mmio_blk.argtypes = [c_void_p, c_void_p, c_void_p, c_uint32]
 libsdfgen.sdfgen_vmm_add_virtio_mmio_net.restype = c_bool
-libsdfgen.sdfgen_vmm_add_virtio_mmio_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_char_p]
+libsdfgen.sdfgen_vmm_add_virtio_mmio_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_char_p]
 libsdfgen.sdfgen_vmm_connect.restype = c_bool
 libsdfgen.sdfgen_vmm_connect.argtypes = [c_void_p]
 libsdfgen.sdfgen_vmm_serialise_config.restype = c_bool
@@ -1079,14 +1083,16 @@ class Sddf:
             client: SystemDescription.ProtectionDomain,
             copier: Optional[SystemDescription.ProtectionDomain] = None,
             *,
+            vswitch: Optional[SystemDescription.ProtectionDomain] = None,
             mac_addr: Optional[str] = None,
             rx: Optional[bool] = None,
             tx: Optional[bool] = None
         ) -> None:
             """
-            Add a client connected to a copier component for RX traffic.
+            Add a client connected to a copier component for RX traffic. Optionally connected to a vswitch.
 
             :param copier: must be unique to this client, cannot be used with any other client.
+            :param vswitch: can be shared with other clients.
             :param mac_addr: must be unique to the Network system.
             """
             if mac_addr is not None and len(mac_addr) != 17:
@@ -1101,6 +1107,10 @@ class Sddf:
                 copier_obj = None
             else:
                 copier_obj = copier._obj
+            if vswitch is None:
+                vswitch_obj = None
+            else:
+                vswitch_obj = vswitch._obj
             if rx is None or rx is True:
                 rx_arg = True
             else:
@@ -1109,8 +1119,9 @@ class Sddf:
                 tx_arg = True
             else:
                 tx_arg = False
+
             ret = libsdfgen.sdfgen_sddf_net_add_client_with_copier(
-                self._obj, client._obj, copier_obj, c_mac_addr, rx_arg, tx_arg
+                self._obj, client._obj, copier_obj, vswitch_obj, c_mac_addr, rx_arg, tx_arg
             )
             if ret == SddfStatus.OK:
                 return
@@ -1124,6 +1135,29 @@ class Sddf:
                 raise Exception(f"duplicate MAC address given '{mac_addr}'")
             elif ret == SddfStatus.NET_INVALID_OPTIONS:
                 raise Exception(f"client must have rx or tx access")
+            elif ret == SddfStatus.NET_DUPLICATE_VSWITCH:
+                raise Exception(f"duplicate vswitch given '{vswitch}'")
+            else:
+                raise Exception(f"internal error: {ret}")
+
+        # TODO: alternative is to have a list of clients but dunno how to pass it
+        def add_acl_rule(
+                self,
+                client0: SystemDescription.ProtectionDomain,
+                client1: SystemDescription.ProtectionDomain,
+                vswitch: SystemDescription.ProtectionDomain,
+                zeroToOne: bool = True,
+                oneToZero: bool = True
+            ) -> None:
+            ret = libsdfgen.sdfgen_sddf_net_add_acl_rule(self._obj, client0._obj, client1._obj, vswitch._obj, c_bool(zeroToOne), c_bool(oneToZero))
+            if ret == SddfStatus.OK:
+                return
+            elif ret == SddfStatus.DUPLICATE_CLIENT:
+                raise Exception(f"duplicate client given '{client0}'")
+            elif ret == SddfStatus.INVALID_CLIENT:
+                raise Exception(f"either client not connected to vswitch")
+            elif ret == SddfStatus.NET_DUPLICATE_VSWITCH:
+                raise Exception(f"duplicate vswitch given '{vswitch}'")
             else:
                 raise Exception(f"internal error: {ret}")
 
@@ -1349,8 +1383,9 @@ class Vmm:
         self,
         device: DeviceTree.Node,
         net: Sddf.Net,
-        copier: SystemDescription.ProtectionDomain,
         *,
+        copier: Optional[SystemDescription.ProtectionDomain],
+        vswitch: Optional[SystemDescription.ProtectionDomain],
         mac_addr: Optional[str] = None
     ):
         if mac_addr is not None and len(mac_addr) != 17:
@@ -1362,7 +1397,17 @@ class Vmm:
         if mac_addr is not None:
             c_mac_addr = c_char_p(mac_addr.encode("utf-8"))
 
-        return libsdfgen.sdfgen_vmm_add_virtio_mmio_net(self._obj, device._obj, net._obj, copier._obj, c_mac_addr)
+        if copier is None:
+            copier_obj = None
+        else:
+            copier_obj = copier._obj
+
+        if vswitch is None:
+            vswitch_obj = None
+        else:
+            vswitch_obj = vswitch._obj
+
+        return libsdfgen.sdfgen_vmm_add_virtio_mmio_net(self._obj, device._obj, net._obj, copier_obj, vswitch_obj, c_mac_addr)
 
     def connect(self) -> bool:
         return libsdfgen.sdfgen_vmm_connect(self._obj)

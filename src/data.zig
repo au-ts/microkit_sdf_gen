@@ -238,7 +238,8 @@ pub const Resources = struct {
         pub const VirtRx = extern struct {
             pub const VirtRxClient = extern struct {
                 conn: Connection,
-                mac_addr: [6]u8,
+                mac_addrs: [6*MAX_NUM_CLIENTS]u8,
+                num_macs: u8,
             };
 
             magic: [5]u8 = MAGIC,
@@ -250,9 +251,15 @@ pub const Resources = struct {
         };
 
         pub const VirtTx = extern struct {
+            pub const VirtTxDataRegion = extern struct {
+                data: Device.Region,
+                num_buffers: u32,
+            };
+
             pub const VirtTxClient = extern struct {
                 conn: Connection,
-                data: Device.Region,
+                regions: [MAX_NUM_CLIENTS]VirtTxDataRegion,
+                num_regions: u8,
             };
 
             magic: [5]u8 = MAGIC,
@@ -264,7 +271,7 @@ pub const Resources = struct {
         pub const Copy = extern struct {
             magic: [5]u8 = MAGIC,
             virt_rx: Connection,
-            device_data: Region,
+            out_data: [MAX_NUM_CLIENTS]Region,
             client: Connection,
             client_data: Region,
         };
@@ -276,6 +283,20 @@ pub const Resources = struct {
             tx: Connection,
             tx_data: Region,
             mac_addr: [6]u8,
+        };
+
+        pub const VSwitch = extern struct {
+            pub const VSwitchPort = extern struct {
+                rx: Connection,
+                tx: Connection,
+                tx_data: Device.Region,
+                mac_addr: [6]u8,
+                acl: u64,
+            };
+            magic: [5]u8 = MAGIC,
+            ports: [MAX_NUM_CLIENTS]VSwitchPort,
+            num_ports: u8,
+            buffer_metadata: Region,
         };
     };
 
