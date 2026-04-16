@@ -507,7 +507,7 @@ pub const Net = struct {
 
         system.tx_data_mrs[port_slot] = data_mr;
 
-        const data_mr_vswitch_map = Map.create(data_mr, vswitch.getMapVaddr(&data_mr), .r, .{});
+        const data_mr_vswitch_map = Map.create(data_mr, vswitch.getMapVaddr(&data_mr), .rw, .{}); // TODO: vswitch zeroes checksums, hence needs this mapping to we rw
         vswitch.addMap(data_mr_vswitch_map);
 
         vswitch_config.ports[port_slot].tx_data = .createFromMap(data_mr_vswitch_map);
