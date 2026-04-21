@@ -90,7 +90,7 @@ pub const Blk = struct {
         // Maximum possible entries in a single queue.
         queue_capacity: u16 = 128,
         // Default to 2MB.
-        data_size: u32 = 2 * 1024 * 1024,
+        data_size: u32 = 128 * 1024 * 1024,
     };
 
     pub fn addClient(system: *Blk, client: *Pd, options: ClientOptions) Error!void {
