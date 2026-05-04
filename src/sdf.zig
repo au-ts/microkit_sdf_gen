@@ -91,6 +91,7 @@ pub const SystemDescription = struct {
         size: u64,
         paddr: ?u64,
         page_size: ?PageSize,
+        backed: bool,
 
         pub const Options = struct {
             page_size: ?PageSize = null,
@@ -104,18 +105,12 @@ pub const SystemDescription = struct {
         // TODO: change to two API:
         // MemoryRegion.virtual()
         // MemoryRegion.physical()
-        pub fn create(allocator: Allocator, name: []const u8, size: u64, options: Options) MemoryRegion {
-            return MemoryRegion{
-                .allocator = allocator,
-                .name = allocator.dupe(u8, name) catch @panic("Could not allocate name for MemoryRegion"),
-                .size = size,
-                .page_size = options.page_size,
-                .paddr = null,
-            };
+        pub fn create(allocator: Allocator, name: []const u8, size: u64, options: Options, backed: bool) MemoryRegion {
+            return MemoryRegion{ .allocator = allocator, .name = allocator.dupe(u8, name) catch @panic("Could not allocate name for MemoryRegion"), .size = size, .page_size = options.page_size, .paddr = null, .backed = backed };
         }
 
         /// Creates a memory region at a specific physical address. Allocates the physical address automatically.
-        pub fn physical(allocator: Allocator, sdf: *SystemDescription, name: []const u8, size: u64, options: OptionsPhysical) MemoryRegion {
+        pub fn physical(allocator: Allocator, sdf: *SystemDescription, name: []const u8, size: u64, options: OptionsPhysical, backed: bool) MemoryRegion {
             const paddr = if (options.paddr) |fixed_paddr| fixed_paddr else sdf.paddr_top - size;
             // TODO: handle alignment if people specify a page size.
             if (options.paddr == null) {
@@ -127,6 +122,7 @@ pub const SystemDescription = struct {
                 .size = size,
                 .paddr = paddr,
                 .page_size = options.page_size,
+                .backed = backed,
             };
         }
 

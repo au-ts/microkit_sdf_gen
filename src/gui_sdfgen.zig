@@ -72,7 +72,7 @@ fn parsePDFromJson(sdf: *SystemDescription, node_config: anytype) !*Pd {
         .priority = @intCast(node_config.get("priority").?.integer),
         .budget = @intCast(node_config.get("budget").?.integer),
         .period = @intCast(node_config.get("period").?.integer),
-    });
+    }, true);
     // pp has been moved to channel
     // pd_new.pp = node_config.get("pp").?.bool;
 
@@ -156,7 +156,7 @@ fn parseMRFromJson(sdf: *SystemDescription, mr_config: anytype) !Mr {
         }
     }
     // const page_size: Mr.PageSize = @intCast(mr_config.get("page_size").?.integer);
-    const mr_new = Mr.create(sdf.allocator, name, size, true, .{});
+    const mr_new = Mr.create(sdf.allocator, name, size, .{}, true);
 
     return mr_new;
 }

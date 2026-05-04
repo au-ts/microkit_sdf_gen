@@ -161,7 +161,7 @@ fn addPassthroughDeviceMapping(system: *Self, name: []const u8, device: *dtb.Nod
     if (device_mr == null) {
         device_mr = Mr.physical(system.allocator, system.sdf, mr_name, device_size, .{
             .paddr = device_paddr,
-        });
+        }, true);
         system.sdf.addMemoryRegion(device_mr.?);
     }
     system.guest.addMap(.create(device_mr.?, device_paddr, map_perms, map_options));
@@ -396,7 +396,7 @@ pub fn connect(system: *Self) !void {
                 }
             }
             if (gic_vcpu_mr == null) {
-                gic_vcpu_mr = Mr.physical(allocator, sdf, gic_vcpu_mr_name, gic.vcpu_size.?, .{ .paddr = gic.vcpu_paddr.? });
+                gic_vcpu_mr = Mr.physical(allocator, sdf, gic_vcpu_mr_name, gic.vcpu_size.?, .{ .paddr = gic.vcpu_paddr.? }, true);
                 system.gic_vcpu_mr = gic_vcpu_mr;
                 sdf.addMemoryRegion(gic_vcpu_mr.?);
             }
@@ -425,9 +425,9 @@ pub fn connect(system: *Self) !void {
 
     const guest_ram_mr = blk: {
         if (system.one_to_one_ram) {
-            break :blk Mr.physical(allocator, sdf, guest_mr_name, guest_ram_size, .{ .paddr = memory_paddr });
+            break :blk Mr.physical(allocator, sdf, guest_mr_name, guest_ram_size, .{ .paddr = memory_paddr }, true);
         } else {
-            break :blk Mr.create(allocator, guest_mr_name, guest_ram_size, .{});
+            break :blk Mr.create(allocator, guest_mr_name, guest_ram_size, .{}, true);
         }
     };
     sdf.addMemoryRegion(guest_ram_mr);
