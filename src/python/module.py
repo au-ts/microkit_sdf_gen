@@ -132,7 +132,7 @@ libsdfgen.sdfgen_vm_vcpu_destroy.restype = None
 libsdfgen.sdfgen_vm_vcpu_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_pd_create.restype = c_void_p
-libsdfgen.sdfgen_pd_create.argtypes = [c_char_p, c_char_p]
+libsdfgen.sdfgen_pd_create.argtypes = [c_char_p, c_char_p, c_bool]
 libsdfgen.sdfgen_pd_destroy.restype = None
 libsdfgen.sdfgen_pd_destroy.argtypes = [c_void_p]
 
@@ -480,12 +480,16 @@ class SystemDescription:
             passive: Optional[bool] = None,
             stack_size: Optional[int] = None,
             cpu: Optional[int] = None,
+            backed: Optional[bool] = None,
         ) -> None:
             self._name = name
             self._program_image = program_image
             c_name = c_char_p(name.encode("utf-8"))
             c_program_image = c_char_p(program_image.encode("utf-8"))
-            self._obj = libsdfgen.sdfgen_pd_create(c_name, c_program_image)
+            pd_backed: bool = True
+            if backed is not None:
+                pd_backed: bool = backed
+            self._obj = libsdfgen.sdfgen_pd_create(c_name, c_program_image, pd_backed)
             if priority is not None:
                 libsdfgen.sdfgen_pd_set_priority(self._obj, priority)
             if budget is not None:

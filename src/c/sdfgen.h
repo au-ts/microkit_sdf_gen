@@ -41,7 +41,7 @@ void *sdfgen_add_pd(void *sdf, void *pd);
 void *sdfgen_add_mr(void *sdf, void *mr);
 void *sdfgen_add_channel(void *sdf, void *ch);
 
-void *sdfgen_pd_create(char *name, char *elf);
+void *sdfgen_pd_create(char *name, char *elf, bool backed);
 void sdfgen_pd_destroy(void *pd);
 
 /* Can specifiy a fixed ID  */

@@ -434,6 +434,7 @@ pub const SystemDescription = struct {
         child_id: ?u8,
         /// CPU core
         cpu: ?u8,
+        backed: bool,
 
         setvars: ArrayList(SetVar),
 
@@ -455,7 +456,7 @@ pub const SystemDescription = struct {
             cpu: ?u8 = null,
         };
 
-        pub fn create(allocator: Allocator, name: []const u8, program_image: ?[]const u8, options: Options) ProtectionDomain {
+        pub fn create(allocator: Allocator, name: []const u8, program_image: ?[]const u8, options: Options, backed: bool) ProtectionDomain {
             const program_image_dupe = if (program_image) |p| allocator.dupe(u8, p) catch @panic("Could not dupe PD program_image") else null;
 
             return ProtectionDomain{
@@ -478,6 +479,7 @@ pub const SystemDescription = struct {
                 .stack_size = options.stack_size,
                 .child_id = null,
                 .cpu = options.cpu,
+                .backed = backed,
             };
         }
 
@@ -725,7 +727,6 @@ pub const SystemDescription = struct {
                 .pp = options.pp,
                 .pd_a_setvar_id = options.pd_a_setvar_id,
                 .pd_b_setvar_id = options.pd_b_setvar_id,
-
             };
         }
 
@@ -782,7 +783,7 @@ pub const SystemDescription = struct {
 
         const Kind = union(enum) {
             conventional: struct {
-                irq:     u32,
+                irq: u32,
                 trigger: ?Trigger,
             },
 
@@ -834,9 +835,9 @@ pub const SystemDescription = struct {
                     return s_irq.irq;
                 },
                 else => {
-                    log.err("number called on invalid IRQ kind {s}", .{ @tagName(irq.kind) });
+                    log.err("number called on invalid IRQ kind {s}", .{@tagName(irq.kind)});
                     return null;
-                }
+                },
             }
         }
 
@@ -849,9 +850,9 @@ pub const SystemDescription = struct {
                     return i_irq.trigger;
                 },
                 else => {
-                    log.err("trigger called on invalid IRQ kind {s}", .{ @tagName(irq.kind) });
+                    log.err("trigger called on invalid IRQ kind {s}", .{@tagName(irq.kind)});
                     return null;
-                }
+                },
             }
         }
 
@@ -866,7 +867,7 @@ pub const SystemDescription = struct {
 
         pub fn createIoapic(pin: u64, vector: u64, options: IoapicOptions) !Irq {
             return .{
-                .id   = options.id,
+                .id = options.id,
                 .kind = .{
                     .ioapic = .{
                         .ioapic = options.ioapic,
@@ -888,7 +889,7 @@ pub const SystemDescription = struct {
         pub fn createMsi(pci_bus: u8, pci_device: u8, pci_func: u8, vector: u64, handle: u64, options: MsiOptions) !Irq {
             // @billn: double check does MSI work in the same manner on arm and riscv?
             return .{
-                .id   = options.id,
+                .id = options.id,
                 .kind = .{
                     .msi = .{
                         .pci_bus = pci_bus,
@@ -931,7 +932,7 @@ pub const SystemDescription = struct {
                 },
                 .msi => |m_irq| {
                     try std.fmt.format(writer, "pcidev=\"{}:{}.{}\" handle=\"{}\" vector=\"{}\" id=\"{}\"", .{ m_irq.pci_bus, m_irq.pci_dev, m_irq.pci_func, m_irq.handle, m_irq.vector, irq.id.? });
-                }
+                },
             }
             if (irq.setvar_id) |setvar_id| {
                 try std.fmt.format(writer, " setvar_id=\"{s}\"", .{setvar_id});
@@ -963,7 +964,7 @@ pub const SystemDescription = struct {
             // By the time we get here, something should have populated the 'id' field.
             std.debug.assert(ioport.id != null);
 
-            try std.fmt.format(writer, "{s}<ioport id=\"{}\" addr=\"{}\" size=\"{}\" />\n", .{separator, ioport.id.?, ioport.addr, ioport.size});
+            try std.fmt.format(writer, "{s}<ioport id=\"{}\" addr=\"{}\" size=\"{}\" />\n", .{ separator, ioport.id.?, ioport.addr, ioport.size });
         }
     };
 
