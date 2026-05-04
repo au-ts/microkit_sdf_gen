@@ -434,7 +434,7 @@ pub const SystemDescription = struct {
         child_id: ?u8,
         /// CPU core
         cpu: ?u8,
-        backed: bool,
+        backed: ?bool,
 
         setvars: ArrayList(SetVar),
 
@@ -655,6 +655,10 @@ pub const SystemDescription = struct {
 
             if (pd.cpu) |cpu| {
                 try std.fmt.format(writer, " cpu=\"{}\"", .{cpu});
+            }
+
+            if (pd.backed) |backed| {
+                try std.fmt.format(writer, " backed=\"{}\"", .{backed});
             }
 
             _ = try writer.write(">\n");
