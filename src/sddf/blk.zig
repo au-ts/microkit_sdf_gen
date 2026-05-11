@@ -83,14 +83,16 @@ pub const Blk = struct {
         system.config.clients.deinit();
     }
 
+    /// 2MB for the data region by default
+    pub const CLIENT_DEFAULT_DATA_SIZE = 2 * 1024 * 1024;
+
     // TODO: need to do more error checking on data size and queue capacity.
     pub const ClientOptions = struct {
         // Zero-index of device partition to use.
         partition: u32,
         // Maximum possible entries in a single queue.
         queue_capacity: u16 = 128,
-        // Default to 2MB.
-        data_size: u32 = 2 * 1024 * 1024,
+        data_size: u32 = CLIENT_DEFAULT_DATA_SIZE,
     };
 
     pub fn addClient(system: *Blk, client: *Pd, options: ClientOptions) Error!void {
