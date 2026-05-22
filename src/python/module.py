@@ -6,7 +6,7 @@ from ctypes import (
 )
 from typing import Optional, List, Tuple
 from enum import IntEnum
-from abc import ABC, abstractmethod
+from abc import ABC
 
 class SddfStatus(IntEnum):
     OK = 0,
@@ -15,6 +15,8 @@ class SddfStatus(IntEnum):
     NET_DUPLICATE_COPIER = 100,
     NET_DUPLICATE_MAC_ADDR = 101,
     NET_INVALID_OPTIONS = 103,
+    NET_INVALID_VSWITCH = 104,
+    NET_INVALID_VSWITCH_COPIER = 105,
     GPIO_INVALID_OPTIONS = 203,
 
 
@@ -228,8 +230,11 @@ libsdfgen.sdfgen_sddf_net_add_client_with_copier.argtypes = [
     c_void_p,
     c_char_p,
     c_bool,
+    c_bool,
     c_bool
 ]
+libsdfgen.sdfgen_sddf_net_add_acl_rule.restype = c_bool
+libsdfgen.sdfgen_sddf_net_add_acl_rule.argtypes = [c_void_p, c_void_p, c_void_p, c_bool, c_bool]
 
 libsdfgen.sdfgen_sddf_net_connect.restype = c_bool
 libsdfgen.sdfgen_sddf_net_connect.argtypes = [c_void_p]
@@ -285,7 +290,7 @@ libsdfgen.sdfgen_vmm_add_virtio_mmio_console.argtypes = [c_void_p, c_void_p, c_v
 libsdfgen.sdfgen_vmm_add_virtio_mmio_blk.restype = c_bool
 libsdfgen.sdfgen_vmm_add_virtio_mmio_blk.argtypes = [c_void_p, c_void_p, c_void_p, c_uint32]
 libsdfgen.sdfgen_vmm_add_virtio_mmio_net.restype = c_bool
-libsdfgen.sdfgen_vmm_add_virtio_mmio_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_char_p]
+libsdfgen.sdfgen_vmm_add_virtio_mmio_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_char_p, c_bool]
 libsdfgen.sdfgen_vmm_connect.restype = c_bool
 libsdfgen.sdfgen_vmm_connect.argtypes = [c_void_p]
 libsdfgen.sdfgen_vmm_serialise_config.restype = c_bool
@@ -1059,19 +1064,25 @@ class Sddf:
             driver: SystemDescription.ProtectionDomain,
             virt_tx: SystemDescription.ProtectionDomain,
             virt_rx: SystemDescription.ProtectionDomain,
+            *,
+            vswitch: Optional[SystemDescription.ProtectionDomain] = None,
             rx_dma_mr: Optional[SystemDescription.MemoryRegion] = None
         ) -> None:
             if device is None:
                 device_obj = None
             else:
                 device_obj = device._obj
+            if vswitch is None:
+                vswitch_obj = None
+            else:
+                vswitch_obj = vswitch._obj
             if rx_dma_mr is None:
                 rx_dma_mr_obj = None
             else:
                 rx_dma_mr_obj = rx_dma_mr._obj
 
             self._obj = libsdfgen.sdfgen_sddf_net(
-                sdf._obj, device_obj, driver._obj, virt_tx._obj, virt_rx._obj, rx_dma_mr_obj
+                sdf._obj, device_obj, driver._obj, virt_tx._obj, virt_rx._obj, vswitch_obj, rx_dma_mr_obj
             )
 
         def add_client_with_copier(
@@ -1081,7 +1092,8 @@ class Sddf:
             *,
             mac_addr: Optional[str] = None,
             rx: Optional[bool] = None,
-            tx: Optional[bool] = None
+            tx: Optional[bool] = None,
+            vswitch: Optional[bool] = None
         ) -> None:
             """
             Add a client connected to a copier component for RX traffic.
@@ -1109,8 +1121,12 @@ class Sddf:
                 tx_arg = True
             else:
                 tx_arg = False
+            if vswitch is None or vswitch is False:
+                vswitch_arg = False
+            else:
+                vswitch_arg = True
             ret = libsdfgen.sdfgen_sddf_net_add_client_with_copier(
-                self._obj, client._obj, copier_obj, c_mac_addr, rx_arg, tx_arg
+                self._obj, client._obj, copier_obj, c_mac_addr, rx_arg, tx_arg, vswitch_arg
             )
             if ret == SddfStatus.OK:
                 return
@@ -1124,6 +1140,10 @@ class Sddf:
                 raise Exception(f"duplicate MAC address given '{mac_addr}'")
             elif ret == SddfStatus.NET_INVALID_OPTIONS:
                 raise Exception(f"client must have rx or tx access")
+            elif ret == SddfStatus.NET_INVALID_VSWITCH:
+                raise Exception(f"net system has no vswitch")
+            elif ret == SddfStatus.NET_INVALID_VSWITCH_COPIER:
+                raise Exception(f"vswitch clients require a copier")
             else:
                 raise Exception(f"internal error: {ret}")
 
@@ -1354,8 +1374,9 @@ class Vmm:
         self,
         device: DeviceTree.Node,
         net: Sddf.Net,
-        copier: SystemDescription.ProtectionDomain,
         *,
+        copier: Optional[SystemDescription.ProtectionDomain],
+        vswitch: Optional[bool],
         mac_addr: Optional[str] = None
     ):
         if mac_addr is not None and len(mac_addr) != 17:
@@ -1367,7 +1388,16 @@ class Vmm:
         if mac_addr is not None:
             c_mac_addr = c_char_p(mac_addr.encode("utf-8"))
 
-        return libsdfgen.sdfgen_vmm_add_virtio_mmio_net(self._obj, device._obj, net._obj, copier._obj, c_mac_addr)
+        if copier is None:
+            copier_obj = None
+        else:
+            copier_obj = copier._obj
+        if vswitch is None or vswitch is False:
+            vswitch_arg = False
+        else:
+            vswitch_arg = True
+
+        return libsdfgen.sdfgen_vmm_add_virtio_mmio_net(self._obj, device._obj, net._obj, copier_obj, c_mac_addr, vswitch_arg)
 
     def connect(self) -> bool:
         return libsdfgen.sdfgen_vmm_connect(self._obj)
