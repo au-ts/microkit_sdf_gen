@@ -267,10 +267,17 @@ pub const Net = struct {
         if (zeroToOne) {
             const bit: u6 = @intCast(client1Port.?);
             system.vswitch_config.ports[client0Port.?].acl |= (@as(u64, 1) << bit);
+        } else {
+            const bit: u6 = @intCast(client1Port.?);
+            system.vswitch_config.ports[client0Port.?].acl &= ~(@as(u64, 1) << bit);
         }
+
         if (oneToZero) {
             const bit: u6 = @intCast(client0Port.?);
             system.vswitch_config.ports[client1Port.?].acl |= (@as(u64, 1) << bit);
+        } else {
+            const bit: u6 = @intCast(client0Port.?);
+            system.vswitch_config.ports[client1Port.?].acl &= ~(@as(u64, 1) << bit);
         }
     }
 
@@ -620,6 +627,11 @@ pub const Net = struct {
             system.virt_rx_config.num_clients += 1;
             system.virt_tx_config.num_clients += 1;
             system.vswitch_config.num_ports += 1;
+
+            // By default, all clients can communicate
+            for (0..system.vswitch_config.num_ports) |i| {
+                system.vswitch_config.ports[i].acl = (@as(u64, 1) << @intCast(system.vswitch_config.num_ports)) - 1;
+            }
         }
 
         system.connected = true;
