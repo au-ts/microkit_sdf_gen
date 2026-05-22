@@ -322,7 +322,7 @@ pub const Net = struct {
         system.virt_rx_config.data_region = .createFromMap(rx_dma_virt_map);
 
         const virt_rx_metadata_mr_name = fmt(system.allocator, "{s}/net/rx/virt_metadata", .{system.deviceName()});
-        const virt_rx_metadata_mr_size = system.sdf.arch.roundUpToPage(system.rx_buffers * 4);
+        const virt_rx_metadata_mr_size = system.sdf.arch.roundUpToPage(system.rx_buffers);
         const virt_rx_metadata_mr = Mr.create(system.allocator, virt_rx_metadata_mr_name, virt_rx_metadata_mr_size, .{});
         system.sdf.addMemoryRegion(virt_rx_metadata_mr);
         const virt_rx_metadata_map = Map.create(virt_rx_metadata_mr, system.virt_rx.getMapVaddr(&virt_rx_metadata_mr), .rw, .{});
