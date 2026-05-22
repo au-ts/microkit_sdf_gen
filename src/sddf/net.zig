@@ -154,6 +154,11 @@ pub const Net = struct {
             return Error.InvalidVSwitchCopier;
         }
 
+        // Vswitch clients must support rx and tx
+        if (options.vswitch and (!options.rx or !options.tx)) {
+            return Error.InvalidOptions;
+        }
+
         const client_idx = system.clients.items.len;
 
         // Check that at least rx or tx is set in ClientOptions
@@ -270,10 +275,12 @@ pub const Net = struct {
     }
 
     fn createConnection(system: *Net, server: *Pd, client: *Pd, server_conn: *ConfigResources.Net.Connection, client_conn: *ConfigResources.Net.Connection, num_buffers: u64) void {
-        const queue_mr_size = system.sdf.arch.roundUpToPage(8 + 16 * num_buffers);
+        // Queues must always be a power of 2
+        const rounded_num_buffers = std.math.ceilPowerOfTwo(u32, @intCast(num_buffers)) catch unreachable;
+        const queue_mr_size = system.sdf.arch.roundUpToPage(8 + 16 * rounded_num_buffers);
 
-        server_conn.num_buffers = @intCast(num_buffers);
-        client_conn.num_buffers = @intCast(num_buffers);
+        server_conn.num_buffers = @intCast(rounded_num_buffers);
+        client_conn.num_buffers = @intCast(rounded_num_buffers);
 
         const free_mr_name = fmt(system.allocator, "{s}/net/queue/{s}/{s}/free", .{ system.deviceName(), server.name, client.name });
         const free_mr = Mr.create(system.allocator, free_mr_name, queue_mr_size, .{});
