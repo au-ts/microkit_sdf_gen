@@ -1147,6 +1147,25 @@ class Sddf:
             else:
                 raise Exception(f"internal error: {ret}")
 
+        def add_acl_rule(
+                self,
+                client0: SystemDescription.ProtectionDomain,
+                client1: SystemDescription.ProtectionDomain,
+                zeroToOne: bool = True,
+                oneToZero: bool = True
+            ) -> None:
+            ret = libsdfgen.sdfgen_sddf_net_add_acl_rule(self._obj, client0._obj, client1._obj, c_bool(zeroToOne), c_bool(oneToZero))
+            if ret == SddfStatus.OK:
+                return
+            elif ret == SddfStatus.DUPLICATE_CLIENT:
+                raise Exception(f"duplicate client given '{client0}'")
+            elif ret == SddfStatus.INVALID_CLIENT:
+                raise Exception(f"either client not connected to vswitch")
+            elif ret == SddfStatus.NET_INVALID_VSWITCH:
+                raise Exception(f"net system has no vswitch")
+            else:
+                raise Exception(f"internal error: {ret}")
+
         def connect(self) -> bool:
             return libsdfgen.sdfgen_sddf_net_connect(self._obj)
 

@@ -241,7 +241,7 @@ pub const Net = struct {
         var client1Port: ?u8 = null;
         var port: u8 = 0;
         for (system.clients.items, 0..) |client, i| {
-            if (system.client_info.items[i].vswitch) {
+            if (!system.client_info.items[i].vswitch) {
                 continue;
             }
             if (std.mem.eql(u8, client.name, client0.name)) {
@@ -488,7 +488,7 @@ pub const Net = struct {
         for (system.clients.items, 0..) |_, i| {
             if (system.client_info.items[i].vswitch) {
                 std.mem.copyForwards(u8, system.vswitch_config.ports[vswitch_client_count].mac_addr[0..6], &system.client_info.items[i].mac_addr.?);
-                std.mem.copyForwards(u8, virt_client_config.mac_addrs[vswitch_client_count .. vswitch_client_count + 6], &system.client_info.items[i].mac_addr.?);
+                std.mem.copyForwards(u8, virt_client_config.mac_addrs[vswitch_client_count * 6 .. vswitch_client_count * 6 + 6], &system.client_info.items[i].mac_addr.?);
                 vswitch_client_count += 1;
             }
         }
