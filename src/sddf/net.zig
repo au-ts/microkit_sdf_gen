@@ -218,21 +218,26 @@ pub const Net = struct {
         system.client_info.items[client_idx].tx = options.tx;
         system.client_info.items[client_idx].tx_buffers = options.tx_buffers;
         system.client_info.items[client_idx].vswitch = options.vswitch;
+        std.log.err("adding client with vswitch option {} {}", .{system.client_info.items[client_idx].vswitch, options.vswitch});
     }
 
     pub fn addAclRule(system: *Net, client0: *Pd, client1: *Pd, zeroToOne: bool, oneToZero: bool) Error!void {
+        std.log.err("HERE1", .{});
         // System must have a vswitch
         if (system.maybe_vswitch == null) {
+            std.log.err("HERE2", .{});
             return Error.InvalidVSwitch;
         }
 
         // Check that the clients are not the same
         if (std.mem.eql(u8, client0.name, client1.name)) {
+            std.log.err("HERE3", .{});
             return Error.DuplicateClient;
         }
 
         // The system must be connected, otherwise we don't yet know what clients are connected to the vswitch
         if (!system.connected) {
+            std.log.err("HERE4", .{});
             return Error.NotConnected;
         }
 
@@ -240,10 +245,12 @@ pub const Net = struct {
         var client0Port: ?u8 = null;
         var client1Port: ?u8 = null;
         var port: u8 = 0;
+        std.log.err("{any}", .{ system.client_info.items });
         for (system.clients.items, 0..) |client, i| {
             if (!system.client_info.items[i].vswitch) {
                 continue;
             }
+            std.log.err("HERE3 {s} {s}", .{client.name, client0.name});
             if (std.mem.eql(u8, client.name, client0.name)) {
                 client0Port = @intCast(port);
             } else if (std.mem.eql(u8, client.name, client1.name)) {
@@ -261,6 +268,7 @@ pub const Net = struct {
 
         // Invalid client PD
         if (client0Port == null or client1Port == null) {
+            std.log.err("HERE5", .{});
             return Error.InvalidClient;
         }
 
