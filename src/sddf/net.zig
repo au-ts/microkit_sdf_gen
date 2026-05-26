@@ -30,6 +30,8 @@ pub const Net = struct {
         InvalidOptions,
         InvalidVSwitch,
         InvalidVSwitchCopier,
+        InvalidClientNumber,
+        InvalidBufferNumber,
     };
 
     pub const Options = struct {
@@ -86,6 +88,10 @@ pub const Net = struct {
         if (options.rx_dma_mr) |exists_rx_dma| {
             if (exists_rx_dma.*.paddr == null) {
                 @panic("rx dma region must have a physical address");
+            }
+
+            if (options.rx_buffers != std.math.ceilPowerOfTwo(u32, @intCast(options.rx_buffers)) catch unreachable) {
+                @panic("number of rx buffers must be a power of two!");
             }
 
             if (exists_rx_dma.*.size < options.rx_buffers * BUFFER_SIZE) {
@@ -164,6 +170,20 @@ pub const Net = struct {
         // Check that at least rx or tx is set in ClientOptions
         if (!options.rx and !options.tx) {
             return Error.InvalidOptions;
+        }
+
+        // Check the number of client buffers are each a power of two
+        if (options.tx) {
+            if (options.tx_buffers != std.math.ceilPowerOfTwo(u32, @intCast(options.tx_buffers)) catch unreachable) {
+                return Error.InvalidBufferNumber;
+            }
+
+        }
+
+        if (options.rx and maybe_copier != null) {
+            if (options.rx_buffers != std.math.ceilPowerOfTwo(u32, @intCast(options.rx_buffers)) catch unreachable) {
+                return Error.InvalidBufferNumber;
+            }
         }
 
         // Check that the MAC address isn't present already
@@ -578,9 +598,13 @@ pub const Net = struct {
         }
     }
 
-    pub fn connect(system: *Net) !void {
+    pub fn connect(system: *Net) Error !void {
+        if (system.clients.items.len == 0) {
+            return Error.InvalidClientNumber;
+        }
+
         if (system.device) |dtb_node| {
-            try sddf.createDriver(system.sdf, system.driver, dtb_node, .network, &system.device_res);
+            sddf.createDriver(system.sdf, system.driver, dtb_node, .network, &system.device_res) catch return Error.NotConnected;
         }
 
         const rx_dma_mr = system.rxConnectDriver();

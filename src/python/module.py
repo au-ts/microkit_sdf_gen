@@ -17,6 +17,8 @@ class SddfStatus(IntEnum):
     NET_INVALID_OPTIONS = 103,
     NET_INVALID_VSWITCH = 104,
     NET_INVALID_VSWITCH_COPIER = 105,
+    NET_INVALID_CLIENT_NUMBER = 106,
+    NET_INVALID_BUFFER_NUMBER = 107,
     GPIO_INVALID_OPTIONS = 203,
 
 
@@ -223,7 +225,7 @@ libsdfgen.sdfgen_sddf_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_
 libsdfgen.sdfgen_sddf_net_destroy.restype = None
 libsdfgen.sdfgen_sddf_net_destroy.argtypes = [c_void_p]
 
-libsdfgen.sdfgen_sddf_net_add_client_with_copier.restype = c_bool
+libsdfgen.sdfgen_sddf_net_add_client_with_copier.restype = c_uint8
 libsdfgen.sdfgen_sddf_net_add_client_with_copier.argtypes = [
     c_void_p,
     c_void_p,
@@ -233,10 +235,10 @@ libsdfgen.sdfgen_sddf_net_add_client_with_copier.argtypes = [
     c_bool,
     c_bool
 ]
-libsdfgen.sdfgen_sddf_net_add_acl_rule.restype = c_bool
+libsdfgen.sdfgen_sddf_net_add_acl_rule.restype = c_uint8
 libsdfgen.sdfgen_sddf_net_add_acl_rule.argtypes = [c_void_p, c_void_p, c_void_p, c_bool, c_bool]
 
-libsdfgen.sdfgen_sddf_net_connect.restype = c_bool
+libsdfgen.sdfgen_sddf_net_connect.restype = c_uint8
 libsdfgen.sdfgen_sddf_net_connect.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_sddf_net_serialise_config.restype = c_bool
@@ -1144,6 +1146,8 @@ class Sddf:
                 raise Exception(f"net system has no vswitch")
             elif ret == SddfStatus.NET_INVALID_VSWITCH_COPIER:
                 raise Exception(f"vswitch clients require a copier")
+            elif ret == SddfStatus.NET_INVALID_BUFFER_NUMBER:
+                raise Exception(f"clients may only have a power of two number of buffers")
             else:
                 raise Exception(f"internal error: {ret}")
 
@@ -1167,7 +1171,11 @@ class Sddf:
                 raise Exception(f"internal error: {ret}")
 
         def connect(self) -> bool:
-            return libsdfgen.sdfgen_sddf_net_connect(self._obj)
+            ret = libsdfgen.sdfgen_sddf_net_connect(self._obj)
+            if ret == SddfStatus.OK:
+                return True
+            elif ret == SddfStatus.NET_INVALID_CLIENT_NUMBER:
+                raise Exception(f"can't connect net system with no clients!")
 
         def serialise_config(self, output_dir: str) -> bool:
             c_output_dir = c_char_p(output_dir.encode("utf-8"))
@@ -1416,7 +1424,9 @@ class Vmm:
         else:
             vswitch_arg = True
 
-        return libsdfgen.sdfgen_vmm_add_virtio_mmio_net(self._obj, device._obj, net._obj, copier_obj, c_mac_addr, vswitch_arg)
+        ret = libsdfgen.sdfgen_vmm_add_virtio_mmio_net(self._obj, device._obj, net._obj, copier_obj, c_mac_addr, vswitch_arg)
+        if not ret:
+            raise Exception(f"could not add device '{device}'")
 
     def connect(self) -> bool:
         return libsdfgen.sdfgen_vmm_connect(self._obj)

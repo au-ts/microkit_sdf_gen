@@ -853,8 +853,9 @@ export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, cl
             sddf.Net.Error.InvalidOptions => return 103,
             sddf.Net.Error.InvalidVSwitch => return 104,
             sddf.Net.Error.InvalidVSwitchCopier => return 105,
+            sddf.Net.Error.InvalidBufferNumber => return 107,
             // Should never happen when adding a client
-            sddf.Net.Error.NotConnected => @panic("internal error"),
+            else => @panic("internal error"),
         }
     };
 
@@ -878,11 +879,16 @@ export fn sdfgen_sddf_net_add_acl_rule(system: *align(8) anyopaque, client0: *al
     return 0;
 }
 
-export fn sdfgen_sddf_net_connect(system: *align(8) anyopaque) bool {
+export fn sdfgen_sddf_net_connect(system: *align(8) anyopaque) bindings.sdfgen_sddf_status_t {
     const net: *sddf.Net = @ptrCast(system);
-    net.connect() catch return false;
+    net.connect() catch |e| {
+        switch (e) {
+            sddf.Net.Error.InvalidClientNumber => return 106,
+            else => @panic("impossible error reached"),
+        }
+    };
 
-    return true;
+    return 0;
 }
 
 export fn sdfgen_sddf_net_serialise_config(system: *align(8) anyopaque, output_dir: [*c]u8) bool {
