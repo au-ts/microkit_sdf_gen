@@ -593,6 +593,8 @@ pub const Net = struct {
                         break;
                     }
                 }
+                system.client_info.items[i].mac_addr = std.mem.zeroes([6]u8);
+                std.mem.copyForwards(u8, system.client_info.items[i].mac_addr.?[0..6], &system.client_info.items[i].mac_addr.?);
                 system.client_info.items[i].mac_addr = mac_addr;
             }
         }
