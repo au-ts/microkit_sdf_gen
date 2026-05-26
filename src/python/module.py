@@ -70,6 +70,8 @@ libsdfgen.sdfgen_channel_create.argtypes = [
     POINTER(c_bool),
     POINTER(c_bool),
     POINTER(c_uint8),
+    c_char_p,
+    c_char_p,
 ]
 libsdfgen.sdfgen_channel_destroy.restype = None
 libsdfgen.sdfgen_channel_destroy.argtypes = [c_void_p]
@@ -98,11 +100,11 @@ libsdfgen.sdfgen_mr_destroy.restype = None
 libsdfgen.sdfgen_mr_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_irq_create.restype = c_void_p
-libsdfgen.sdfgen_irq_create.argtypes = [c_uint32, POINTER(c_uint32), POINTER(c_uint8)]
+libsdfgen.sdfgen_irq_create.argtypes = [c_uint32, POINTER(c_uint32), POINTER(c_uint8), c_char_p]
 libsdfgen.sdfgen_irq_ioapic_create.restype = c_void_p
-libsdfgen.sdfgen_irq_ioapic_create.argtypes = [c_uint64, c_uint64, POINTER(c_uint32), POINTER(c_uint32), c_uint64, POINTER(c_uint8)]
+libsdfgen.sdfgen_irq_ioapic_create.argtypes = [c_uint64, c_uint64, POINTER(c_uint32), POINTER(c_uint32), c_uint64, POINTER(c_uint8), c_char_p, c_char_p]
 libsdfgen.sdfgen_irq_msi_create.restype = c_void_p
-libsdfgen.sdfgen_irq_msi_create.argtypes = [c_uint8, c_uint8, c_uint8, c_uint64, c_uint64, POINTER(c_uint8)]
+libsdfgen.sdfgen_irq_msi_create.argtypes = [c_uint8, c_uint8, c_uint8, c_uint64, c_uint64, POINTER(c_uint8), c_char_p, c_char_p]
 libsdfgen.sdfgen_irq_destroy.restype = None
 libsdfgen.sdfgen_irq_destroy.argtypes = [c_void_p]
 
