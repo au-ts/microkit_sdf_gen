@@ -70,6 +70,8 @@ libsdfgen.sdfgen_channel_create.argtypes = [
     POINTER(c_bool),
     POINTER(c_bool),
     POINTER(c_uint8),
+    c_char_p,
+    c_char_p,
 ]
 libsdfgen.sdfgen_channel_destroy.restype = None
 libsdfgen.sdfgen_channel_destroy.argtypes = [c_void_p]
