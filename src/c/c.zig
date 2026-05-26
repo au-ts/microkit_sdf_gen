@@ -300,7 +300,7 @@ export fn sdfgen_sddf_init(path: [*c]u8) bool {
     return true;
 }
 
-export fn sdfgen_irq_create(number: u32, c_trigger: [*c]bindings.sdfgen_irq_trigger_t, c_id: [*c]u8, c_setvar_id: ?[*:0]u8) ?*anyopaque {
+export fn sdfgen_irq_create(number: u32, c_trigger: [*c]bindings.sdfgen_irq_trigger_t, c_id: [*c]u8, c_setvar_id: [*c]u8) ?*anyopaque {
     const irq = allocator.create(Irq) catch @panic("OOM");
     var options: Irq.Options = .{};
     if (c_trigger != null) {
@@ -327,7 +327,7 @@ export fn sdfgen_irq_create(number: u32, c_trigger: [*c]bindings.sdfgen_irq_trig
     return irq;
 }
 
-export fn sdfgen_irq_ioapic_create(ioapic: u64, pin: u64, c_trigger: [*c]bindings.sdfgen_irq_trigger_t, c_polarity: [*c]bindings.sdfgen_irq_ioapic_polarity_t, vector: u64, c_id: [*c]u8, c_setvar_id: ?[*:0]u8) ?*anyopaque {
+export fn sdfgen_irq_ioapic_create(ioapic: u64, pin: u64, c_trigger: [*c]bindings.sdfgen_irq_trigger_t, c_polarity: [*c]bindings.sdfgen_irq_ioapic_polarity_t, vector: u64, c_id: [*c]u8, c_setvar_id: [*c]u8) ?*anyopaque {
     const irq = allocator.create(Irq) catch @panic("OOM");
     var options: Irq.IoapicOptions = .{};
     if (c_polarity != null) {
@@ -371,7 +371,7 @@ export fn sdfgen_irq_ioapic_create(ioapic: u64, pin: u64, c_trigger: [*c]binding
     return irq;
 }
 
-export fn sdfgen_irq_msi_create(pci_bus: u8, pci_device: u8, pci_func: u8, vector: u64, handle: u64, c_id: [*c]u8, c_setvar_id: ?[*:0]u8) ?*anyopaque {
+export fn sdfgen_irq_msi_create(pci_bus: u8, pci_device: u8, pci_func: u8, vector: u64, handle: u64, c_id: [*c]u8, c_setvar_id: [*c]u8) ?*anyopaque {
     const irq = allocator.create(Irq) catch @panic("OOM");
     var options: Irq.MsiOptions = .{};
     if (c_id != null) {
@@ -456,7 +456,7 @@ export fn sdfgen_mr_destroy(c_mr: *align(8) anyopaque) void {
     allocator.destroy(mr);
 }
 
-export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bindings.sdfgen_map_perms_t, cached: bool, c_setvar_vaddr: [*c]u8, c_setvar_size: ?[*:0]u8) ?*anyopaque {
+export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bindings.sdfgen_map_perms_t, cached: bool, c_setvar_vaddr: [*c]u8, c_setvar_size: [*c]u8) ?*anyopaque {
     const mr: *Mr = @ptrCast(c_mr);
 
     var perms: Map.Perms = .{};
@@ -471,11 +471,11 @@ export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bind
     }
 
     var options: Map.Options = .{.cached = cached};
-    if (c_setvar_vaddr) |s| {
-        options.setvar_vaddr = allocator.dupe(u8, std.mem.span(s)) catch @panic("OOM");
+    if (c_setvar_vaddr != null) {
+        options.setvar_vaddr = allocator.dupe(u8, std.mem.span(c_setvar_vaddr)) catch @panic("OOM");
     }
-    if (c_setvar_size) |s| {
-        options.setvar_size = allocator.dupe(u8, std.mem.span(s)) catch @panic("OOM");
+    if (c_setvar_size != null) {
+        options.setvar_size = allocator.dupe(u8, std.mem.span(c_setvar_size)) catch @panic("OOM");
     }
 
     const map = allocator.create(Map) catch @panic("OOM");
@@ -502,7 +502,7 @@ export fn sdfgen_map_destroy(c_map: *align(8) anyopaque) void {
     allocator.destroy(map);
 }
 
-export fn sdfgen_channel_create(c_pd_a: *align(8) anyopaque, c_pd_b: *align(8) anyopaque, pd_a_id: [*c]u8, pd_b_id: [*c]u8, pd_a_notify: [*c]bool, pd_b_notify: [*c]bool, c_pp: [*c]u8, c_pd_a_setvar_id: ?[*:0]u8, c_pd_b_setvar_id: ?[*:0]u8) ?*anyopaque {
+export fn sdfgen_channel_create(c_pd_a: *align(8) anyopaque, c_pd_b: *align(8) anyopaque, pd_a_id: [*c]u8, pd_b_id: [*c]u8, pd_a_notify: [*c]bool, pd_b_notify: [*c]bool, c_pp: [*c]u8, c_pd_a_setvar_id: ?[*c]u8, c_pd_b_setvar_id: [*c]u8) ?*anyopaque {
     const pd_a: *Pd = @ptrCast(c_pd_a);
     const pd_b: *Pd = @ptrCast(c_pd_b);
 
