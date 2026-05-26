@@ -221,7 +221,7 @@ libsdfgen.sdfgen_sddf_serial_serialise_config.restype = c_bool
 libsdfgen.sdfgen_sddf_serial_serialise_config.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_sddf_net.restype = c_void_p
-libsdfgen.sdfgen_sddf_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p]
 libsdfgen.sdfgen_sddf_net_destroy.restype = None
 libsdfgen.sdfgen_sddf_net_destroy.argtypes = [c_void_p]
 
