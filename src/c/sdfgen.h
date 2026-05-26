@@ -108,7 +108,10 @@ typedef enum {
     SDDF_ERROR_NET_DUPLICATE_MAC_ADDR = 101,
     SDDF_ERROR_NET_INVALID_MAC_ADDR = 102,
     SDDF_ERROR_NET_INVALID_OPTIONS = 103,
-    SDDF_ERROR_NET_DUPLICATE_VSWITCH = 104,
+    SDDF_ERROR_NET_INVALID_VSWITCH = 104,
+    SDDF_ERROR_NET_INVALID_VSWITCH_COPIER = 105,
+    SDDF_ERROR_NET_INVALID_CLIENT_NUMBER = 106,
+    SDDF_ERROR_NET_INVALID_BUFFER_NUMBER = 107,
     SDDF_ERROR_GPIO_INVALID_OPTIONS = 203
 } sdfgen_sddf_status_t;
 
@@ -143,11 +146,11 @@ sdfgen_sddf_status_t sdfgen_sddf_blk_add_client(void *system, void *client, uint
 bool sdfgen_sddf_blk_connect(void *system);
 bool sdfgen_sddf_blk_serialise_config(void *system, char *output_dir);
 
-void *sdfgen_sddf_net(void *sdf, void *device, void *driver, void *virt_rx, void *virt_tx, void *rx_dma_mr);
+void *sdfgen_sddf_net(void *sdf, void *device, void *driver, void *virt_rx, void *virt_tx, void *vswitch, void *rx_dma_mr);
 void sdfgen_sddf_net_destroy(void *system);
-sdfgen_sddf_status_t sdfgen_sddf_net_add_client_with_copier(void *system, void *client, void *copier, void *vswitch, uint8_t mac_addr[6], bool rx, bool tx);
-sdfgen_sddf_status_t sdfgen_sddf_net_add_acl_rule(void *system, void *client0, void *client1, void *vswitch, bool zeroToOne, bool oneToZero);
-bool sdfgen_sddf_net_connect(void *system);
+sdfgen_sddf_status_t sdfgen_sddf_net_add_client_with_copier(void *system, void *client, void *copier, uint8_t mac_addr[6], bool rx, bool tx, bool vswitch);
+sdfgen_sddf_status_t sdfgen_sddf_net_add_acl_rule(void *system, void *client0, void *client1, bool zeroToOne, bool oneToZero);
+sdfgen_sddf_status_t sdfgen_sddf_net_connect(void *system);
 bool sdfgen_sddf_net_serialise_config(void *system, char *output_dir);
 
 void *sdfgen_sddf_gpu(void *sdf, void *device, void *driver, void *virt);
