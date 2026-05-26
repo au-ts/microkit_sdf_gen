@@ -456,7 +456,7 @@ export fn sdfgen_mr_destroy(c_mr: *align(8) anyopaque) void {
     allocator.destroy(mr);
 }
 
-export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bindings.sdfgen_map_perms_t, cached: bool, c_setvar_vaddr: [*c]u8, c_setvar_size: ?[*:0]u8) ?*anyopaque {
+export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bindings.sdfgen_map_perms_t, cached: bool, c_setvar_vaddr: [*c]u8, c_setvar_size: [*c]u8) ?*anyopaque {
     const mr: *Mr = @ptrCast(c_mr);
 
     var perms: Map.Perms = .{};
@@ -471,11 +471,11 @@ export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bind
     }
 
     var options: Map.Options = .{.cached = cached};
-    if (c_setvar_vaddr) |s| {
-        options.setvar_vaddr = allocator.dupe(u8, std.mem.span(s)) catch @panic("OOM");
+    if (c_setvar_vaddr != null) {
+        options.setvar_vaddr = allocator.dupe(u8, std.mem.span(c_setvar_vaddr)) catch @panic("OOM");
     }
-    if (c_setvar_size) |s| {
-        options.setvar_size = allocator.dupe(u8, std.mem.span(s)) catch @panic("OOM");
+    if (c_setvar_size != null) {
+        options.setvar_size = allocator.dupe(u8, std.mem.span(c_setvar_size)) catch @panic("OOM");
     }
 
     const map = allocator.create(Map) catch @panic("OOM");
