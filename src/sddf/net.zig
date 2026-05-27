@@ -301,7 +301,7 @@ pub const Net = struct {
         }
     }
 
-    fn createConnection(system: *Net, server: *Pd, client: *Pd, server_conn: *ConfigResources.Net.Connection, client_conn: *ConfigResources.Net.Connection, num_buffers: u64) void {
+    fn createConnection(system: *Net, server: *Pd, client: *Pd, server_conn: *ConfigResources.Net.Connection, client_conn: *ConfigResources.Net.Connection, num_buffers: u64, server_pp: bool) void {
         // Queues must always be a power of 2
         const rounded_num_buffers = std.math.ceilPowerOfTwo(u32, @intCast(num_buffers)) catch unreachable;
         const queue_mr_size = system.sdf.arch.roundUpToPage(8 + 16 * rounded_num_buffers);
@@ -333,14 +333,21 @@ pub const Net = struct {
         client.addMap(active_mr_client_map);
         client_conn.active_queue = .createFromMap(active_mr_client_map);
 
-        const channel = Channel.create(server, client, .{}) catch @panic("failed to create connection channel");
-        system.sdf.addChannel(channel);
-        server_conn.id = channel.pd_a_id;
-        client_conn.id = channel.pd_b_id;
+        if (server_pp) {
+            const channel = Channel.create(server, client, .{ .pp = .b }) catch @panic("failed to create connection channel");
+            system.sdf.addChannel(channel);
+            server_conn.id = channel.pd_a_id;
+            client_conn.id = channel.pd_b_id;
+        } else {
+            const channel = Channel.create(server, client, .{}) catch @panic("failed to create connection channel");
+            system.sdf.addChannel(channel);
+            server_conn.id = channel.pd_a_id;
+            client_conn.id = channel.pd_b_id;
+        }
     }
 
     fn rxConnectDriver(system: *Net) Mr {
-        system.createConnection(system.driver, system.virt_rx, &system.driver_config.virt_rx, &system.virt_rx_config.driver, system.rx_buffers);
+        system.createConnection(system.driver, system.virt_rx, &system.driver_config.virt_rx, &system.virt_rx_config.driver, system.rx_buffers, false);
 
         var rx_dma_mr: Mr = undefined;
         if (system.maybe_rx_dma_mr) |supplied_rx_dma_mr| {
@@ -374,7 +381,7 @@ pub const Net = struct {
             }
         }
 
-        system.createConnection(system.driver, system.virt_tx, &system.driver_config.virt_tx, &system.virt_tx_config.driver, num_buffers);
+        system.createConnection(system.driver, system.virt_tx, &system.driver_config.virt_tx, &system.virt_tx_config.driver, num_buffers, false);
     }
 
     fn clientRxConnect(system: *Net, rx_dma_mr: Mr, client_idx: usize) void {
@@ -386,8 +393,8 @@ pub const Net = struct {
         var virt_client_config = &system.virt_rx_config.clients[system.virt_rx_config.num_clients];
 
         if (maybe_copier) |copier| {
-            system.createConnection(system.virt_rx, copier, &virt_client_config.conn, &copier_config.rx, system.rx_buffers);
-            system.createConnection(copier, client, &copier_config.client, &client_config.rx, client_info.rx_buffers);
+            system.createConnection(system.virt_rx, copier, &virt_client_config.conn, &copier_config.rx, system.rx_buffers, false);
+            system.createConnection(copier, client, &copier_config.client, &client_config.rx, client_info.rx_buffers, false);
 
             const rx_dma_copier_map = Map.create(rx_dma_mr, copier.getMapVaddr(&rx_dma_mr), .rw, .{});
             copier.addMap(rx_dma_copier_map);
@@ -408,7 +415,7 @@ pub const Net = struct {
             copier_config.client_data = .createFromMap(client_data_copier_map);
         } else {
             // Communicate directly with rx virt if client has no copier
-            system.createConnection(system.virt_rx, client, &virt_client_config.conn, &client_config.rx, system.rx_buffers);
+            system.createConnection(system.virt_rx, client, &virt_client_config.conn, &client_config.rx, system.rx_buffers, false);
 
             // Map in dma region directly into clients with no copier
             const rx_dma_client_map = Map.create(rx_dma_mr, client.getMapVaddr(&rx_dma_mr), .rw, .{});
@@ -423,7 +430,7 @@ pub const Net = struct {
         var client_config = &system.client_configs.items[client_id];
         const virt_client_config = &system.virt_tx_config.clients[system.virt_tx_config.num_clients];
 
-        system.createConnection(system.virt_tx, client, &virt_client_config.conn, &client_config.tx, client_info.tx_buffers);
+        system.createConnection(system.virt_tx, client, &virt_client_config.conn, &client_config.tx, client_info.tx_buffers, false);
 
         const data_mr_size = system.sdf.arch.roundUpToPage(client_info.tx_buffers * BUFFER_SIZE);
         const data_mr_name = fmt(system.allocator, "{s}/net/tx/data/client/{s}", .{ system.deviceName(), client.name });
@@ -450,8 +457,8 @@ pub const Net = struct {
         var copier_config = &system.copy_configs.items[client_idx];
         var vswitch_config = &system.vswitch_config;
 
-        system.createConnection(vswitch, copier, &vswitch_config.ports[system.vswitch_config.num_ports].rx, &copier_config.rx, system.rx_buffers);
-        system.createConnection(copier, client, &copier_config.client, &client_config.rx, client_info.rx_buffers);
+        system.createConnection(vswitch, copier, &vswitch_config.ports[system.vswitch_config.num_ports].rx, &copier_config.rx, system.rx_buffers, false);
+        system.createConnection(copier, client, &copier_config.client, &client_config.rx, client_info.rx_buffers, false);
 
         // Rx DMA region is the last data region
         const rx_dma_copier_map = Map.create(rx_dma_mr, copier.getMapVaddr(&rx_dma_mr), .rw, .{});
@@ -479,7 +486,7 @@ pub const Net = struct {
         var client_config = &system.client_configs.items[client_id];
         var vswitch_config = &system.vswitch_config;
 
-        system.createConnection(vswitch, client, &vswitch_config.ports[system.vswitch_config.num_ports].tx, &client_config.tx, client_info.tx_buffers);
+        system.createConnection(vswitch, client, &vswitch_config.ports[system.vswitch_config.num_ports].tx, &client_config.tx, client_info.tx_buffers, true);
 
         const data_mr_size = system.sdf.arch.roundUpToPage(client_info.tx_buffers * BUFFER_SIZE);
         const data_mr_name = fmt(system.allocator, "{s}/net/tx/data/client/{s}", .{ system.deviceName(), client.name });
@@ -501,7 +508,7 @@ pub const Net = struct {
         var virt_client_config = &system.virt_rx_config.clients[system.virt_rx_config.num_clients];
 
         // virt_rx is connected to vswitch's tx port
-        system.createConnection(system.virt_rx, vswitch, &virt_client_config.conn, &vswitch_config.ports[system.vswitch_config.num_ports].tx, system.rx_buffers);
+        system.createConnection(system.virt_rx, vswitch, &virt_client_config.conn, &vswitch_config.ports[system.vswitch_config.num_ports].tx, system.rx_buffers, false);
 
         // Add vswitch client's MACs
         var vswitch_client_count: u8 = 0;
@@ -549,7 +556,7 @@ pub const Net = struct {
         var vswitch_config = &system.vswitch_config;
         var virt_client_config = &system.virt_tx_config.clients[system.virt_tx_config.num_clients];
 
-        system.createConnection(system.virt_tx, vswitch, &virt_client_config.conn, &vswitch_config.ports[system.vswitch_config.num_ports].rx, num_vswitch_client_tx_buffers);
+        system.createConnection(system.virt_tx, vswitch, &virt_client_config.conn, &vswitch_config.ports[system.vswitch_config.num_ports].rx, num_vswitch_client_tx_buffers, false);
 
         // Map the tx data region of each vswitch client into the tx virt
         var vswitch_client: u8 = 0;
