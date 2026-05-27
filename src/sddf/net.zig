@@ -274,9 +274,9 @@ pub const Net = struct {
 
         // If a client is still unmatched it might be a virt, TODO: matching against string is weak!
         if (std.mem.indexOf(u8, client0.name, "virt") != null) {
-            client0Port = system.vswitch_config.num_ports;
+            client0Port = system.vswitch_config.num_ports - 1;
         } else if (std.mem.indexOf(u8, client1.name, "virt") != null) {
-            client1Port = system.vswitch_config.num_ports;
+            client1Port = system.vswitch_config.num_ports - 1;
         }
 
         // Invalid client PD
