@@ -660,11 +660,6 @@ pub const Net = struct {
             system.virt_rx_config.num_clients += 1;
             system.virt_tx_config.num_clients += 1;
             system.vswitch_config.num_ports += 1;
-
-            // By default, all clients can communicate
-            for (0..system.vswitch_config.num_ports) |i| {
-                system.vswitch_config.ports[i].acl = (@as(u64, 1) << @intCast(system.vswitch_config.num_ports)) - 1;
-            }
         }
 
         system.connected = true;
