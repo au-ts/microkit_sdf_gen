@@ -11,6 +11,7 @@ pub const SystemDescription = struct {
     arch: Arch,
     pds: ArrayList(*ProtectionDomain),
     mrs: ArrayList(MemoryRegion),
+    cnodes: ArrayList(CNode),
     channels: ArrayList(Channel),
     /// Highest allocatable physical address on the platform
     paddr_top: u64,
@@ -406,14 +407,24 @@ pub const SystemDescription = struct {
     pub const CapMap = struct {
         allocator: Allocator,
         cap_type: []const u8,
-        pd: []const u8,
+        cnode_name: ?[]const u8,
+        pd: ?[]const u8,
         dest_cspace_slot: u64,
 
-        pub fn create(allocator: Allocator, cap_type: []const u8, pd: []const u8, dest_cspace_slot: u64) CapMap {
+        pub fn create(allocator: Allocator, cap_type: []const u8, cnode_name: ?[]const u8, pd: ?[]const u8, dest_cspace_slot: u64) CapMap {
+
+            const dupe_cnode_name: ?[]const u8 = if (cnode_name) |name|
+                allocator.dupe(u8, name) catch @panic("Could not dupe CNode name")
+            else null;
+            const dupe_pd_name: ?[]const u8 = if (pd) |name|
+                allocator.dupe(u8, name) catch @panic("Could not dupe src PD name")
+            else null;
+
             return CapMap{
                 .allocator = allocator,
-                .cap_type = allocator.dupe(u8, cap_type) catch @panic("Could not dupe cap map type"),
-                .pd = allocator.dupe(u8, pd) catch @panic("Could not dupe src PD name"),
+                .cap_type = allocator.dupe(u8, cap_type) catch @panic("Could not dupe cap type"),
+                .cnode_name = dupe_cnode_name,
+                .pd = dupe_pd_name,
                 .dest_cspace_slot = dest_cspace_slot,
             };
         }
@@ -424,7 +435,68 @@ pub const SystemDescription = struct {
         }
 
         pub fn render(cap_map: *const CapMap, writer: ArrayList(u8).Writer, separator: []const u8) !void {
-            try std.fmt.format(writer, "{s}<cap type=\"{s}\" pd=\"{s}\" dest_cspace_slot=\"{}\" />\n", .{ separator, cap_map.cap_type, cap_map.pd, cap_map.dest_cspace_slot });
+
+            try std.fmt.format(writer, "{s}<cap_{s} slot=\"{}\"", .{ separator, cap_map.cap_type, cap_map.dest_cspace_slot });
+
+            if (cap_map.pd) |pd| {
+                try std.fmt.format(writer, " pd=\"{s}\"", .{ pd });
+            }
+
+            if (cap_map.cnode_name) |cnode_name| {
+                try std.fmt.format(writer, " cnode_name=\"{s}\"", .{ cnode_name });
+            }
+
+            _ = try writer.write(" />\n");
+        }
+    };
+
+    pub const BootInfo = struct {
+        allocator: Allocator,
+        bi_type: []const u8,
+
+        pub fn create(allocator: Allocator, bi_type: []const u8) BootInfo {
+            return BootInfo {
+                .allocator = allocator,
+                .bi_type = allocator.dupe(u8, bi_type) catch @panic("Could not dupe boot info type"),
+            };
+        }
+
+        pub fn destroy(boot_info: *BootInfo) void {
+            boot_info.allocator.free(boot_info.bi_type);
+        }
+
+        pub fn render(boot_info: *const BootInfo, writer: ArrayList(u8).Writer, separator: []const u8) !void {
+            try std.fmt.format(writer, "{s}<bootinfo type=\"{s}\" />\n", .{ separator, boot_info.bi_type });
+        }
+    };
+
+    pub const CNode = struct {
+        allocator: Allocator,
+        name: []const u8,
+        post_capdl_untypeds: bool,
+        size_bits: u8,
+
+        pub fn create(allocator: Allocator, name: []const u8, post_capdl_untypeds: bool, size_bits: u8) CNode {
+            return CNode {
+                .allocator = allocator,
+                .name = allocator.dupe(u8, name) catch @panic("Could not dupe CNode name"),
+                .post_capdl_untypeds = post_capdl_untypeds,
+                .size_bits = size_bits,
+            };
+        }
+
+        pub fn destroy(cnode: *CNode) void {
+            cnode.allocator.free(cnode.name);
+        }
+
+        pub fn render(cnode: *const CNode, writer: ArrayList(u8).Writer, separator: []const u8) !void {
+            try std.fmt.format(writer, "{s}<cnode name=\"{s}\" size_bits=\"{}\"", .{ separator, cnode.name, cnode.size_bits });
+
+            if (cnode.post_capdl_untypeds) {
+                try std.fmt.format(writer, " post_capdl_untypeds=\"true\"", .{});
+            }
+
+            _ = try writer.write(" />\n");
         }
     };
 
@@ -440,6 +512,8 @@ pub const SystemDescription = struct {
         period: ?u32,
         passive: ?bool,
         stack_size: ?u32,
+        /// BootInfo mappings
+        boot_infos: ArrayList(BootInfo),
         /// Memory mappings
         maps: ArrayList(Map),
         /// Extra cap mappings
@@ -489,6 +563,7 @@ pub const SystemDescription = struct {
                 .allocator = allocator,
                 .name = allocator.dupe(u8, name) catch @panic("Could not dupe PD name"),
                 .program_image = program_image_dupe,
+                .boot_infos = ArrayList(BootInfo).init(allocator),
                 .maps = ArrayList(Map).init(allocator),
                 .cap_maps = ArrayList(CapMap).init(allocator),
                 .child_pds = ArrayList(*ProtectionDomain).initCapacity(allocator, MAX_CHILD_PDS) catch @panic("Could not allocate child_pds"),
@@ -514,6 +589,7 @@ pub const SystemDescription = struct {
             if (pd.program_image) |program_image| {
                 pd.allocator.free(program_image);
             }
+            pd.boot_infos.deinit();
             pd.maps.deinit();
             pd.child_pds.deinit();
             pd.irqs.deinit();
@@ -554,6 +630,10 @@ pub const SystemDescription = struct {
 
         pub fn addMap(pd: *ProtectionDomain, map: Map) void {
             pd.maps.append(map) catch @panic("Could not add Map to ProtectionDomain");
+        }
+
+        pub fn addBootInfo(pd: *ProtectionDomain, boot_info: BootInfo) void {
+            pd.boot_infos.append(boot_info) catch @panic("Could not add BootInfo to ProtectionDomain");
         }
 
         pub fn addCapMap(pd: *ProtectionDomain, cap_map: CapMap) void {
@@ -695,12 +775,20 @@ pub const SystemDescription = struct {
             if (pd.program_image) |program_image| {
                 try std.fmt.format(writer, "{s}<program_image path=\"{s}\" />\n", .{ child_separator, program_image });
             }
+            for (pd.boot_infos.items) |boot_info| {
+                try boot_info.render(writer, child_separator);
+            }
             for (pd.maps.items) |map| {
                 try map.render(writer, child_separator);
             }
+
+            try std.fmt.format(writer, "{s}<cspace>\n", .{ child_separator });
             for (pd.cap_maps.items) |cap_map| {
-                try cap_map.render(writer, child_separator);
+                const cap_map_separator = try allocPrint(sdf.allocator, "{s}    ", .{ child_separator });
+                try cap_map.render(writer, cap_map_separator);
             }
+
+            try std.fmt.format(writer, "{s}</cspace>\n", .{ child_separator });
             for (pd.child_pds.items) |child_pd| {
                 try child_pd.render(sdf, writer, child_separator, child_pd.child_id.?);
             }
@@ -1011,6 +1099,7 @@ pub const SystemDescription = struct {
             .arch = arch,
             .pds = ArrayList(*ProtectionDomain).init(allocator),
             .mrs = ArrayList(MemoryRegion).init(allocator),
+            .cnodes = ArrayList(CNode).init(allocator),
             .channels = ArrayList(Channel).init(allocator),
             .paddr_top = paddr_top,
         };
@@ -1029,6 +1118,10 @@ pub const SystemDescription = struct {
 
     pub fn addMemoryRegion(sdf: *SystemDescription, mr: MemoryRegion) void {
         sdf.mrs.append(mr) catch @panic("Could not add MemoryRegion to SystemDescription");
+    }
+
+    pub fn addCNode(sdf: *SystemDescription, cnode: CNode) void {
+        sdf.cnodes.append(cnode) catch @panic("Could not add CNode to SystemDescription");
     }
 
     pub fn addProtectionDomain(sdf: *SystemDescription, protection_domain: *ProtectionDomain) void {
@@ -1060,6 +1153,9 @@ pub const SystemDescription = struct {
         const separator = "    ";
         for (sdf.mrs.items) |mr| {
             try mr.render(sdf, writer, separator);
+        }
+        for (sdf.cnodes.items) |cnode| {
+            try cnode.render(writer, separator);
         }
         for (sdf.pds.items) |pd| {
             try pd.render(sdf, writer, separator, null);
