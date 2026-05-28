@@ -44,6 +44,8 @@ libsdfgen.sdfgen_dtb_node.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_add_pd.restype = None
 libsdfgen.sdfgen_add_pd.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_add_cnode.restype = None
+libsdfgen.sdfgen_add_cnode.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_add_mr.restype = None
 libsdfgen.sdfgen_add_mr.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_add_channel.restype = None
@@ -85,9 +87,14 @@ libsdfgen.sdfgen_channel_get_pd_b_id.restype = c_uint8
 libsdfgen.sdfgen_channel_get_pd_b_id.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_cap_map_create.restype = c_void_p
-libsdfgen.sdfgen_cap_map_create.argtypes = [c_void_p, c_void_p, c_uint64]
+libsdfgen.sdfgen_cap_map_create.argtypes = [c_void_p, c_void_p, c_void_p, c_uint64]
 libsdfgen.sdfgen_cap_map_destroy.restype = None
 libsdfgen.sdfgen_cap_map_destroy.argtypes = [c_void_p]
+
+libsdfgen.sdfgen_boot_info_create.restype = c_void_p
+libsdfgen.sdfgen_boot_info_create.argtypes = [c_void_p]
+libsdfgen.sdfgen_boot_info_destroy.restype = None
+libsdfgen.sdfgen_boot_info_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_map_create.restype = c_void_p
 libsdfgen.sdfgen_map_create.argtypes = [c_void_p, c_uint64, MapPermsType, c_bool, c_char_p, c_char_p]
@@ -107,6 +114,11 @@ libsdfgen.sdfgen_mr_get_paddr.argtypes = [c_void_p, POINTER(c_uint64)]
 
 libsdfgen.sdfgen_mr_destroy.restype = None
 libsdfgen.sdfgen_mr_destroy.argtypes = [c_void_p]
+
+libsdfgen.sdfgen_cnode_create.restype = c_void_p
+libsdfgen.sdfgen_cnode_create.argtypes = [c_char_p, c_bool, c_uint8]
+libsdfgen.sdfgen_cnode_destroy.restype = None
+libsdfgen.sdfgen_cnode_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_irq_create.restype = c_void_p
 libsdfgen.sdfgen_irq_create.argtypes = [c_uint32, POINTER(c_uint32), POINTER(c_uint8), c_char_p]
@@ -151,6 +163,8 @@ libsdfgen.sdfgen_pd_add_child.restype = c_int8
 libsdfgen.sdfgen_pd_add_child.argtypes = [c_void_p, c_void_p, POINTER(c_uint8)]
 libsdfgen.sdfgen_pd_get_map_vaddr.restype = c_uint64
 libsdfgen.sdfgen_pd_get_map_vaddr.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_pd_add_boot_info.restype = None
+libsdfgen.sdfgen_pd_add_boot_info.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_pd_add_map.restype = None
 libsdfgen.sdfgen_pd_add_map.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_pd_add_cap_map.restype = None
@@ -543,6 +557,9 @@ class SystemDescription:
             """
             return libsdfgen.sdfgen_pd_get_map_vaddr(self._obj, mr._obj)
 
+        def add_boot_info(self, boot_info: SystemDescription.BootInfo):
+            libsdfgen.sdfgen_pd_add_boot_info(self._obj, boot_info._obj)
+
         def add_map(self, map: SystemDescription.Map):
             self.keep_alive.add(map)
             libsdfgen.sdfgen_pd_add_map(self._obj, map._obj)
@@ -676,10 +693,11 @@ class SystemDescription:
         def __init__(
             self,
             type: CapType,
-            pd: SystemDescription.ProtectionDomain,
+            pd: Optional[SystemDescription.ProtectionDomain],
+            cnode: Optional[SystemDescription.CNode],
             dest_cspace_slot: int,
         ) -> None:
-            c_type = None
+            c_type = c_char_p(0)
             if type is self.CapType.TCB:
                 c_type = c_char_p("tcb".encode("utf-8"))
             elif type is self.CapType.SC:
@@ -689,9 +707,47 @@ class SystemDescription:
             elif type is self.CapType.Cnode:
                 c_type = c_char_p("cnode".encode("utf-8"))
 
-            c_pd = c_char_p(pd._name.encode("utf-8"))
+            c_cnode = c_char_p(0)
+            if cnode:
+                c_cnode = c_char_p(cnode._name.encode("utf-8"))
 
-            self._obj = libsdfgen.sdfgen_cap_map_create(c_type, c_pd, dest_cspace_slot)
+            c_pd = c_char_p(0)
+            if pd:
+                c_pd = c_char_p(pd._name.encode("utf-8"))
+
+            self._obj = libsdfgen.sdfgen_cap_map_create(c_type, c_cnode, c_pd, dest_cspace_slot)
+
+    class BootInfo:
+        _obj: c_void_p
+
+        def __init__(
+            self,
+            bi_type: str,
+        ) -> None:
+            c_bi_type = c_char_p(bi_type.encode("utf-8"))
+            self._obj = libsdfgen.sdfgen_boot_info_create(c_bi_type)
+
+        def __del__(self):
+            if hasattr(self, "_obj"):
+                libsdfgen.sdfgen_boot_info_destroy(self._obj)
+
+    class CNode:
+        _obj: c_void_p
+        _name: str
+
+        def __init__(
+                self,
+                name: str,
+                post_capdl_untypeds: bool,
+                size_bits: int,
+        ) -> None:
+            self._name = name
+            c_name = c_char_p(name.encode("utf-8"))
+            self._obj = libsdfgen.sdfgen_cnode_create(c_name, post_capdl_untypeds, size_bits)
+
+        def __del__(self):
+            if hasattr(self, "_obj"):
+                libsdfgen.sdfgen_cnode_destroy(self._obj)
 
     class MemoryRegion:
         _obj: c_void_p
@@ -899,6 +955,9 @@ class SystemDescription:
     def add_pd(self, pd: ProtectionDomain):
         self.keep_alive.add(pd)
         libsdfgen.sdfgen_add_pd(self._obj, pd._obj)
+
+    def add_cnode(self, cnode: CNode):
+        libsdfgen.sdfgen_add_cnode(self._obj, cnode._obj)
 
     def add_mr(self, mr: MemoryRegion):
         self.keep_alive.add(mr)
