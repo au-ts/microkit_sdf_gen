@@ -20,8 +20,10 @@ const IoPort = SystemDescription.IoPort;
 const Vm = SystemDescription.VirtualMachine;
 const Channel = SystemDescription.Channel;
 const Mr = SystemDescription.MemoryRegion;
+const CNode = SystemDescription.CNode;
 const Map = SystemDescription.Map;
 const CapMap = SystemDescription.CapMap;
+const BootInfo = SystemDescription.BootInfo;
 const Arch = SystemDescription.Arch;
 
 fn helper_c_arch_to_enum(c_arch: bindings.sdfgen_arch_t) Arch {
@@ -64,6 +66,11 @@ export fn sdfgen_add_mr(c_sdf: *align(8) anyopaque, c_mr: *align(8) anyopaque) v
     sdf.addMemoryRegion(mr.*);
 }
 
+export fn sdfgen_add_cnode(c_sdf: *align(8) anyopaque, c_cnode: *align(8) anyopaque) void {
+    const sdf: *SystemDescription = @ptrCast(c_sdf);
+    const cnode: *CNode = @ptrCast(c_cnode);
+    sdf.addCNode(cnode.*);
+}
 export fn sdfgen_add_channel(c_sdf: *align(8) anyopaque, c_ch: *align(8) anyopaque) void {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const ch: *Channel = @ptrCast(c_ch);
@@ -158,6 +165,13 @@ export fn sdfgen_pd_get_map_vaddr(c_pd: *align(8) anyopaque, c_mr: *align(8) any
     const mr: *Mr = @ptrCast(c_mr);
 
     return pd.getMapVaddr(mr);
+}
+
+export fn sdfgen_pd_add_boot_info(c_pd: *align(8) anyopaque, c_boot_info: *align(8) anyopaque) void {
+    const pd: *Pd = @ptrCast(c_pd);
+    const boot_info: *BootInfo = @ptrCast(c_boot_info);
+
+    pd.addBootInfo(boot_info.*);
 }
 
 export fn sdfgen_pd_add_map(c_pd: *align(8) anyopaque, c_map: *align(8) anyopaque) void {
@@ -434,6 +448,13 @@ export fn sdfgen_mr_create(name: [*c]u8, size: u64) *anyopaque {
     return mr;
 }
 
+export fn sdfgen_cnode_create(name: [*c]u8, remaining_untypeds: bool, size_bits: u8) *anyopaque {
+    const cnode = allocator.create(CNode) catch @panic("OOM");
+    cnode.* = CNode.create(allocator, std.mem.span(name), remaining_untypeds, size_bits);
+
+    return cnode;
+}
+
 export fn sdfgen_mr_create_physical(c_sdf: *align(8) anyopaque, name: [*c]u8, size: u64, paddr: [*c]u64) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const mr = allocator.create(Mr) catch @panic("OOM");
@@ -462,6 +483,11 @@ export fn sdfgen_mr_get_paddr(c_mr: *align(8) anyopaque, paddr: *u64) bool {
 export fn sdfgen_mr_destroy(c_mr: *align(8) anyopaque) void {
     const mr: *Mr = @ptrCast(c_mr);
     allocator.destroy(mr);
+}
+
+export fn sdfgen_cnode_destroy(c_cnode: *align(8) anyopaque) void {
+    const cnode: *CNode = @ptrCast(c_cnode);
+    allocator.destroy(cnode);
 }
 
 export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bindings.sdfgen_map_perms_t, cached: bool, c_setvar_vaddr: [*c]u8, c_setvar_size: [*c]u8) ?*anyopaque {
@@ -510,10 +536,13 @@ export fn sdfgen_map_destroy(c_map: *align(8) anyopaque) void {
     allocator.destroy(map);
 }
 
-export fn sdfgen_cap_map_create(cap_type: [*c]u8, pd: [*c]u8, dest_cspace_slot: u64) ?*anyopaque {
+export fn sdfgen_cap_map_create(cap_type: [*c]u8, c_cnode_name: [*c]u8, c_pd_name: [*c]u8, dest_cspace_slot: u64) ?*anyopaque {
     const cap_map = allocator.create(CapMap) catch @panic("OOM");
 
-    cap_map.* = CapMap.create(allocator, std.mem.span(cap_type), std.mem.span(pd), dest_cspace_slot);
+    const cnode_name = if (c_cnode_name != null) std.mem.span(c_cnode_name) else null;
+    const pd_name = if (c_pd_name != null) std.mem.span(c_pd_name) else null;
+
+    cap_map.* = CapMap.create(allocator, std.mem.span(cap_type), cnode_name, pd_name, dest_cspace_slot);
 
     return cap_map;
 }
@@ -521,6 +550,19 @@ export fn sdfgen_cap_map_create(cap_type: [*c]u8, pd: [*c]u8, dest_cspace_slot: 
 export fn sdfgen_cap_map_destroy(c_cap_map: *align(8) anyopaque) void {
     const cap_map: *CapMap = @ptrCast(c_cap_map);
     allocator.destroy(cap_map);
+}
+
+export fn sdfgen_boot_info_create(bi_type: [*c]u8) ?*anyopaque {
+    const boot_info = allocator.create(BootInfo) catch @panic("OOM");
+
+    boot_info.* = BootInfo.create(allocator, std.mem.span(bi_type));
+
+    return boot_info;
+}
+
+export fn sdfgen_boot_info_destroy(c_boot_info: *align(8) anyopaque) void {
+    const boot_info: *BootInfo = @ptrCast(c_boot_info);
+    allocator.destroy(boot_info);
 }
 
 export fn sdfgen_channel_create(c_pd_a: *align(8) anyopaque, c_pd_b: *align(8) anyopaque, pd_a_id: [*c]u8, pd_b_id: [*c]u8, pd_a_notify: [*c]bool, pd_b_notify: [*c]bool, c_pp: [*c]u8, c_pd_a_setvar_id: [*c]u8, c_pd_b_setvar_id: [*c]u8) ?*anyopaque {
