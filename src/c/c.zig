@@ -821,19 +821,20 @@ export fn sdfgen_sddf_blk_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
-export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: *align(8) anyopaque, c_rx_dma_mr: ?*align(8) anyopaque) *anyopaque {
+export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: *align(8) anyopaque, c_vswitch: ?*align(8) anyopaque, c_rx_dma_mr: ?*align(8) anyopaque) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const net = allocator.create(sddf.Net) catch @panic("OOM");
+    const vswitch: ?*Pd = if (c_vswitch) |p| @ptrCast(p) else null;
     const rx_dma_mr: ?*Mr = if (c_rx_dma_mr) |p| @ptrCast(p) else null;
     const options: sddf.Net.Options = .{
         .rx_dma_mr = rx_dma_mr,
     };
-    net.* = sddf.Net.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt_tx), @ptrCast(virt_rx), options);
+    net.* = sddf.Net.init(allocator, sdf, if (c_device) |raw| @ptrCast(raw) else null, @ptrCast(driver), @ptrCast(virt_tx), @ptrCast(virt_rx), vswitch, options);
 
     return net;
 }
 
-export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, client: *align(8) anyopaque, copier: *align(8) anyopaque, mac_addr: [*c]u8, rx: bool, tx: bool) bindings.sdfgen_sddf_status_t {
+export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, client: *align(8) anyopaque, copier: *align(8) anyopaque, mac_addr: [*c]u8, rx: bool, tx: bool, vswitch: bool) bindings.sdfgen_sddf_status_t {
     const net: *sddf.Net = @ptrCast(system);
     var options: sddf.Net.ClientOptions = .{};
     if (mac_addr) |a| {
@@ -841,6 +842,7 @@ export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, cl
     }
     options.rx = rx;
     options.tx = tx;
+    options.vswitch = vswitch;
     net.addClientWithCopier(@ptrCast(client), @ptrCast(copier), options) catch |e| {
         switch (e) {
             sddf.Net.Error.DuplicateClient => return 1,
@@ -849,19 +851,44 @@ export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, cl
             sddf.Net.Error.DuplicateMacAddr => return 101,
             sddf.Net.Error.InvalidMacAddr => return 102,
             sddf.Net.Error.InvalidOptions => return 103,
+            sddf.Net.Error.InvalidVSwitch => return 104,
+            sddf.Net.Error.InvalidVSwitchCopier => return 105,
+            sddf.Net.Error.InvalidBufferNumber => return 107,
             // Should never happen when adding a client
-            sddf.Net.Error.NotConnected => @panic("internal error"),
+            else => @panic("internal error"),
         }
     };
 
     return 0;
 }
 
-export fn sdfgen_sddf_net_connect(system: *align(8) anyopaque) bool {
+export fn sdfgen_sddf_net_add_acl_rule(system: *align(8) anyopaque, client0: *align(8) anyopaque, client1: *align(8) anyopaque, zeroToOne: bool, oneToZero: bool) bindings.sdfgen_sddf_status_t {
     const net: *sddf.Net = @ptrCast(system);
-    net.connect() catch return false;
 
-    return true;
+    net.addAclRule(@ptrCast(client0), @ptrCast(client1), zeroToOne, oneToZero) catch |e| {
+        switch (e) {
+            sddf.Net.Error.DuplicateClient => return 1,
+            sddf.Net.Error.InvalidClient => return 2,
+            sddf.Net.Error.InvalidVSwitch => return 104,
+            // Should be always called after connect()
+            sddf.Net.Error.NotConnected => @panic("internal error"),
+            else => @panic("impossible error reached"),
+        }
+    };
+
+    return 0;
+}
+
+export fn sdfgen_sddf_net_connect(system: *align(8) anyopaque) bindings.sdfgen_sddf_status_t {
+    const net: *sddf.Net = @ptrCast(system);
+    net.connect() catch |e| {
+        switch (e) {
+            sddf.Net.Error.InvalidClientNumber => return 106,
+            else => @panic("impossible error reached"),
+        }
+    };
+
+    return 0;
 }
 
 export fn sdfgen_sddf_net_serialise_config(system: *align(8) anyopaque, output_dir: [*c]u8) bool {
@@ -1003,13 +1030,14 @@ export fn sdfgen_vmm_add_virtio_mmio_blk(c_vmm: *align(8) anyopaque, c_device: *
     return true;
 }
 
-export fn sdfgen_vmm_add_virtio_mmio_net(c_vmm: *align(8) anyopaque, c_device: *align(8) anyopaque, net: *align(8) anyopaque, copier: *align(8) anyopaque, mac_addr: [*c]u8) bool {
+export fn sdfgen_vmm_add_virtio_mmio_net(c_vmm: *align(8) anyopaque, c_device: *align(8) anyopaque, net: *align(8) anyopaque, copier: *align(8) anyopaque, mac_addr: [*c]u8, vswitch: bool) bool {
     const vmm: *Vmm = @ptrCast(c_vmm);
     const device: *dtb.Node = @ptrCast(c_device);
     var options: sddf.Net.ClientOptions = .{};
     if (mac_addr) |a| {
         options.mac_addr = std.mem.span(a);
     }
+    options.vswitch = vswitch;
     vmm.addVirtioMmioNet(device, @ptrCast(net), @ptrCast(copier), options) catch |e| {
         log.err("failed to add virtIO MMIO net device '{s}' to VMM '{s}': {any}", .{ device.name, vmm.vmm.name, e });
         return false;
