@@ -19,4 +19,4 @@ git tag $VERSION
 git push
 git push origin tag $VERSION
 
-gh release create $VERSION release-$VERSION/*.tar.gz
+echo "Continue on the GitHub repository's release page to create a new release with tag $VERSION. You will need to upload the release-${VERSION}/*.tar.gz binaries manually."
