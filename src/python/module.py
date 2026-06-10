@@ -1405,7 +1405,7 @@ class Vmm:
         net: Sddf.Net,
         *,
         copier: Optional[SystemDescription.ProtectionDomain],
-        vswitch: Optional[bool],
+        vswitch: Optional[bool] = None,
         mac_addr: Optional[str] = None
     ):
         if mac_addr is not None and len(mac_addr) != 17:
