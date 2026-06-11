@@ -95,6 +95,8 @@ libsdfgen.sdfgen_mr_create.restype = c_void_p
 libsdfgen.sdfgen_mr_create.argtypes = [c_char_p, c_uint64]
 libsdfgen.sdfgen_mr_create_physical.restype = c_void_p
 libsdfgen.sdfgen_mr_create_physical.argtypes = [c_void_p, c_char_p, c_uint64, POINTER(c_uint64)]
+libsdfgen.sdfgen_mr_create_with_prefill.restype = c_void_p
+libsdfgen.sdfgen_mr_create_with_prefill.argtypes = [c_void_p, c_char_p, c_char_p]
 libsdfgen.sdfgen_mr_get_size.restype = c_uint64
 libsdfgen.sdfgen_mr_get_size.argtypes = [c_void_p]
 libsdfgen.sdfgen_mr_get_paddr.restype = c_bool
@@ -659,12 +661,20 @@ class SystemDescription:
             self,
             sdf: SystemDescription,
             name: str,
-            size: int,
-            *,
+            size: Optional[int] = None,
+            prefill_path: Optional[str] = None,
             physical: Optional[bool] = None,
             paddr: Optional[int] = None
         ) -> None:
             c_name = c_char_p(name.encode("utf-8"))
+            if size is None and prefill_path is None:
+                raise Exception("Size must be specified without a prefill_path")
+            if size is not None and prefill_path is not None:
+                raise Exception("Custom size with prefill_path not supported.")
+            if prefill_path is none None:
+                c_prefill_path = c_char_p(prefill_path.encode("utf-8"))
+                self._obj = libsdfgen.sdfgen_mr_create_with_prefill(self._obj, c_name, c_prefill_path)
+                return self
             if paddr is not None:
                 physical = True
             if physical:
@@ -675,7 +685,10 @@ class SystemDescription:
 
         @property
         def size(self):
-            return libsdfgen.sdfgen_mr_get_size(self._obj)
+            mr_size = libsdfgen.sdfgen_mr_get_size(self._obj)
+            if mr_size == 0:
+                print("Size is 0, MemoryRegion is using prefill_path")
+            return mr_size
 
         @property
         def paddr(self):

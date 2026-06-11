@@ -90,6 +90,7 @@ void sdfgen_ioport_destroy(void *ioport);
 
 void *sdfgen_mr_create(char *name, uint64_t size);
 void *sdfgen_mr_create_physical(void *sdf, char *name, uint64_t size, uint64_t *paddr);
+void *sdfgen_mr_create_with_prefill(void *sdf, char *name, const char *prefill_path);
 uint64_t sdfgen_mr_get_size(void *mr);
 bool sdgen_mr_get_paddr(void *mr, uint64_t *paddr);
 void sdfgen_mr_destroy(void *mr);
