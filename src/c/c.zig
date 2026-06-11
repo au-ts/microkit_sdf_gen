@@ -426,6 +426,13 @@ export fn sdfgen_mr_create(name: [*c]u8, size: u64) *anyopaque {
     return mr;
 }
 
+export fn sdfgen_mr_create_with_prefill(name: [*c]u8, prefill_path: [*c]const u8) *anyopaque {
+    const mr = allocator.create(Mr) catch @panic("OOM");
+    mr.* = Mr.createWithPrefill(allocator, std.mem.span(name), std.mem.span(prefill_path), .{});
+
+    return mr;
+}
+
 export fn sdfgen_mr_create_physical(c_sdf: *align(8) anyopaque, name: [*c]u8, size: u64, paddr: [*c]u64) *anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const mr = allocator.create(Mr) catch @panic("OOM");

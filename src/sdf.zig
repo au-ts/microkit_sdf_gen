@@ -91,6 +91,8 @@ pub const SystemDescription = struct {
         size: u64,
         paddr: ?u64,
         page_size: ?PageSize,
+        prefill_path: ?[]const u8 = null,
+        sizeFromPrefill: bool = false,
 
         pub const Options = struct {
             page_size: ?PageSize = null,
@@ -99,6 +101,11 @@ pub const SystemDescription = struct {
         pub const OptionsPhysical = struct {
             paddr: ?u64 = null,
             page_size: ?PageSize = null,
+        };
+
+        pub const OptionsPrefill = struct {
+            page_size: ?PageSize = null,
+            size: ?u64 = null,
         };
 
         // TODO: change to two API:
@@ -111,6 +118,19 @@ pub const SystemDescription = struct {
                 .size = size,
                 .page_size = options.page_size,
                 .paddr = null,
+                .sizeFromPrefill = false,
+            };
+        }
+
+        pub fn createWithPrefill(allocator: Allocator, name: []const u8, prefill_path: []const u8, options: OptionsPrefill) MemoryRegion {
+            return MemoryRegion{
+                .allocator = allocator,
+                .name = allocator.dupe(u8, name) catch @panic("Could not allocate name for MemoryRegion"),
+                .size = if (options.size) |size| size else 0,
+                .page_size = options.page_size,
+                .prefill_path = allocator.dupe(u8, prefill_path) catch @panic("Could not allocate prefill path for memory region"),
+                .paddr = null,
+                .sizeFromPrefill = true,
             };
         }
 
@@ -127,6 +147,7 @@ pub const SystemDescription = struct {
                 .size = size,
                 .paddr = paddr,
                 .page_size = options.page_size,
+                .sizeFromPrefill = false,
             };
         }
 
@@ -135,7 +156,10 @@ pub const SystemDescription = struct {
         }
 
         pub fn render(mr: MemoryRegion, sdf: *SystemDescription, writer: ArrayList(u8).Writer, separator: []const u8) !void {
-            try std.fmt.format(writer, "{s}<memory_region name=\"{s}\" size=\"0x{x}\"", .{ separator, mr.name, mr.size });
+            try std.fmt.format(writer, "{s}<memory_region name=\"{s}\"", .{ separator, mr.name });
+            if (mr.size != 0 or mr.sizeFromPrefill == false) {
+                try std.fmt.format(writer, " size=\"0x{x}\"", .{ mr.size });
+            }
 
             if (mr.paddr) |paddr| {
                 try std.fmt.format(writer, " phys_addr=\"0x{x}\"", .{paddr});
@@ -143,6 +167,9 @@ pub const SystemDescription = struct {
 
             if (mr.page_size) |page_size| {
                 try std.fmt.format(writer, " page_size=\"0x{x}\"", .{page_size.toInt(sdf.arch)});
+            }
+            if (mr.prefill_path) |prefill_path| {
+                try std.fmt.format(writer, " prefill_path=\"{s}\"", .{prefill_path});
             }
 
             _ = try writer.write(" />\n");
