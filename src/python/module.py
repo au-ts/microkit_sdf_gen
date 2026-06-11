@@ -96,7 +96,7 @@ libsdfgen.sdfgen_mr_create.argtypes = [c_char_p, c_uint64]
 libsdfgen.sdfgen_mr_create_physical.restype = c_void_p
 libsdfgen.sdfgen_mr_create_physical.argtypes = [c_void_p, c_char_p, c_uint64, POINTER(c_uint64)]
 libsdfgen.sdfgen_mr_create_with_prefill.restype = c_void_p
-libsdfgen.sdfgen_mr_create_with_prefill.argtypes = [c_void_p, c_char_p, c_char_p]
+libsdfgen.sdfgen_mr_create_with_prefill.argtypes = [c_char_p, c_char_p]
 libsdfgen.sdfgen_mr_get_size.restype = c_uint64
 libsdfgen.sdfgen_mr_get_size.argtypes = [c_void_p]
 libsdfgen.sdfgen_mr_get_paddr.restype = c_bool
@@ -673,8 +673,8 @@ class SystemDescription:
                 raise Exception("Custom size with prefill_path not supported.")
             if prefill_path is not None:
                 c_prefill_path = c_char_p(prefill_path.encode("utf-8"))
-                self._obj = libsdfgen.sdfgen_mr_create_with_prefill(self._obj, c_name, c_prefill_path)
-                return self
+                self._obj = libsdfgen.sdfgen_mr_create_with_prefill(c_name, c_prefill_path)
+                return None
             if paddr is not None:
                 physical = True
             if physical:
