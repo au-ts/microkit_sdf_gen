@@ -882,7 +882,6 @@ pub const SystemDescription = struct {
                         .trigger = options.trigger,
                     },
                 },
-                .setvar_id = options.setvar_id,
             };
         }
 
@@ -935,7 +934,6 @@ pub const SystemDescription = struct {
                         .vector = vector,
                     },
                 },
-                .setvar_id = options.setvar_id,
             };
         }
 
@@ -958,7 +956,6 @@ pub const SystemDescription = struct {
                         .handle = handle,
                     },
                 },
-                .setvar_id = options.setvar_id,
             };
         }
 
