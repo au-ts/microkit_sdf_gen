@@ -532,6 +532,7 @@ class SystemDescription:
             """
             c_child_id = byref(c_uint8(child_id)) if child_id else None
 
+            self.keep_alive.add(child_pd)
             id = libsdfgen.sdfgen_pd_add_child(self._obj, child_pd._obj, c_child_id)
             if id < 0:
                 raise Exception(f"failed to add child to PD '{self.name}'")
