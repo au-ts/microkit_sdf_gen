@@ -431,7 +431,7 @@ pub fn connect(system: *Self) !void {
         }
     };
     sdf.addMemoryRegion(guest_ram_mr);
-    vmm.addMap(.create(guest_ram_mr, memory_paddr, .rw, .{}));
+    vmm.addMap(.create(guest_ram_mr, memory_paddr, .rw, .{ .setvar_vaddr = "guest_ram_vaddr" }));
     guest.addMap(.create(guest_ram_mr, memory_paddr, .rwx, .{}));
 
     system.guest_ram = guest_ram_mr;
