@@ -148,7 +148,7 @@ pub const SystemDescription = struct {
                 try std.fmt.format(writer, " page_size=\"0x{x}\"", .{page_size.toInt(sdf.arch)});
             }
 
-            try std.fmt.format(writer, "receive_all_untypeds=\"{}\"", .{mr.receive_all_untypeds});
+            try std.fmt.format(writer, " receive_all_untypeds=\"{}\"", .{mr.receive_all_untypeds});
 
             _ = try writer.write(" />\n");
         }
@@ -662,7 +662,7 @@ pub const SystemDescription = struct {
                 try std.fmt.format(writer, " cpu=\"{}\"", .{cpu});
             }
 
-            try std.fmt.format(writer, "backed=\"{}\"", .{pd.backed});
+            try std.fmt.format(writer, " backed=\"{}\"", .{pd.backed});
 
             _ = try writer.write(">\n");
 
