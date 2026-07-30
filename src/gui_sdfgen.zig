@@ -68,7 +68,7 @@ fn getMRByName(sdf: *SystemDescription, name: []const u8) !Mr {
 }
 
 fn parsePDFromJson(sdf: *SystemDescription, node_config: anytype) !*Pd {
-    var pd_new = Pd.create(sdf.allocator, node_config.get("name").?.string, node_config.get("prog_img").?.string, .{
+    var pd_new = Pd.create(sdf.allocator, node_config.get("name").?.string, node_config.get("prog_img").?.string, true, .{
         .priority = @intCast(node_config.get("priority").?.integer),
         .budget = @intCast(node_config.get("budget").?.integer),
         .period = @intCast(node_config.get("period").?.integer),
@@ -156,7 +156,7 @@ fn parseMRFromJson(sdf: *SystemDescription, mr_config: anytype) !Mr {
         }
     }
     // const page_size: Mr.PageSize = @intCast(mr_config.get("page_size").?.integer);
-    const mr_new = Mr.create(sdf.allocator, name, size, .{});
+    const mr_new = Mr.create(sdf.allocator, name, size, false, .{});
 
     return mr_new;
 }

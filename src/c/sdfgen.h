@@ -41,7 +41,7 @@ void *sdfgen_add_pd(void *sdf, void *pd);
 void *sdfgen_add_mr(void *sdf, void *mr);
 void *sdfgen_add_channel(void *sdf, void *ch);
 
-void *sdfgen_pd_create(char *name, char *elf);
+void *sdfgen_pd_create(char *name, char *elf, bool backed);
 void sdfgen_pd_destroy(void *pd);
 
 /* Can specifiy a fixed ID  */
@@ -88,8 +88,8 @@ void sdfgen_irq_destroy(void *irq);
 void *sdfgen_ioport_create(uint16_t addr, uint16_t size, uint8_t *id);
 void sdfgen_ioport_destroy(void *ioport);
 
-void *sdfgen_mr_create(char *name, uint64_t size);
-void *sdfgen_mr_create_physical(void *sdf, char *name, uint64_t size, uint64_t *paddr);
+void *sdfgen_mr_create(char *name, uint64_t size, bool receive_all_untypeds);
+void *sdfgen_mr_create_physical(void *sdf, char *name, uint64_t size, uint64_t *paddr, bool receive_all_untypeds);
 uint64_t sdfgen_mr_get_size(void *mr);
 bool sdgen_mr_get_paddr(void *mr, uint64_t *paddr);
 void sdfgen_mr_destroy(void *mr);

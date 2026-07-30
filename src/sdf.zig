@@ -91,6 +91,7 @@ pub const SystemDescription = struct {
         size: u64,
         paddr: ?u64,
         page_size: ?PageSize,
+        receive_all_untypeds: ?bool,
 
         pub const Options = struct {
             page_size: ?PageSize = null,
@@ -104,18 +105,19 @@ pub const SystemDescription = struct {
         // TODO: change to two API:
         // MemoryRegion.virtual()
         // MemoryRegion.physical()
-        pub fn create(allocator: Allocator, name: []const u8, size: u64, options: Options) MemoryRegion {
+        pub fn create(allocator: Allocator, name: []const u8, size: u64, receive_all_untypeds: bool, options: Options) MemoryRegion {
             return MemoryRegion{
                 .allocator = allocator,
                 .name = allocator.dupe(u8, name) catch @panic("Could not allocate name for MemoryRegion"),
                 .size = size,
                 .page_size = options.page_size,
                 .paddr = null,
+                .receive_all_untypeds = receive_all_untypeds,
             };
         }
 
         /// Creates a memory region at a specific physical address. Allocates the physical address automatically.
-        pub fn physical(allocator: Allocator, sdf: *SystemDescription, name: []const u8, size: u64, options: OptionsPhysical) MemoryRegion {
+        pub fn physical(allocator: Allocator, sdf: *SystemDescription, name: []const u8, size: u64, receive_all_untypeds: bool, options: OptionsPhysical) MemoryRegion {
             const paddr = if (options.paddr) |fixed_paddr| fixed_paddr else sdf.paddr_top - size;
             // TODO: handle alignment if people specify a page size.
             if (options.paddr == null) {
@@ -127,6 +129,7 @@ pub const SystemDescription = struct {
                 .size = size,
                 .paddr = paddr,
                 .page_size = options.page_size,
+                .receive_all_untypeds = receive_all_untypeds,
             };
         }
 
@@ -143,6 +146,10 @@ pub const SystemDescription = struct {
 
             if (mr.page_size) |page_size| {
                 try std.fmt.format(writer, " page_size=\"0x{x}\"", .{page_size.toInt(sdf.arch)});
+            }
+
+            if (mr.receive_all_untypeds) |receive_all_untypeds| {
+                try std.fmt.format(writer, "receive_all_untypeds=\"{}\"", .{receive_all_untypeds});
             }
 
             _ = try writer.write(" />\n");
@@ -434,6 +441,7 @@ pub const SystemDescription = struct {
         child_id: ?u8,
         /// CPU core
         cpu: ?u8,
+        backed: ?bool,
 
         setvars: ArrayList(SetVar),
 
@@ -455,7 +463,7 @@ pub const SystemDescription = struct {
             cpu: ?u8 = null,
         };
 
-        pub fn create(allocator: Allocator, name: []const u8, program_image: ?[]const u8, options: Options) ProtectionDomain {
+        pub fn create(allocator: Allocator, name: []const u8, program_image: ?[]const u8, backed: bool, options: Options) ProtectionDomain {
             const program_image_dupe = if (program_image) |p| allocator.dupe(u8, p) catch @panic("Could not dupe PD program_image") else null;
 
             return ProtectionDomain{
@@ -478,6 +486,7 @@ pub const SystemDescription = struct {
                 .stack_size = options.stack_size,
                 .child_id = null,
                 .cpu = options.cpu,
+                .backed = backed,
             };
         }
 
@@ -655,6 +664,10 @@ pub const SystemDescription = struct {
                 try std.fmt.format(writer, " cpu=\"{}\"", .{cpu});
             }
 
+            if (pd.backed) |backed| {
+                try std.fmt.format(writer, "backed=\"{}\"", .{backed});
+            }
+
             _ = try writer.write(">\n");
 
             const child_separator = try allocPrint(sdf.allocator, "{s}    ", .{separator});
@@ -725,7 +738,6 @@ pub const SystemDescription = struct {
                 .pp = options.pp,
                 .pd_a_setvar_id = options.pd_a_setvar_id,
                 .pd_b_setvar_id = options.pd_b_setvar_id,
-
             };
         }
 
@@ -782,7 +794,7 @@ pub const SystemDescription = struct {
 
         const Kind = union(enum) {
             conventional: struct {
-                irq:     u32,
+                irq: u32,
                 trigger: ?Trigger,
             },
 
@@ -834,9 +846,9 @@ pub const SystemDescription = struct {
                     return s_irq.irq;
                 },
                 else => {
-                    log.err("number called on invalid IRQ kind {s}", .{ @tagName(irq.kind) });
+                    log.err("number called on invalid IRQ kind {s}", .{@tagName(irq.kind)});
                     return null;
-                }
+                },
             }
         }
 
@@ -849,9 +861,9 @@ pub const SystemDescription = struct {
                     return i_irq.trigger;
                 },
                 else => {
-                    log.err("trigger called on invalid IRQ kind {s}", .{ @tagName(irq.kind) });
+                    log.err("trigger called on invalid IRQ kind {s}", .{@tagName(irq.kind)});
                     return null;
-                }
+                },
             }
         }
 
@@ -866,7 +878,7 @@ pub const SystemDescription = struct {
 
         pub fn createIoapic(pin: u64, vector: u64, options: IoapicOptions) !Irq {
             return .{
-                .id   = options.id,
+                .id = options.id,
                 .kind = .{
                     .ioapic = .{
                         .ioapic = options.ioapic,
@@ -888,7 +900,7 @@ pub const SystemDescription = struct {
         pub fn createMsi(pci_bus: u8, pci_device: u8, pci_func: u8, vector: u64, handle: u64, options: MsiOptions) !Irq {
             // @billn: double check does MSI work in the same manner on arm and riscv?
             return .{
-                .id   = options.id,
+                .id = options.id,
                 .kind = .{
                     .msi = .{
                         .pci_bus = pci_bus,
@@ -931,7 +943,7 @@ pub const SystemDescription = struct {
                 },
                 .msi => |m_irq| {
                     try std.fmt.format(writer, "pcidev=\"{}:{}.{}\" handle=\"{}\" vector=\"{}\" id=\"{}\"", .{ m_irq.pci_bus, m_irq.pci_dev, m_irq.pci_func, m_irq.handle, m_irq.vector, irq.id.? });
-                }
+                },
             }
             if (irq.setvar_id) |setvar_id| {
                 try std.fmt.format(writer, " setvar_id=\"{s}\"", .{setvar_id});
@@ -963,7 +975,7 @@ pub const SystemDescription = struct {
             // By the time we get here, something should have populated the 'id' field.
             std.debug.assert(ioport.id != null);
 
-            try std.fmt.format(writer, "{s}<ioport id=\"{}\" addr=\"{}\" size=\"{}\" />\n", .{separator, ioport.id.?, ioport.addr, ioport.size});
+            try std.fmt.format(writer, "{s}<ioport id=\"{}\" addr=\"{}\" size=\"{}\" />\n", .{ separator, ioport.id.?, ioport.addr, ioport.size });
         }
     };
 

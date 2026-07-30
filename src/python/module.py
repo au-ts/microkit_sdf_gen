@@ -92,9 +92,9 @@ libsdfgen.sdfgen_map_destroy.restype = None
 libsdfgen.sdfgen_map_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_mr_create.restype = c_void_p
-libsdfgen.sdfgen_mr_create.argtypes = [c_char_p, c_uint64]
+libsdfgen.sdfgen_mr_create.argtypes = [c_char_p, c_uint64, c_bool]
 libsdfgen.sdfgen_mr_create_physical.restype = c_void_p
-libsdfgen.sdfgen_mr_create_physical.argtypes = [c_void_p, c_char_p, c_uint64, POINTER(c_uint64)]
+libsdfgen.sdfgen_mr_create_physical.argtypes = [c_void_p, c_char_p, c_uint64, POINTER(c_uint64), c_bool]
 libsdfgen.sdfgen_mr_get_size.restype = c_uint64
 libsdfgen.sdfgen_mr_get_size.argtypes = [c_void_p]
 libsdfgen.sdfgen_mr_get_paddr.restype = c_bool
@@ -138,7 +138,7 @@ libsdfgen.sdfgen_vm_vcpu_destroy.restype = None
 libsdfgen.sdfgen_vm_vcpu_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_pd_create.restype = c_void_p
-libsdfgen.sdfgen_pd_create.argtypes = [c_char_p, c_char_p]
+libsdfgen.sdfgen_pd_create.argtypes = [c_char_p, c_char_p, c_bool]
 libsdfgen.sdfgen_pd_destroy.restype = None
 libsdfgen.sdfgen_pd_destroy.argtypes = [c_void_p]
 
@@ -489,12 +489,14 @@ class SystemDescription:
             passive: Optional[bool] = None,
             stack_size: Optional[int] = None,
             cpu: Optional[int] = None,
+            backed: bool = True,
+
         ) -> None:
             self._name = name
             self._program_image = program_image
             c_name = c_char_p(name.encode("utf-8"))
             c_program_image = c_char_p(program_image.encode("utf-8"))
-            self._obj = libsdfgen.sdfgen_pd_create(c_name, c_program_image)
+            self._obj = libsdfgen.sdfgen_pd_create(c_name, c_program_image, backed)
             if priority is not None:
                 libsdfgen.sdfgen_pd_set_priority(self._obj, priority)
             if budget is not None:
@@ -665,15 +667,16 @@ class SystemDescription:
             size: int,
             *,
             physical: Optional[bool] = None,
-            paddr: Optional[int] = None
+            paddr: Optional[int] = None,
+            receive_all_untypeds: bool = False,
         ) -> None:
             c_name = c_char_p(name.encode("utf-8"))
             if paddr is not None:
                 physical = True
             if physical:
-                self._obj = libsdfgen.sdfgen_mr_create_physical(sdf._obj, c_name, size, ffi_uint64_ptr(paddr))
+                self._obj = libsdfgen.sdfgen_mr_create_physical(sdf._obj, c_name, size, ffi_uint64_ptr(paddr), receive_all_untypeds)
             else:
-                self._obj = libsdfgen.sdfgen_mr_create(c_name, size)
+                self._obj = libsdfgen.sdfgen_mr_create(c_name, size, receive_all_untypeds)
             self._size = size
 
         @property
