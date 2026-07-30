@@ -489,14 +489,18 @@ class SystemDescription:
             passive: Optional[bool] = None,
             stack_size: Optional[int] = None,
             cpu: Optional[int] = None,
-            backed: bool = True,
+            backed: Optional[bool] = None,
 
         ) -> None:
+            _backed = True
+            if backed is not None:
+                if not backed:
+                    _backed = False
             self._name = name
             self._program_image = program_image
             c_name = c_char_p(name.encode("utf-8"))
             c_program_image = c_char_p(program_image.encode("utf-8"))
-            self._obj = libsdfgen.sdfgen_pd_create(c_name, c_program_image, backed)
+            self._obj = libsdfgen.sdfgen_pd_create(c_name, c_program_image, _backed)
             if priority is not None:
                 libsdfgen.sdfgen_pd_set_priority(self._obj, priority)
             if budget is not None:
@@ -668,15 +672,18 @@ class SystemDescription:
             *,
             physical: Optional[bool] = None,
             paddr: Optional[int] = None,
-            receive_all_untypeds: bool = False,
+            receive_all_untypeds: Optional[bool] = None,
         ) -> None:
+            rau = False
+            if (receive_all_untypeds == True):
+                rau = True
             c_name = c_char_p(name.encode("utf-8"))
             if paddr is not None:
                 physical = True
             if physical:
-                self._obj = libsdfgen.sdfgen_mr_create_physical(sdf._obj, c_name, size, ffi_uint64_ptr(paddr), receive_all_untypeds)
+                self._obj = libsdfgen.sdfgen_mr_create_physical(sdf._obj, c_name, size, ffi_uint64_ptr(paddr), rau)
             else:
-                self._obj = libsdfgen.sdfgen_mr_create(c_name, size, receive_all_untypeds)
+                self._obj = libsdfgen.sdfgen_mr_create(c_name, size, rau)
             self._size = size
 
         @property
