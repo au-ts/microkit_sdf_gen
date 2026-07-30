@@ -91,7 +91,7 @@ pub const SystemDescription = struct {
         size: u64,
         paddr: ?u64,
         page_size: ?PageSize,
-        receive_all_untypeds: ?bool,
+        receive_all_untypeds: bool,
 
         pub const Options = struct {
             page_size: ?PageSize = null,
@@ -148,9 +148,7 @@ pub const SystemDescription = struct {
                 try std.fmt.format(writer, " page_size=\"0x{x}\"", .{page_size.toInt(sdf.arch)});
             }
 
-            if (mr.receive_all_untypeds) |receive_all_untypeds| {
-                try std.fmt.format(writer, "receive_all_untypeds=\"{}\"", .{receive_all_untypeds});
-            }
+            try std.fmt.format(writer, "receive_all_untypeds=\"{}\"", .{mr.receive_all_untypeds});
 
             _ = try writer.write(" />\n");
         }
@@ -441,7 +439,7 @@ pub const SystemDescription = struct {
         child_id: ?u8,
         /// CPU core
         cpu: ?u8,
-        backed: ?bool,
+        backed: bool,
 
         setvars: ArrayList(SetVar),
 
@@ -664,9 +662,7 @@ pub const SystemDescription = struct {
                 try std.fmt.format(writer, " cpu=\"{}\"", .{cpu});
             }
 
-            if (pd.backed) |backed| {
-                try std.fmt.format(writer, "backed=\"{}\"", .{backed});
-            }
+            try std.fmt.format(writer, "backed=\"{}\"", .{pd.backed});
 
             _ = try writer.write(">\n");
 
