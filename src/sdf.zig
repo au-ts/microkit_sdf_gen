@@ -435,14 +435,15 @@ pub const SystemDescription = struct {
         }
 
         pub fn render(cap_map: *const CapMap, writer: ArrayList(u8).Writer, separator: []const u8) !void {
-            try std.fmt.format(writer, "{s}<cap type=\"{s}\" dest_cspace_slot=\"{}\"", .{ separator, cap_map.cap_type, cap_map.dest_cspace_slot });
+
+            try std.fmt.format(writer, "{s}<cap_{s} slot=\"{}\"", .{ separator, cap_map.cap_type, cap_map.dest_cspace_slot });
 
             if (cap_map.pd) |pd| {
                 try std.fmt.format(writer, " pd=\"{s}\"", .{ pd });
             }
 
             if (cap_map.cnode_name) |cnode_name| {
-                try std.fmt.format(writer, " name=\"{s}\"", .{ cnode_name });
+                try std.fmt.format(writer, " cnode_name=\"{s}\"", .{ cnode_name });
             }
 
             _ = try writer.write(" />\n");
@@ -780,9 +781,14 @@ pub const SystemDescription = struct {
             for (pd.maps.items) |map| {
                 try map.render(writer, child_separator);
             }
+
+            try std.fmt.format(writer, "{s}<cspace>\n", .{ child_separator });
             for (pd.cap_maps.items) |cap_map| {
-                try cap_map.render(writer, child_separator);
+                const cap_map_separator = try allocPrint(sdf.allocator, "{s}    ", .{ child_separator });
+                try cap_map.render(writer, cap_map_separator);
             }
+
+            try std.fmt.format(writer, "{s}</cspace>\n", .{ child_separator });
             for (pd.child_pds.items) |child_pd| {
                 try child_pd.render(sdf, writer, child_separator, child_pd.child_id.?);
             }

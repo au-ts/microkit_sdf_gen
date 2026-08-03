@@ -688,7 +688,8 @@ class SystemDescription:
             TCB = 0,
             SC = 1,
             Vspace = 2,
-            Cnode = 3,
+            Cspace = 3,
+            Cnode = 4,
 
         def __init__(
             self,
@@ -704,6 +705,8 @@ class SystemDescription:
                 c_type = c_char_p("sc".encode("utf-8"))
             elif type is self.CapType.Vspace:
                 c_type = c_char_p("vspace".encode("utf-8"))
+            elif type is self.CapType.Cspace:
+                c_type = c_char_p("cspace".encode("utf-8"))
             elif type is self.CapType.Cnode:
                 c_type = c_char_p("cnode".encode("utf-8"))
 
