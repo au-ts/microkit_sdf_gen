@@ -92,9 +92,11 @@ pub const SystemDescription = struct {
         size: u64,
         paddr: ?u64,
         page_size: ?PageSize,
+        prefill_bootinfo: ?[]const u8,
 
         pub const Options = struct {
             page_size: ?PageSize = null,
+            prefill_bootinfo: ?[]const u8 = null,
         };
 
         pub const OptionsPhysical = struct {
@@ -111,6 +113,7 @@ pub const SystemDescription = struct {
                 .name = allocator.dupe(u8, name) catch @panic("Could not allocate name for MemoryRegion"),
                 .size = size,
                 .page_size = options.page_size,
+                .prefill_bootinfo = options.prefill_bootinfo,
                 .paddr = null,
             };
         }
@@ -128,6 +131,7 @@ pub const SystemDescription = struct {
                 .size = size,
                 .paddr = paddr,
                 .page_size = options.page_size,
+                .prefill_bootinfo = null,
             };
         }
 
@@ -144,6 +148,10 @@ pub const SystemDescription = struct {
 
             if (mr.page_size) |page_size| {
                 try std.fmt.format(writer, " page_size=\"0x{x}\"", .{page_size.toInt(sdf.arch)});
+            }
+
+            if (mr.prefill_bootinfo) |prefill_bootinfo| {
+                try std.fmt.format(writer, " prefill_bootinfo=\"{s}\"", .{prefill_bootinfo});
             }
 
             _ = try writer.write(" />\n");
@@ -782,13 +790,18 @@ pub const SystemDescription = struct {
                 try map.render(writer, child_separator);
             }
 
-            try std.fmt.format(writer, "{s}<cspace>\n", .{ child_separator });
+            if (pd.cap_maps.items.len > 0) {
+                try std.fmt.format(writer, "{s}<cspace>\n", .{ child_separator });
+            }
             for (pd.cap_maps.items) |cap_map| {
                 const cap_map_separator = try allocPrint(sdf.allocator, "{s}    ", .{ child_separator });
                 try cap_map.render(writer, cap_map_separator);
             }
 
-            try std.fmt.format(writer, "{s}</cspace>\n", .{ child_separator });
+            if (pd.cap_maps.items.len > 0) {
+                try std.fmt.format(writer, "{s}</cspace>\n", .{ child_separator });
+            }
+
             for (pd.child_pds.items) |child_pd| {
                 try child_pd.render(sdf, writer, child_separator, child_pd.child_id.?);
             }
