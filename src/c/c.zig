@@ -239,6 +239,11 @@ export fn sdfgen_pd_set_cpu(c_pd: *align(8) anyopaque, cpu: u8) void {
     pd.cpu = cpu;
 }
 
+export fn sdfgen_pd_set_backed(c_pd: *align(8) anyopaque, backed: bool) void {
+    const pd: *Pd = @ptrCast(c_pd);
+    pd.backed = backed;
+}
+
 export fn sdfgen_pd_set_passive(c_pd: *align(8) anyopaque, passive: bool) void {
     const pd: *Pd = @ptrCast(c_pd);
     pd.passive = passive;
@@ -508,7 +513,7 @@ export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bind
         perms.execute = true;
     }
 
-    var options: Map.Options = .{.cached = cached};
+    var options: Map.Options = .{ .cached = cached };
     if (c_setvar_vaddr != null) {
         options.setvar_vaddr = allocator.dupe(u8, std.mem.span(c_setvar_vaddr)) catch @panic("OOM");
     }
@@ -825,7 +830,6 @@ export fn sdfgen_sddf_gpio_serialise_config(system: *align(8) anyopaque, output_
     gpio.serialiseConfig(std.mem.span(output_dir)) catch return false;
     return true;
 }
-
 
 export fn sdfgen_sddf_blk(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt: *align(8) anyopaque) ?*anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);

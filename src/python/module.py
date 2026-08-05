@@ -63,6 +63,8 @@ libsdfgen.sdfgen_pd_set_stack_size.restype = None
 libsdfgen.sdfgen_pd_set_stack_size.argtypes = [c_void_p, c_uint32]
 libsdfgen.sdfgen_pd_set_cpu.restype = None
 libsdfgen.sdfgen_pd_set_cpu.argtypes = [c_void_p, c_uint8]
+libsdfgen.sdfgen_pd_set_backed.restype = None
+libsdfgen.sdfgen_pd_set_backed.argtypes = [c_void_p, c_bool]
 
 libsdfgen.sdfgen_render.restype = c_char_p
 libsdfgen.sdfgen_render.argtypes = [c_void_p]
@@ -510,6 +512,7 @@ class SystemDescription:
             passive: Optional[bool] = None,
             stack_size: Optional[int] = None,
             cpu: Optional[int] = None,
+            backed: bool = True,
         ) -> None:
             self._name = name
             self._program_image = program_image
@@ -529,6 +532,7 @@ class SystemDescription:
             if cpu is not None:
                 libsdfgen.sdfgen_pd_set_cpu(self._obj, cpu)
             self.keep_alive = set()
+            libsdfgen.sdfgen_pd_set_backed(self._obj, backed)
 
         @property
         def name(self) -> str:

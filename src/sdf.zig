@@ -420,13 +420,14 @@ pub const SystemDescription = struct {
         dest_cspace_slot: u64,
 
         pub fn create(allocator: Allocator, cap_type: []const u8, cnode_name: ?[]const u8, pd: ?[]const u8, dest_cspace_slot: u64) CapMap {
-
             const dupe_cnode_name: ?[]const u8 = if (cnode_name) |name|
                 allocator.dupe(u8, name) catch @panic("Could not dupe CNode name")
-            else null;
+            else
+                null;
             const dupe_pd_name: ?[]const u8 = if (pd) |name|
                 allocator.dupe(u8, name) catch @panic("Could not dupe src PD name")
-            else null;
+            else
+                null;
 
             return CapMap{
                 .allocator = allocator,
@@ -443,15 +444,14 @@ pub const SystemDescription = struct {
         }
 
         pub fn render(cap_map: *const CapMap, writer: ArrayList(u8).Writer, separator: []const u8) !void {
-
             try std.fmt.format(writer, "{s}<cap_{s} slot=\"{}\"", .{ separator, cap_map.cap_type, cap_map.dest_cspace_slot });
 
             if (cap_map.pd) |pd| {
-                try std.fmt.format(writer, " pd=\"{s}\"", .{ pd });
+                try std.fmt.format(writer, " pd=\"{s}\"", .{pd});
             }
 
             if (cap_map.cnode_name) |cnode_name| {
-                try std.fmt.format(writer, " cnode_name=\"{s}\"", .{ cnode_name });
+                try std.fmt.format(writer, " cnode_name=\"{s}\"", .{cnode_name});
             }
 
             _ = try writer.write(" />\n");
@@ -463,7 +463,7 @@ pub const SystemDescription = struct {
         bi_type: []const u8,
 
         pub fn create(allocator: Allocator, bi_type: []const u8) BootInfo {
-            return BootInfo {
+            return BootInfo{
                 .allocator = allocator,
                 .bi_type = allocator.dupe(u8, bi_type) catch @panic("Could not dupe boot info type"),
             };
@@ -485,7 +485,7 @@ pub const SystemDescription = struct {
         size_bits: u8,
 
         pub fn create(allocator: Allocator, name: []const u8, post_capdl_untypeds: bool, size_bits: u8) CNode {
-            return CNode {
+            return CNode{
                 .allocator = allocator,
                 .name = allocator.dupe(u8, name) catch @panic("Could not dupe CNode name"),
                 .post_capdl_untypeds = post_capdl_untypeds,
@@ -509,6 +509,7 @@ pub const SystemDescription = struct {
     };
 
     pub const ProtectionDomain = struct {
+        backed: bool,
         allocator: Allocator,
         name: []const u8,
         /// Program ELF
@@ -562,11 +563,15 @@ pub const SystemDescription = struct {
             stack_size: ?u32 = null,
             arm_smc: ?bool = null,
             cpu: ?u8 = null,
+            backed: ?bool = null,
         };
 
         pub fn create(allocator: Allocator, name: []const u8, program_image: ?[]const u8, options: Options) ProtectionDomain {
             const program_image_dupe = if (program_image) |p| allocator.dupe(u8, p) catch @panic("Could not dupe PD program_image") else null;
-
+            var backed: bool = true;
+            if (options.backed) |thing| {
+                backed = thing;
+            }
             return ProtectionDomain{
                 .allocator = allocator,
                 .name = allocator.dupe(u8, name) catch @panic("Could not dupe PD name"),
@@ -589,6 +594,7 @@ pub const SystemDescription = struct {
                 .stack_size = options.stack_size,
                 .child_id = null,
                 .cpu = options.cpu,
+                .backed = backed,
             };
         }
 
@@ -775,6 +781,8 @@ pub const SystemDescription = struct {
                 try std.fmt.format(writer, " cpu=\"{}\"", .{cpu});
             }
 
+            try std.fmt.format(writer, " backed=\"{}\"", .{pd.backed});
+
             _ = try writer.write(">\n");
 
             const child_separator = try allocPrint(sdf.allocator, "{s}    ", .{separator});
@@ -791,15 +799,15 @@ pub const SystemDescription = struct {
             }
 
             if (pd.cap_maps.items.len > 0) {
-                try std.fmt.format(writer, "{s}<cspace>\n", .{ child_separator });
+                try std.fmt.format(writer, "{s}<cspace>\n", .{child_separator});
             }
             for (pd.cap_maps.items) |cap_map| {
-                const cap_map_separator = try allocPrint(sdf.allocator, "{s}    ", .{ child_separator });
+                const cap_map_separator = try allocPrint(sdf.allocator, "{s}    ", .{child_separator});
                 try cap_map.render(writer, cap_map_separator);
             }
 
             if (pd.cap_maps.items.len > 0) {
-                try std.fmt.format(writer, "{s}</cspace>\n", .{ child_separator });
+                try std.fmt.format(writer, "{s}</cspace>\n", .{child_separator});
             }
 
             for (pd.child_pds.items) |child_pd| {
@@ -861,7 +869,6 @@ pub const SystemDescription = struct {
                 .pp = options.pp,
                 .pd_a_setvar_id = options.pd_a_setvar_id,
                 .pd_b_setvar_id = options.pd_b_setvar_id,
-
             };
         }
 
