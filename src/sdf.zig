@@ -536,6 +536,7 @@ pub const SystemDescription = struct {
         /// Keeping track of what IDs are available for channels, IRQs, etc
         channel_ids: std.bit_set.StaticBitSet(MAX_IDS),
         child_ids: std.bit_set.StaticBitSet(MAX_IDS),
+        irq_placeholders: ArrayList(u8),
 
         /// Whether or not ARM SMC is available
         arm_smc: ?bool,
@@ -576,6 +577,7 @@ pub const SystemDescription = struct {
                 .cap_maps = ArrayList(CapMap).init(allocator),
                 .child_pds = ArrayList(*ProtectionDomain).initCapacity(allocator, MAX_CHILD_PDS) catch @panic("Could not allocate child_pds"),
                 .irqs = ArrayList(Irq).initCapacity(allocator, MAX_IRQS) catch @panic("Could not allocate irqs"),
+                .irq_placeholders = ArrayList(u8).initCapacity(allocator, MAX_IRQS) catch @panic("Could not allocate irq placeholders"),
                 .ioports = ArrayList(IoPort).initCapacity(allocator, MAX_IOPORTS) catch @panic("Could not allocate I/O Ports"),
                 .vm = null,
                 .channel_ids = std.bit_set.StaticBitSet(MAX_IDS).initEmpty(),
@@ -646,6 +648,10 @@ pub const SystemDescription = struct {
 
         pub fn addCapMap(pd: *ProtectionDomain, cap_map: CapMap) void {
             pd.cap_maps.append(cap_map) catch @panic("Could not add TCB Cap Map to ProtectionDomain");
+        }
+
+        pub fn addIrqPlaceholder(pd: *ProtectionDomain, id: u8) !void {
+            try pd.irq_placeholders.append(id);
         }
 
         pub fn addIrq(pd: *ProtectionDomain, irq: Irq) !u8 {
@@ -810,6 +816,9 @@ pub const SystemDescription = struct {
             }
             for (pd.irqs.items) |irq| {
                 try irq.render(writer, child_separator);
+            }
+            for (pd.irq_placeholders.items) |irq_placeholder| {
+                try std.fmt.format(writer, "{s}<irq_placeholder id=\"{}\" />\n", .{ child_separator, irq_placeholder });
             }
             for (pd.ioports.items) |ioport| {
                 try ioport.render(writer, child_separator);
