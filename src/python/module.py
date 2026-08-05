@@ -159,6 +159,8 @@ libsdfgen.sdfgen_pd_create.argtypes = [c_char_p, c_char_p]
 libsdfgen.sdfgen_pd_destroy.restype = None
 libsdfgen.sdfgen_pd_destroy.argtypes = [c_void_p]
 
+libsdfgen.sdfgen_pd_add_irq_placeholder.restype = c_int8
+libsdfgen.sdfgen_pd_add_irq_placeholder.argtypes = [c_void_p, c_uint8]
 libsdfgen.sdfgen_pd_add_child.restype = c_int8
 libsdfgen.sdfgen_pd_add_child.argtypes = [c_void_p, c_void_p, POINTER(c_uint8)]
 libsdfgen.sdfgen_pd_get_map_vaddr.restype = c_uint64
@@ -563,6 +565,9 @@ class SystemDescription:
         def add_map(self, map: SystemDescription.Map):
             self.keep_alive.add(map)
             libsdfgen.sdfgen_pd_add_map(self._obj, map._obj)
+
+        def add_irq_placeholder(self, id: int):
+            libsdfgen.sdfgen_pd_add_irq_placeholder(self._obj, id)
 
         def add_cap_map(self, cap_map: SystemDescription.CapMap):
             libsdfgen.sdfgen_pd_add_cap_map(self._obj, cap_map._obj)

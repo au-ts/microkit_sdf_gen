@@ -147,6 +147,13 @@ export fn sdfgen_pd_destroy(c_pd: *align(8) anyopaque) void {
     allocator.destroy(pd);
 }
 
+export fn sdfgen_pd_add_irq_placeholder(c_pd: *align(8) anyopaque, id: u8) void {
+    const pd: *Pd = @ptrCast(c_pd);
+    pd.addIrqPlaceholder(id) catch |e| {
+        log.err("failed to add irq placeholder '{}' to pd '{s}': {any}", .{ id, pd.name, e });
+    };
+}
+
 export fn sdfgen_pd_add_child(c_pd: *align(8) anyopaque, c_child_pd: *align(8) anyopaque, c_child_id: ?*u8) i8 {
     const pd: *Pd = @ptrCast(c_pd);
     const child_pd: *Pd = @ptrCast(c_child_pd);
