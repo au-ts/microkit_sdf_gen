@@ -270,6 +270,16 @@ export fn sdfgen_pd_set_sym_emit(c_pd: *align(8) anyopaque, sym_emit: bool) void
     pd.sym_emit = sym_emit;
 }
 
+export fn sdfgen_pd_set_delegatee(c_pd: *align(8) anyopaque, delegatee: bool) void {
+    const pd: *Pd = @ptrCast(c_pd);
+    pd.delegatee = delegatee;
+}
+
+export fn sdfgen_pd_set_allow_delegation(c_pd: *align(8) anyopaque, allow_delegation: bool) void {
+    const pd: *Pd = @ptrCast(c_pd);
+    pd.allow_delegation = allow_delegation;
+}
+
 export fn sdfgen_vm_create(name: [*c]u8, c_vcpus: [*c]*align(8) anyopaque, num_vcpus: u32) ?*anyopaque {
     var vcpus = std.array_list.Managed(Vm.Vcpu).initCapacity(allocator, num_vcpus) catch @panic("OOM");
     defer vcpus.deinit();
@@ -547,6 +557,11 @@ export fn sdfgen_map_get_vaddr(c_map: *align(8) anyopaque) u64 {
     return map.vaddr;
 }
 
+export fn sdfgen_map_set_delegated(c_map: *align(8) anyopaque, delegated: bool) void {
+    const map: *Map = @ptrCast(c_map);
+    map.delegated = delegated;
+}
+
 export fn sdfgen_map_destroy(c_map: *align(8) anyopaque) void {
     const map: *Map = @ptrCast(c_map);
     if (map.setvar_vaddr) |s| {
@@ -656,6 +671,16 @@ export fn sdfgen_channel_add(c_sdf: *align(8) anyopaque, c_ch: *align(8) anyopaq
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const ch: *Channel = @ptrCast(c_ch);
     sdf.addChannel(ch.*);
+}
+
+export fn sdfgen_channel_set_pd_a_delegated(c_ch: *align(8) anyopaque, delegated: bool) void {
+    const ch: *Channel = @ptrCast(c_ch);
+    ch.pd_a_delegated = delegated;
+}
+
+export fn sdfgen_channel_set_pd_b_delegated(c_ch: *align(8) anyopaque, delegated: bool) void {
+    const ch: *Channel = @ptrCast(c_ch);
+    ch.pd_b_delegated = delegated;
 }
 
 export fn sdfgen_sddf_timer(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque) *anyopaque {

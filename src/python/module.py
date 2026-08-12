@@ -69,6 +69,11 @@ libsdfgen.sdfgen_pd_set_template.argtypes = [c_void_p, c_bool]
 libsdfgen.sdfgen_pd_set_sym_emit.restype = None
 libsdfgen.sdfgen_pd_set_sym_emit.argtypes = [c_void_p, c_bool]
 
+libsdfgen.sdfgen_pd_set_delegatee.restype = None
+libsdfgen.sdfgen_pd_set_delegatee.argtypes = [c_void_p, c_bool]
+libsdfgen.sdfgen_pd_set_allow_delegation.restype = None
+libsdfgen.sdfgen_pd_set_allow_delegation.argtypes = [c_void_p, c_bool]
+
 libsdfgen.sdfgen_render.restype = c_char_p
 libsdfgen.sdfgen_render.argtypes = [c_void_p]
 
@@ -100,6 +105,14 @@ libsdfgen.sdfgen_boot_info_create.restype = c_void_p
 libsdfgen.sdfgen_boot_info_create.argtypes = [c_void_p]
 libsdfgen.sdfgen_boot_info_destroy.restype = None
 libsdfgen.sdfgen_boot_info_destroy.argtypes = [c_void_p]
+
+libsdfgen.sdfgen_channel_set_pd_a_delegated.restype = None
+libsdfgen.sdfgen_channel_set_pd_a_delegated.argtypes = [c_void_p, c_bool]
+libsdfgen.sdfgen_channel_set_pd_b_delegated.restype = None
+libsdfgen.sdfgen_channel_set_pd_b_delegated.argtypes = [c_void_p, c_bool]
+
+libsdfgen.sdfgen_map_set_delegated.restype = None
+libsdfgen.sdfgen_map_set_delegated.argtypes = [c_void_p, c_bool]
 
 libsdfgen.sdfgen_map_create.restype = c_void_p
 libsdfgen.sdfgen_map_create.argtypes = [c_void_p, c_uint64, MapPermsType, c_bool, c_char_p, c_char_p]
@@ -519,6 +532,8 @@ class SystemDescription:
             cpu: Optional[int] = None,
             template: bool = False,
             sym_emit: Optional[bool] = None,
+            delegatee: Optional[bool] = None,
+            allow_delegation: Optional[bool] = None,
         ) -> None:
             self._name = name
             self._program_image = program_image
@@ -541,6 +556,10 @@ class SystemDescription:
                 libsdfgen.sdfgen_pd_set_template(self._obj, True)
             if sym_emit is not None:
                 libsdfgen.sdfgen_pd_set_sym_emit(self._obj, sym_emit)
+            if delegatee is not None:
+                libsdfgen.sdfgen_pd_set_delegatee(self._obj, delegatee)
+            if allow_delegation is not None:
+                libsdfgen.sdfgen_pd_set_allow_delegation(self._obj, allow_delegation)
             self.keep_alive = set()
 
         @property
@@ -681,6 +700,7 @@ class SystemDescription:
             cached: bool = True,
             setvar_vaddr: Optional[str] = None,
             setvar_size: Optional[str] = None,
+            delegated: Optional[bool] = None,
         ) -> None:
             c_perms = SystemDescription.Map._perms_to_c_bindings(perms)
             c_setvar_vaddr = c_char_p(0)
@@ -692,6 +712,8 @@ class SystemDescription:
             self._obj = libsdfgen.sdfgen_map_create(mr._obj, vaddr, c_perms, cached, c_setvar_vaddr, c_setvar_size)
             if self._obj is None:
                 raise Exception("failed to create mapping")
+            if delegated is not None:
+                libsdfgen.sdfgen_map_set_delegated(self._obj, delegated)
 
         @property
         def vaddr(self):
@@ -920,6 +942,8 @@ class SystemDescription:
             notify_b: Optional[bool] = None,
             pd_a_setvar_id: Optional[str] = None,
             pd_b_setvar_id: Optional[str] = None,
+            a_delegated: Optional[bool] = None,
+            b_delegated: Optional[bool] = None,
         ) -> None:
             c_pp = None
             if pp_a is not None:
@@ -949,6 +973,11 @@ class SystemDescription:
                 c_pd_a_setvar_id,
                 c_pd_b_setvar_id,
             )
+            if a_delegated is not None:
+                libsdfgen.sdfgen_channel_set_pd_a_delegated(self._obj, a_delegated)
+            if b_delegated is not None:
+                libsdfgen.sdfgen_channel_set_pd_b_delegated(self._obj, b_delegated)
+
             if self._obj is None:
                 raise Exception("failed to create channel")
 

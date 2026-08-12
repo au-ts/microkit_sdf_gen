@@ -214,11 +214,13 @@ pub const SystemDescription = struct {
         cached: ?bool,
         setvar_vaddr: ?[]const u8,
         setvar_size: ?[]const u8,
+        delegated: ?bool,
 
         pub const Options = struct {
             cached: ?bool = null,
             setvar_vaddr: ?[]const u8 = null,
             setvar_size: ?[]const u8 = null,
+            delegated: ?bool = null,
         };
 
         pub const Perms = packed struct {
@@ -301,6 +303,7 @@ pub const SystemDescription = struct {
                 .cached = options.cached,
                 .setvar_vaddr = options.setvar_vaddr,
                 .setvar_size = options.setvar_size,
+                .delegated = options.delegated,
             };
         }
 
@@ -320,6 +323,10 @@ pub const SystemDescription = struct {
             if (map.cached) |cached| {
                 const cached_str = if (cached) "true" else "false";
                 try std.fmt.format(writer, " cached=\"{s}\"", .{cached_str});
+            }
+
+            if (map.delegated) |delegated| {
+                try std.fmt.format(writer, " delegated=\"{}\"", .{delegated});
             }
 
             _ = try writer.write(" />\n");
@@ -549,6 +556,11 @@ pub const SystemDescription = struct {
         /// Emit microkit symbols
         sym_emit: ?bool,
 
+        /// This PD receives capabilities delegated by child PDs.
+        delegatee: ?bool,
+        /// Allow capabilities belonging to this PD to be delegated to its parent.
+        allow_delegation: ?bool,
+
         setvars: ArrayList(SetVar),
 
         // Matches Microkit implementation
@@ -569,6 +581,8 @@ pub const SystemDescription = struct {
             cpu: ?u8 = null,
             template: bool = false,
             sym_emit: ?bool = null,
+            delegatee: ?bool = null,
+            allow_delegation: ?bool = null,
         };
 
         pub fn create(allocator: Allocator, name: []const u8, program_image: ?[]const u8, options: Options) ProtectionDomain {
@@ -599,6 +613,8 @@ pub const SystemDescription = struct {
                 .cpu = options.cpu,
                 .template = options.template,
                 .sym_emit = options.sym_emit,
+                .delegatee = options.delegatee,
+                .allow_delegation = options.allow_delegation,
             };
         }
 
@@ -794,6 +810,14 @@ pub const SystemDescription = struct {
                 try std.fmt.format(writer, " sym_emit=\"{}\"", .{sym_emit});
             }
 
+            if (pd.delegatee) |delegatee| {
+                try std.fmt.format(writer, " delegatee=\"{}\"", .{delegatee});
+            }
+
+            if (pd.allow_delegation) |allow_delegation| {
+                try std.fmt.format(writer, " allow_delegation=\"{}\"", .{allow_delegation});
+            }
+
             _ = try writer.write(">\n");
 
             const child_separator = try allocPrint(sdf.allocator, "{s}    ", .{separator});
@@ -854,6 +878,8 @@ pub const SystemDescription = struct {
         pp: ?End,
         pd_a_setvar_id: ?[]const u8,
         pd_b_setvar_id: ?[]const u8,
+        pd_a_delegated: ?bool,
+        pd_b_delegated: ?bool,
 
         pub const End = enum { a, b };
 
@@ -865,6 +891,8 @@ pub const SystemDescription = struct {
             pd_b_id: ?u8 = null,
             pd_a_setvar_id: ?[]const u8 = null,
             pd_b_setvar_id: ?[]const u8 = null,
+            pd_a_delegated: ?bool = null,
+            pd_b_delegated: ?bool = null,
         };
 
         pub fn create(pd_a: *ProtectionDomain, pd_b: *ProtectionDomain, options: Options) !Channel {
@@ -883,6 +911,8 @@ pub const SystemDescription = struct {
                 .pp = options.pp,
                 .pd_a_setvar_id = options.pd_a_setvar_id,
                 .pd_b_setvar_id = options.pd_b_setvar_id,
+                .pd_a_delegated = options.pd_a_delegated,
+                .pd_b_delegated = options.pd_b_delegated,
             };
         }
 
@@ -906,6 +936,10 @@ pub const SystemDescription = struct {
                 try std.fmt.format(writer, " setvar_id=\"{s}\"", .{setvar_id});
             }
 
+            if (ch.pd_a_delegated) |delegated| {
+                try std.fmt.format(writer, " delegated=\"{}\"", .{delegated});
+            }
+
             _ = try writer.write(" />\n");
 
             try std.fmt.format(writer, "{s}<end pd=\"{s}\" id=\"{}\"", .{ child_separator, ch.pd_b.name, ch.pd_b_id });
@@ -920,6 +954,10 @@ pub const SystemDescription = struct {
 
             if (ch.pd_b_setvar_id) |setvar_id| {
                 try std.fmt.format(writer, " setvar_id=\"{s}\"", .{setvar_id});
+            }
+
+            if (ch.pd_b_delegated) |delegated| {
+                try std.fmt.format(writer, " delegated=\"{}\"", .{delegated});
             }
 
             try std.fmt.format(writer, " />\n{s}</channel>\n", .{separator});

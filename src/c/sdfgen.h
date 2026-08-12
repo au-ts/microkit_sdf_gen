@@ -57,6 +57,8 @@ void sdfgen_pd_set_stack_size(void *pd, uint32_t stack_size);
 void sdfgen_pd_set_cpu(void *pd, uint8_t cpu);
 void sdfgen_pd_set_template(void *pd, bool template);
 void sdfgen_pd_set_sym_emit(void *pd, bool sym_emit);
+void sdfgen_pd_set_delegatee(void *pd, bool delegatee);
+void sdfgen_pd_set_allow_delegation(void *pd, bool allow_delegation);
 void sdfgen_pd_set_passive(void *pd, bool passive);
 bool sdfgen_pd_set_virtual_machine(void *pd, void *vm);
 
@@ -71,6 +73,8 @@ void *sdfgen_channel_create(void *pd_a, void *pd_b, uint8_t *pd_a_id, uint8_t *p
 void sdfgen_channel_destroy(void *ch);
 uint8_t sdfgen_channel_get_pd_a_id(void *ch);
 uint8_t sdfgen_channel_get_pd_b_id(void *ch);
+void sdfgen_channel_set_pd_a_delegated(void *channel, bool delegated);
+void sdfgen_channel_set_pd_b_delegated(void *channel, bool delegated);
 
 typedef enum {
     IRQ_TRIGGER_EDGE = 0,
@@ -98,6 +102,7 @@ void sdfgen_mr_destroy(void *mr);
 
 void *sdfgen_map_create(void *mr, uint64_t vaddr, sdfgen_map_perms_t perms, bool cached, char *setvar_vaddr, char *setvar_size);
 uint64_t sdfgen_map_get_vaddr(void *map);
+void sdfgen_map_set_delegated(void *map, bool delegated);
 void *sdfgen_map_destroy(void *map);
 
 /*** sDDF ***/
