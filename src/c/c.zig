@@ -83,6 +83,13 @@ export fn sdfgen_render(c_sdf: *align(8) anyopaque) [*c]u8 {
     return @constCast(rendered);
 }
 
+export fn sdfgen_gensvc(c_sdf: *align(8) anyopaque, output_dir: [*c]u8) bool {
+    const sdf: *SystemDescription = @ptrCast(c_sdf);
+    sdf.generateSvc(std.mem.span(output_dir)) catch return false;
+
+    return true;
+}
+
 export fn sdfgen_dtb_parse(path: [*c]u8) ?*anyopaque {
     const file = std.fs.cwd().openFile(std.mem.span(path), .{}) catch |e| {
         log.err("could not open DTB '{s}' for parsing with error: {any}", .{ path, e });

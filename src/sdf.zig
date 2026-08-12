@@ -561,6 +561,9 @@ pub const SystemDescription = struct {
         /// Allow capabilities belonging to this PD to be delegated to its parent.
         allow_delegation: ?bool,
 
+        /// Optional OS services whose resources are delegated to this PD's parent.
+        os_services: ArrayList(OSService),
+
         setvars: ArrayList(SetVar),
 
         // Matches Microkit implementation
@@ -615,6 +618,7 @@ pub const SystemDescription = struct {
                 .sym_emit = options.sym_emit,
                 .delegatee = options.delegatee,
                 .allow_delegation = options.allow_delegation,
+                .os_services = ArrayList(OSService).init(allocator),
             };
         }
 
@@ -628,6 +632,10 @@ pub const SystemDescription = struct {
             pd.child_pds.deinit();
             pd.irqs.deinit();
             pd.ioports.deinit();
+            for (pd.os_services.items) |*service| {
+                service.destroy();
+            }
+            pd.os_services.deinit();
         }
 
         /// There may be times where a PD resources is attached with an ID, such as a channel
@@ -762,6 +770,38 @@ pub const SystemDescription = struct {
             return next_vaddr;
         }
 
+        fn allocateOSServiceId(pd: *ProtectionDomain, requested_id: ?u8) !u8 {
+            if (requested_id) |id| {
+                for (pd.os_services.items) |service| {
+                    if (service.id == id) {
+                        return error.AlreadyAllocatedId;
+                    }
+                }
+                return id;
+            }
+
+            for (0..256) |candidate| {
+                const id: u8 = @intCast(candidate);
+                var allocated = false;
+                for (pd.os_services.items) |service| {
+                    if (service.id == id) {
+                        allocated = true;
+                        break;
+                    }
+                }
+                if (!allocated) return id;
+            }
+
+            return error.NoMoreIds;
+        }
+
+        pub fn addOSService(pd: *ProtectionDomain, service: OSService) !u8 {
+            var owned_service = service;
+            owned_service.id = try pd.allocateOSServiceId(service.id);
+            try pd.os_services.append(owned_service);
+            return owned_service.id.?;
+        }
+
         pub fn render(pd: *ProtectionDomain, sdf: *SystemDescription, writer: ArrayList(u8).Writer, separator: []const u8, id: ?u8) !void {
             // If we are given an ID, this PD is in fact a child PD and we have to
             // specify the ID for the root PD to use when referring to this child PD.
@@ -865,6 +905,70 @@ pub const SystemDescription = struct {
             }
 
             try std.fmt.format(writer, "{s}</{s}>\n", .{ separator, tag });
+        }
+    };
+
+    pub const OSService = struct {
+        allocator: Allocator,
+        id: ?u8,
+        service_type: u8,
+        resources: ArrayList(Resource),
+        data_path: ?[]const u8,
+
+        pub const ResourceKind = enum(u8) {
+            channel_notify = 1,
+            channel_ppc = 2,
+            map = 3,
+        };
+
+        pub const Resource = struct {
+            kind: ResourceKind,
+            value: u64,
+        };
+
+        pub fn create(
+            allocator: Allocator,
+            id: ?u8,
+            service_type: u8,
+            data_path: ?[]const u8,
+        ) OSService {
+            return .{
+                .allocator = allocator,
+                .id = id,
+                .service_type = service_type,
+                .resources = ArrayList(Resource).init(allocator),
+                .data_path = if (data_path) |path|
+                    allocator.dupe(u8, path) catch @panic("Could not dupe OS service data path")
+                else
+                    null,
+            };
+        }
+
+        pub fn destroy(service: *OSService) void {
+            service.resources.deinit();
+            if (service.data_path) |path| {
+                service.allocator.free(path);
+            }
+        }
+
+        pub fn addResource(service: *OSService, kind: ResourceKind, value: u64) void {
+            service.resources.append(.{
+                .kind = kind,
+                .value = value,
+            }) catch @panic("Could not add resource to OS service");
+        }
+
+        pub fn addMap(service: *OSService, map: Map) void {
+            std.debug.assert(map.delegated orelse false);
+            service.addResource(.map, map.vaddr);
+        }
+
+        pub fn addChannelNotification(service: *OSService, end_id: u8) void {
+            service.addResource(.channel_notify, end_id);
+        }
+
+        pub fn addChannelPpc(service: *OSService, end_id: u8) void {
+            service.addResource(.channel_ppc, end_id);
         }
     };
 
@@ -1241,6 +1345,129 @@ pub const SystemDescription = struct {
         _ = try writer.write("</system>" ++ "\x00");
 
         return sdf.xml_data.items[0 .. sdf.xml_data.items.len - 1 :0];
+    }
+
+    const SVC_MAGIC = [_]u8{ 'O', 'S', 'S', 'v', 'c', 0, 0, 0 };
+    const SVC_VERSION: u16 = 1;
+
+    fn appendU16(buf: *ArrayList(u8), value: u16) !void {
+        try buf.append(@truncate(value));
+        try buf.append(@truncate(value >> 8));
+    }
+
+    fn appendU32(buf: *ArrayList(u8), value: u32) !void {
+        try buf.append(@truncate(value));
+        try buf.append(@truncate(value >> 8));
+        try buf.append(@truncate(value >> 16));
+        try buf.append(@truncate(value >> 24));
+    }
+
+    fn appendU64(buf: *ArrayList(u8), value: u64) !void {
+        for (0..8) |i| {
+            try buf.append(@truncate(value >> @intCast(i * 8)));
+        }
+    }
+
+    fn writeU32(buf: []u8, offset: usize, value: u32) void {
+        buf[offset + 0] = @truncate(value);
+        buf[offset + 1] = @truncate(value >> 8);
+        buf[offset + 2] = @truncate(value >> 16);
+        buf[offset + 3] = @truncate(value >> 24);
+    }
+
+    fn serialiseOSService(
+        buf: *ArrayList(u8),
+        pd_id: u64,
+        service: *const OSService,
+    ) !void {
+        const service_id = service.id orelse return error.OSServiceHasNoId;
+        const resource_count: u32 = @intCast(service.resources.items.len);
+        const path = service.data_path orelse "";
+        const path_len: u32 = @intCast(path.len);
+
+        const record_start = buf.items.len;
+
+        // record_size: u32, patched after serialisation.
+        try appendU32(buf, 0);
+        try appendU64(buf, pd_id);
+        try buf.append(service_id);
+        try buf.append(service.service_type);
+        try appendU32(buf, resource_count);
+        try appendU32(buf, path_len);
+
+        for (service.resources.items) |resource| {
+            try buf.append(@intFromEnum(resource.kind));
+            try appendU64(buf, resource.value);
+        }
+
+        try buf.appendSlice(path);
+
+        const record_size: u32 = @intCast(buf.items.len - record_start);
+        writeU32(buf.items, record_start, record_size);
+    }
+
+    fn generateDelegateeSvc(
+        sdf: *SystemDescription,
+        delegatee: *ProtectionDomain,
+        output_dir: []const u8,
+    ) !void {
+        var service_count: u32 = 0;
+        for (delegatee.child_pds.items) |delegator| {
+            if (delegator.os_services.items.len == 0) continue;
+            if (!(delegator.allow_delegation orelse false)) {
+                return error.OSServiceRequiresDelegation;
+            }
+            service_count += @intCast(delegator.os_services.items.len);
+        }
+
+        var buf = ArrayList(u8).init(sdf.allocator);
+        defer buf.deinit();
+
+        // File header:
+        //   u8[8] magic
+        //   u16   version
+        //   u16   reserved
+        //   u32   service_count
+        //   u32   total_size
+        try buf.appendSlice(&SVC_MAGIC);
+        try appendU16(&buf, SVC_VERSION);
+        try appendU16(&buf, 0);
+        try appendU32(&buf, service_count);
+        try appendU32(&buf, 0);
+
+        for (delegatee.child_pds.items) |delegator| {
+            if (delegator.os_services.items.len == 0) continue;
+
+            const pd_id: u64 = delegator.child_id orelse
+                return error.OSServiceDelegatorHasNoChildId;
+
+            for (delegator.os_services.items) |*service| {
+                try serialiseOSService(&buf, pd_id, service);
+            }
+        }
+
+        const total_size: u32 = @intCast(buf.items.len);
+        writeU32(buf.items, 16, total_size);
+
+        try std.fs.cwd().makePath(output_dir);
+        const path = try std.fmt.allocPrint(
+            sdf.allocator,
+            "{s}/{s}.svc",
+            .{ output_dir, delegatee.name },
+        );
+        defer sdf.allocator.free(path);
+
+        const file = try std.fs.cwd().createFile(path, .{});
+        defer file.close();
+        try file.writeAll(buf.items);
+    }
+
+    pub fn generateSvc(sdf: *SystemDescription, output_dir: []const u8) !void {
+        for (sdf.pds.items) |pd| {
+            if (pd.delegatee orelse false) {
+                try sdf.generateDelegateeSvc(pd, output_dir);
+            }
+        }
     }
 
     pub fn print(sdf: *SystemDescription) !void {

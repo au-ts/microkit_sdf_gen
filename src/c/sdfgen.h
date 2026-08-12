@@ -23,6 +23,7 @@ typedef enum {
 void *sdfgen_create(sdfgen_arch_t arch, uint64_t paddr_top);
 void sdfgen_deinit(void *sdf);
 void *sdfgen_render(void *sdf);
+bool sdfgen_gensvc(void *sdf, char *output_dir);
 
 /*** DTB-related functionality ***/
 
