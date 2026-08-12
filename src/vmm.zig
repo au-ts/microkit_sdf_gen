@@ -265,7 +265,7 @@ fn addVirtioMmioDevice(system: *Self, device: *dtb.Node, t: Data.VirtioMmioDevic
 }
 
 pub fn addVirtioMmioConsole(system: *Self, device: *dtb.Node, serial: *sddf.Serial) !void {
-    try serial.addClient(system.vmm);
+    try serial.addClient(system.vmm, false);
     try system.addVirtioMmioDevice(device, .console);
 }
 

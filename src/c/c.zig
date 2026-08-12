@@ -704,9 +704,9 @@ export fn sdfgen_sddf_timer_destroy(system: *align(8) anyopaque) void {
     allocator.destroy(timer);
 }
 
-export fn sdfgen_sddf_timer_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque) bindings.sdfgen_sddf_status_t {
+export fn sdfgen_sddf_timer_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque, optional: bool) bindings.sdfgen_sddf_status_t {
     const timer: *sddf.Timer = @ptrCast(system);
-    timer.addClient(@ptrCast(client)) catch |e| {
+    timer.addClient(@ptrCast(client), optional) catch |e| {
         switch (e) {
             sddf.Timer.Error.DuplicateClient => return 1,
             sddf.Timer.Error.InvalidClient => return 2,
@@ -760,9 +760,9 @@ export fn sdfgen_sddf_serial_destroy(system: *align(8) anyopaque) void {
     allocator.destroy(serial);
 }
 
-export fn sdfgen_sddf_serial_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque) bindings.sdfgen_sddf_status_t {
+export fn sdfgen_sddf_serial_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque, optional: bool) bindings.sdfgen_sddf_status_t {
     const serial: *sddf.Serial = @ptrCast(system);
-    serial.addClient(@ptrCast(client)) catch |e| {
+    serial.addClient(@ptrCast(client), optional) catch |e| {
         switch (e) {
             sddf.Serial.Error.DuplicateClient => return 1,
             sddf.Serial.Error.InvalidClient => return 2,

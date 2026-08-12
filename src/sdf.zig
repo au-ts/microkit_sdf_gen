@@ -915,6 +915,11 @@ pub const SystemDescription = struct {
         resources: ArrayList(Resource),
         data_path: ?[]const u8,
 
+        pub const Type = struct {
+            pub const serial: u8 = 1;
+            pub const timer: u8 = 3;
+        };
+
         pub const ResourceKind = enum(u8) {
             channel_notify = 1,
             channel_ppc = 2,

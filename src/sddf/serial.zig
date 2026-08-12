@@ -14,6 +14,7 @@ const Mr = SystemDescription.MemoryRegion;
 const Map = SystemDescription.Map;
 const Pd = SystemDescription.ProtectionDomain;
 const Channel = SystemDescription.Channel;
+const OSService = SystemDescription.OSService;
 
 const ConfigResources = data.Resources;
 
@@ -40,6 +41,7 @@ pub const Serial = struct {
     virt_rx_config: ConfigResources.Serial.VirtRx,
     virt_tx_config: ConfigResources.Serial.VirtTx,
     client_configs: std.array_list.Managed(ConfigResources.Serial.Client),
+    client_optionals: std.array_list.Managed(bool),
 
     pub const Error = SystemError || error{
         InvalidVirt,
@@ -99,16 +101,18 @@ pub const Serial = struct {
             .virt_rx_config = std.mem.zeroInit(ConfigResources.Serial.VirtRx, .{}),
             .virt_tx_config = std.mem.zeroInit(ConfigResources.Serial.VirtTx, .{}),
             .client_configs = std.array_list.Managed(ConfigResources.Serial.Client).init(allocator),
+            .client_optionals = std.array_list.Managed(bool).init(allocator),
         };
     }
 
     pub fn deinit(system: *Serial) void {
         system.clients.deinit();
         system.client_configs.deinit();
+        system.client_optionals.deinit();
         system.allocator.free(system.begin_str);
     }
 
-    pub fn addClient(system: *Serial, client: *Pd) Error!void {
+    pub fn addClient(system: *Serial, client: *Pd, optional: bool) Error!void {
         // Check that the client does not already exist
         for (system.clients.items) |existing_client| {
             if (std.mem.eql(u8, existing_client.name, client.name)) {
@@ -117,6 +121,7 @@ pub const Serial = struct {
         }
         system.clients.append(client) catch @panic("Could not add client to Serial");
         system.client_configs.append(std.mem.zeroInit(ConfigResources.Serial.Client, .{})) catch @panic("Could not add client to Serial");
+        system.client_optionals.append(optional) catch @panic("Could not add client optional state to Serial");
     }
 
     fn hasRx(system: *Serial) bool {
@@ -131,7 +136,16 @@ pub const Serial = struct {
         }
     }
 
-    fn createConnection(system: *Serial, server: *Pd, client: *Pd, data_size: usize, server_conn: *ConfigResources.Serial.Connection, client_conn: *ConfigResources.Serial.Connection) void {
+    fn createConnection(
+        system: *Serial,
+        server: *Pd,
+        client: *Pd,
+        data_size: usize,
+        server_conn: *ConfigResources.Serial.Connection,
+        client_conn: *ConfigResources.Serial.Connection,
+        optional: bool,
+        service: ?*OSService,
+    ) void {
         const queue_mr_name = fmt(system.allocator, "{s}/serial/queue/{s}/{s}", .{ system.deviceName(), server.name, client.name });
         const queue_mr = Mr.create(system.allocator, queue_mr_name, system.queue_size, .{});
         system.sdf.addMemoryRegion(queue_mr);
@@ -140,9 +154,14 @@ pub const Serial = struct {
         server.addMap(queue_mr_server_map);
         server_conn.queue = .createFromMap(queue_mr_server_map);
 
-        const queue_mr_client_map = Map.create(queue_mr, client.getMapVaddr(&queue_mr), .rw, .{});
+        const queue_mr_client_map = Map.create(queue_mr, client.getMapVaddr(&queue_mr), .rw, .{
+            .delegated = if (optional) true else null,
+        });
         client.addMap(queue_mr_client_map);
         client_conn.queue = .createFromMap(queue_mr_client_map);
+        if (optional) {
+            service.?.addMap(queue_mr_client_map);
+        }
 
         const data_mr_name = fmt(system.allocator, "{s}/serial/data/{s}/{s}", .{ system.deviceName(), server.name, client.name });
         const data_mr = Mr.create(system.allocator, data_mr_name, data_size, .{});
@@ -153,14 +172,24 @@ pub const Serial = struct {
         server.addMap(data_mr_server_map);
         server_conn.data = .createFromMap(data_mr_server_map);
 
-        const data_mr_client_map = Map.create(data_mr, client.getMapVaddr(&data_mr), .rw, .{});
+        const data_mr_client_map = Map.create(data_mr, client.getMapVaddr(&data_mr), .rw, .{
+            .delegated = if (optional) true else null,
+        });
         client.addMap(data_mr_client_map);
         client_conn.data = .createFromMap(data_mr_client_map);
+        if (optional) {
+            service.?.addMap(data_mr_client_map);
+        }
 
-        const channel = Channel.create(server, client, .{}) catch unreachable;
+        const channel = Channel.create(server, client, .{
+            .pd_b_delegated = if (optional) true else null,
+        }) catch unreachable;
         system.sdf.addChannel(channel);
         server_conn.id = channel.pd_a_id;
         client_conn.id = channel.pd_b_id;
+        if (optional) {
+            service.?.addChannelNotification(client_conn.id);
+        }
     }
 
     pub fn connect(system: *Serial) !void {
@@ -170,12 +199,26 @@ pub const Serial = struct {
 
         system.driver_config.default_baud = system.baud_rate;
 
+        var services = std.array_list.Managed(?OSService).initCapacity(system.allocator, system.clients.items.len) catch @panic("OOM");
+        defer services.deinit();
+        for (system.clients.items, 0..) |client, i| {
+            if (system.client_optionals.items[i]) {
+                const data_path = fmt(system.allocator, "serial_client_{s}.data", .{client.name});
+                const service = OSService.create(system.allocator, null, OSService.Type.serial, data_path);
+                system.allocator.free(data_path);
+                services.appendAssumeCapacity(service);
+            } else {
+                services.appendAssumeCapacity(null);
+            }
+        }
+
         if (system.hasRx()) {
-            system.createConnection(system.driver, system.virt_rx.?, system.data_size, &system.driver_config.rx, &system.virt_rx_config.driver);
+            system.createConnection(system.driver, system.virt_rx.?, system.data_size, &system.driver_config.rx, &system.virt_rx_config.driver, false, null);
 
             system.virt_rx_config.num_clients = @intCast(system.clients.items.len);
             for (system.clients.items, 0..) |client, i| {
-                system.createConnection(system.virt_rx.?, client, system.data_size, &system.virt_rx_config.clients[i], &system.client_configs.items[i].rx);
+                const optional = system.client_optionals.items[i];
+                system.createConnection(system.virt_rx.?, client, system.data_size, &system.virt_rx_config.clients[i], &system.client_configs.items[i].rx, optional, if (services.items[i]) |*service| service else null);
             }
 
             system.driver_config.rx_enabled = 1;
@@ -190,7 +233,7 @@ pub const Serial = struct {
         if (system.enable_color) {
             driver_data_size *= 2;
         }
-        system.createConnection(system.driver, system.virt_tx, driver_data_size, &system.driver_config.tx, &system.virt_tx_config.driver);
+        system.createConnection(system.driver, system.virt_tx, driver_data_size, &system.driver_config.tx, &system.virt_tx_config.driver, false, null);
 
         system.virt_tx_config.num_clients = @intCast(system.clients.items.len);
         for (system.clients.items, 0..) |client, i| {
@@ -199,7 +242,15 @@ pub const Serial = struct {
             std.debug.assert(client.name.len < ConfigResources.Serial.VirtTx.MAX_NAME_LEN);
             std.debug.assert(system.virt_tx_config.clients[i].name[client.name.len] == 0);
 
-            system.createConnection(system.virt_tx, client, system.data_size, &system.virt_tx_config.clients[i].conn, &system.client_configs.items[i].tx);
+            const optional = system.client_optionals.items[i];
+            system.createConnection(system.virt_tx, client, system.data_size, &system.virt_tx_config.clients[i].conn, &system.client_configs.items[i].tx, optional, if (services.items[i]) |*service| service else null);
+        }
+
+        for (system.clients.items, 0..) |client, i| {
+            if (services.items[i]) |service| {
+                _ = client.addOSService(service) catch @panic("failed to add serial OS service");
+                services.items[i] = null;
+            }
         }
 
         system.virt_tx_config.enable_colour = @intFromBool(system.enable_color);
