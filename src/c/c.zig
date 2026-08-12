@@ -136,7 +136,8 @@ export fn sdfgen_dtb_destroy(c_blob: *align(8) anyopaque) void {
 
 export fn sdfgen_pd_create(name: [*c]u8, program_image: [*c]u8) *anyopaque {
     const pd = allocator.create(Pd) catch @panic("OOM");
-    pd.* = Pd.create(allocator, std.mem.span(name), std.mem.span(program_image), .{});
+    const program_image_slice: ?[]const u8 = if (program_image == null) null else std.mem.span(program_image);
+    pd.* = Pd.create(allocator, std.mem.span(name), program_image_slice, .{});
 
     return pd;
 }
@@ -257,6 +258,11 @@ export fn sdfgen_pd_set_virtual_machine(c_pd: *align(8) anyopaque, c_vm: *align(
     pd.setVirtualMachine(vm) catch return false;
 
     return true;
+}
+
+export fn sdfgen_pd_set_template(c_pd: *align(8) anyopaque, template: bool) void {
+    const pd: *Pd = @ptrCast(c_pd);
+    pd.template = template;
 }
 
 export fn sdfgen_pd_set_sym_emit(c_pd: *align(8) anyopaque, sym_emit: bool) void {

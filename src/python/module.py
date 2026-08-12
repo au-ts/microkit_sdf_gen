@@ -64,6 +64,8 @@ libsdfgen.sdfgen_pd_set_stack_size.argtypes = [c_void_p, c_uint32]
 libsdfgen.sdfgen_pd_set_cpu.restype = None
 libsdfgen.sdfgen_pd_set_cpu.argtypes = [c_void_p, c_uint8]
 
+libsdfgen.sdfgen_pd_set_template.restype = None
+libsdfgen.sdfgen_pd_set_template.argtypes = [c_void_p, c_bool]
 libsdfgen.sdfgen_pd_set_sym_emit.restype = None
 libsdfgen.sdfgen_pd_set_sym_emit.argtypes = [c_void_p, c_bool]
 
@@ -502,25 +504,26 @@ class SystemDescription:
 
     class ProtectionDomain:
         _name: str
-        _program_image: str
+        _program_image: Optional[str]
         _obj: c_void_p
 
         def __init__(
             self,
             name: str,
-            program_image: str,
+            program_image: Optional[str] = None,
             priority: Optional[int] = None,
             budget: Optional[int] = None,
             period: Optional[int] = None,
             passive: Optional[bool] = None,
             stack_size: Optional[int] = None,
             cpu: Optional[int] = None,
+            template: bool = False,
             sym_emit: Optional[bool] = None,
         ) -> None:
             self._name = name
             self._program_image = program_image
             c_name = c_char_p(name.encode("utf-8"))
-            c_program_image = c_char_p(program_image.encode("utf-8"))
+            c_program_image = c_char_p(program_image.encode("utf-8")) if program_image is not None else None
             self._obj = libsdfgen.sdfgen_pd_create(c_name, c_program_image)
             if priority is not None:
                 libsdfgen.sdfgen_pd_set_priority(self._obj, priority)
@@ -534,6 +537,8 @@ class SystemDescription:
                 libsdfgen.sdfgen_pd_set_stack_size(self._obj, stack_size)
             if cpu is not None:
                 libsdfgen.sdfgen_pd_set_cpu(self._obj, cpu)
+            if template:
+                libsdfgen.sdfgen_pd_set_template(self._obj, True)
             if sym_emit is not None:
                 libsdfgen.sdfgen_pd_set_sym_emit(self._obj, sym_emit)
             self.keep_alive = set()
@@ -543,7 +548,7 @@ class SystemDescription:
             return self._name
 
         @property
-        def program_image(self) -> str:
+        def program_image(self) -> Optional[str]:
             return self._program_image
 
         def add_child_pd(self, child_pd: SystemDescription.ProtectionDomain, child_id=None) -> int:
