@@ -544,6 +544,8 @@ pub const SystemDescription = struct {
         child_id: ?u8,
         /// CPU core
         cpu: ?u8,
+        /// Emit microkit symbols
+        sym_emit: ?bool,
 
         setvars: ArrayList(SetVar),
 
@@ -563,6 +565,7 @@ pub const SystemDescription = struct {
             stack_size: ?u32 = null,
             arm_smc: ?bool = null,
             cpu: ?u8 = null,
+            sym_emit: ?bool = null,
         };
 
         pub fn create(allocator: Allocator, name: []const u8, program_image: ?[]const u8, options: Options) ProtectionDomain {
@@ -591,6 +594,7 @@ pub const SystemDescription = struct {
                 .stack_size = options.stack_size,
                 .child_id = null,
                 .cpu = options.cpu,
+                .sym_emit = options.sym_emit,
             };
         }
 
@@ -781,6 +785,10 @@ pub const SystemDescription = struct {
                 try std.fmt.format(writer, " cpu=\"{}\"", .{cpu});
             }
 
+            if (pd.sym_emit) |sym_emit| {
+                try std.fmt.format(writer, " sym_emit=\"{}\"", .{sym_emit});
+            }
+
             _ = try writer.write(">\n");
 
             const child_separator = try allocPrint(sdf.allocator, "{s}    ", .{separator});
@@ -870,7 +878,6 @@ pub const SystemDescription = struct {
                 .pp = options.pp,
                 .pd_a_setvar_id = options.pd_a_setvar_id,
                 .pd_b_setvar_id = options.pd_b_setvar_id,
-
             };
         }
 

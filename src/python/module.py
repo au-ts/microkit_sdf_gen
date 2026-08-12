@@ -64,6 +64,9 @@ libsdfgen.sdfgen_pd_set_stack_size.argtypes = [c_void_p, c_uint32]
 libsdfgen.sdfgen_pd_set_cpu.restype = None
 libsdfgen.sdfgen_pd_set_cpu.argtypes = [c_void_p, c_uint8]
 
+libsdfgen.sdfgen_pd_set_sym_emit.restype = None
+libsdfgen.sdfgen_pd_set_sym_emit.argtypes = [c_void_p, c_bool]
+
 libsdfgen.sdfgen_render.restype = c_char_p
 libsdfgen.sdfgen_render.argtypes = [c_void_p]
 
@@ -512,6 +515,7 @@ class SystemDescription:
             passive: Optional[bool] = None,
             stack_size: Optional[int] = None,
             cpu: Optional[int] = None,
+            sym_emit: Optional[bool] = None,
         ) -> None:
             self._name = name
             self._program_image = program_image
@@ -530,6 +534,8 @@ class SystemDescription:
                 libsdfgen.sdfgen_pd_set_stack_size(self._obj, stack_size)
             if cpu is not None:
                 libsdfgen.sdfgen_pd_set_cpu(self._obj, cpu)
+            if sym_emit is not None:
+                libsdfgen.sdfgen_pd_set_sym_emit(self._obj, sym_emit)
             self.keep_alive = set()
 
         @property
