@@ -443,13 +443,14 @@ pub const Net = struct {
         }
     }
 
-    fn clientTxConnect(system: *Net, client_id: usize) void {
+    fn clientTxConnect(system: *Net, client_id: usize, service: ?*OSService) void {
         const client_info = &system.client_info.items[client_id];
         const client = system.clients.items[client_id];
         var client_config = &system.client_configs.items[client_id];
         const virt_client_config = &system.virt_tx_config.clients[system.virt_tx_config.num_clients];
+        const optional = client_info.optional;
 
-        system.createConnection(system.virt_tx, client, &virt_client_config.conn, &client_config.tx, client_info.tx_buffers, false, false, null);
+        system.createConnection(system.virt_tx, client, &virt_client_config.conn, &client_config.tx, client_info.tx_buffers, false, optional, service);
 
         const data_mr_size = system.sdf.arch.roundUpToPage(client_info.tx_buffers * BUFFER_SIZE);
         const data_mr_name = fmt(system.allocator, "{s}/net/tx/data/client/{s}", .{ system.deviceName(), client.name });
@@ -462,9 +463,10 @@ pub const Net = struct {
         virt_client_config.regions[0].num_buffers = @intCast(client_info.tx_buffers);
         virt_client_config.num_regions = 1; // always 1 for one connection
 
-        const data_mr_client_map = Map.create(data_mr, client.getMapVaddr(&data_mr), .rw, .{});
+        const data_mr_client_map = Map.create(data_mr, client.getMapVaddr(&data_mr), .rw, .{ .delegated = if (optional) true else null });
         client.addMap(data_mr_client_map);
         client_config.tx_data = .createFromMap(data_mr_client_map);
+        if (service) |svc| svc.addMap(data_mr_client_map);
     }
 
     pub fn clientRxVSwitchConnect(system: *Net, rx_dma_mr: Mr, client_idx: usize, num_vswitch_clients: usize, service: ?*OSService) void {
@@ -500,14 +502,15 @@ pub const Net = struct {
         copier_config.client_data = .createFromMap(client_data_copier_map);
     }
 
-    pub fn clientTxVSwitchConnect(system: *Net, client_id: usize) void {
+    pub fn clientTxVSwitchConnect(system: *Net, client_id: usize, service: ?*OSService) void {
         const client_info = &system.client_info.items[client_id];
         const client = system.clients.items[client_id];
         const vswitch = system.maybe_vswitch.?;
         var client_config = &system.client_configs.items[client_id];
         var vswitch_config = &system.vswitch_config;
+        const optional = client_info.optional;
 
-        system.createConnection(vswitch, client, &vswitch_config.ports[system.vswitch_config.num_ports].tx, &client_config.tx, client_info.tx_buffers, true, false, null);
+        system.createConnection(vswitch, client, &vswitch_config.ports[system.vswitch_config.num_ports].tx, &client_config.tx, client_info.tx_buffers, true, optional, service);
 
         const data_mr_size = system.sdf.arch.roundUpToPage(client_info.tx_buffers * BUFFER_SIZE);
         const data_mr_name = fmt(system.allocator, "{s}/net/tx/data/client/{s}", .{ system.deviceName(), client.name });
@@ -518,9 +521,10 @@ pub const Net = struct {
         vswitch.addMap(data_mr_vswitch_map);
         vswitch_config.ports[system.vswitch_config.num_ports].tx_data = .createFromMap(data_mr_vswitch_map);
 
-        const data_mr_client_map = Map.create(client_info.tx_data.?, client.getMapVaddr(&client_info.tx_data.?), .rw, .{});
+        const data_mr_client_map = Map.create(client_info.tx_data.?, client.getMapVaddr(&client_info.tx_data.?), .rw, .{ .delegated = if (optional) true else null });
         client.addMap(data_mr_client_map);
         client_config.tx_data = .createFromMap(data_mr_client_map);
+        if (service) |svc| svc.addMap(data_mr_client_map);
     }
 
     pub fn vswitchRxConnect(system: *Net, rx_dma_mr: Mr, num_vswitch_client_buffers: usize) void {
@@ -655,7 +659,7 @@ pub const Net = struct {
             const optional = system.client_info.items[i].optional;
             var service: ?OSService = null;
 
-            if (optional and system.client_info.items[i].rx) {
+            if (optional) {
                 const data_path = fmt(system.allocator, "net_client_{s}.data", .{client.name});
                 service = OSService.create(system.allocator, null, OSService.Type.network, data_path);
                 system.allocator.free(data_path);
@@ -666,7 +670,7 @@ pub const Net = struct {
             // vswitch client
             if (system.client_info.items[i].vswitch) {
                 system.clientRxVSwitchConnect(rx_dma_mr, i, num_vswitch_clients, service_ptr);
-                system.clientTxVSwitchConnect(i);
+                system.clientTxVSwitchConnect(i, service_ptr);
                 system.vswitch_config.num_ports += 1;
             } else {
                 // TODO: we have an assumption that all copiers are RX copiers
@@ -678,7 +682,7 @@ pub const Net = struct {
                     system.virt_rx_config.num_clients += 1;
                 }
                 if (system.client_info.items[i].tx) {
-                    system.clientTxConnect(i);
+                    system.clientTxConnect(i, service_ptr);
                     system.virt_tx_config.num_clients += 1;
                 }
             }
