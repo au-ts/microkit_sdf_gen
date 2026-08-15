@@ -278,6 +278,7 @@ libsdfgen.sdfgen_sddf_net_add_client_with_copier.argtypes = [
     c_char_p,
     c_bool,
     c_bool,
+    c_bool,
     c_bool
 ]
 libsdfgen.sdfgen_sddf_net_add_acl_rule.restype = c_uint8
@@ -1264,7 +1265,8 @@ class Sddf:
             mac_addr: Optional[str] = None,
             rx: Optional[bool] = None,
             tx: Optional[bool] = None,
-            vswitch: Optional[bool] = None
+            vswitch: Optional[bool] = None,
+            optional: bool = False
         ) -> None:
             """
             Add a client connected to a copier component for RX traffic.
@@ -1297,7 +1299,7 @@ class Sddf:
             else:
                 vswitch_arg = True
             ret = libsdfgen.sdfgen_sddf_net_add_client_with_copier(
-                self._obj, client._obj, copier_obj, c_mac_addr, rx_arg, tx_arg, vswitch_arg
+                self._obj, client._obj, copier_obj, c_mac_addr, rx_arg, tx_arg, vswitch_arg, optional
             )
             if ret == SddfStatus.OK:
                 return

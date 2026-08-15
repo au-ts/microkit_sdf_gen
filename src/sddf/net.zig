@@ -10,6 +10,7 @@ const fmt = sddf.fmt;
 const Allocator = std.mem.Allocator;
 
 const SystemDescription = mod_sdf.SystemDescription;
+const OSService = SystemDescription.OSService;
 const Mr = SystemDescription.MemoryRegion;
 const Map = SystemDescription.Map;
 const Pd = SystemDescription.ProtectionDomain;
@@ -46,6 +47,7 @@ pub const Net = struct {
         tx_buffers: usize = 512,
         vswitch: bool = false,
         mac_addr: ?[]const u8 = null,
+        optional: bool = false,
     };
 
     pub const ClientInfo = struct {
@@ -56,6 +58,7 @@ pub const Net = struct {
         tx_data: ?Mr = null,
         vswitch: bool = false,
         mac_addr: ?[6]u8 = null,
+        optional: bool = false,
     };
 
     allocator: Allocator,
@@ -246,6 +249,7 @@ pub const Net = struct {
         system.client_info.items[client_idx].tx = options.tx;
         system.client_info.items[client_idx].tx_buffers = options.tx_buffers;
         system.client_info.items[client_idx].vswitch = options.vswitch;
+        system.client_info.items[client_idx].optional = options.optional;
     }
 
     pub fn addAclRule(system: *Net, client0: *Pd, client1: *Pd, zeroToOne: bool, oneToZero: bool) Error!void {
@@ -309,7 +313,7 @@ pub const Net = struct {
         }
     }
 
-    fn createConnection(system: *Net, server: *Pd, client: *Pd, server_conn: *ConfigResources.Net.Connection, client_conn: *ConfigResources.Net.Connection, num_buffers: u64, server_pp: bool) void {
+    fn createConnection(system: *Net, server: *Pd, client: *Pd, server_conn: *ConfigResources.Net.Connection, client_conn: *ConfigResources.Net.Connection, num_buffers: u64, server_pp: bool, optional: bool, service: ?*OSService) void {
         // Queues must always be a power of 2
         const rounded_num_buffers = std.math.ceilPowerOfTwo(u32, @intCast(num_buffers)) catch unreachable;
         const queue_mr_size = system.sdf.arch.roundUpToPage(8 + 16 * rounded_num_buffers);
@@ -325,9 +329,10 @@ pub const Net = struct {
         server.addMap(free_mr_server_map);
         server_conn.free_queue = .createFromMap(free_mr_server_map);
 
-        const free_mr_client_map = Map.create(free_mr, client.getMapVaddr(&free_mr), .rw, .{});
+        const free_mr_client_map = Map.create(free_mr, client.getMapVaddr(&free_mr), .rw, .{ .delegated = if (optional) true else null });
         client.addMap(free_mr_client_map);
         client_conn.free_queue = .createFromMap(free_mr_client_map);
+        if (service) |svc| svc.addMap(free_mr_client_map);
 
         const active_mr_name = fmt(system.allocator, "{s}/net/queue/{s}/{s}/active", .{ system.deviceName(), server.name, client.name });
         const active_mr = Mr.create(system.allocator, active_mr_name, queue_mr_size, .{});
@@ -337,25 +342,28 @@ pub const Net = struct {
         server.addMap(active_mr_server_map);
         server_conn.active_queue = .createFromMap(active_mr_server_map);
 
-        const active_mr_client_map = Map.create(active_mr, client.getMapVaddr(&active_mr), .rw, .{});
+        const active_mr_client_map = Map.create(active_mr, client.getMapVaddr(&active_mr), .rw, .{ .delegated = if (optional) true else null });
         client.addMap(active_mr_client_map);
         client_conn.active_queue = .createFromMap(active_mr_client_map);
+        if (service) |svc| svc.addMap(active_mr_client_map);
 
         if (server_pp) {
-            const channel = Channel.create(server, client, .{ .pp = .b }) catch @panic("failed to create connection channel");
+            const channel = Channel.create(server, client, .{ .pp = .b, .pd_b_delegated = if (optional) true else null }) catch @panic("failed to create connection channel");
             system.sdf.addChannel(channel);
             server_conn.id = channel.pd_a_id;
             client_conn.id = channel.pd_b_id;
+            if (service) |svc| svc.addChannelPpc(channel.pd_b_id);
         } else {
-            const channel = Channel.create(server, client, .{}) catch @panic("failed to create connection channel");
+            const channel = Channel.create(server, client, .{ .pd_b_delegated = if (optional) true else null }) catch @panic("failed to create connection channel");
             system.sdf.addChannel(channel);
             server_conn.id = channel.pd_a_id;
             client_conn.id = channel.pd_b_id;
+            if (service) |svc| svc.addChannelNotification(channel.pd_b_id);
         }
     }
 
     fn rxConnectDriver(system: *Net) Mr {
-        system.createConnection(system.driver, system.virt_rx, &system.driver_config.virt_rx, &system.virt_rx_config.driver, system.rx_buffers, false);
+        system.createConnection(system.driver, system.virt_rx, &system.driver_config.virt_rx, &system.virt_rx_config.driver, system.rx_buffers, false, false, null);
 
         var rx_dma_mr: Mr = undefined;
         if (system.maybe_rx_dma_mr) |supplied_rx_dma_mr| {
@@ -389,20 +397,21 @@ pub const Net = struct {
             }
         }
 
-        system.createConnection(system.driver, system.virt_tx, &system.driver_config.virt_tx, &system.virt_tx_config.driver, num_buffers, false);
+        system.createConnection(system.driver, system.virt_tx, &system.driver_config.virt_tx, &system.virt_tx_config.driver, num_buffers, false, false, null);
     }
 
-    fn clientRxConnect(system: *Net, rx_dma_mr: Mr, client_idx: usize) void {
+    fn clientRxConnect(system: *Net, rx_dma_mr: Mr, client_idx: usize, service: ?*OSService) void {
         const client_info = system.client_info.items[client_idx];
         const client = system.clients.items[client_idx];
         const maybe_copier = system.copiers.items[client_idx];
         var client_config = &system.client_configs.items[client_idx];
         var copier_config = &system.copy_configs.items[client_idx];
         var virt_client_config = &system.virt_rx_config.clients[system.virt_rx_config.num_clients];
+        const optional = client_info.optional;
 
         if (maybe_copier) |copier| {
-            system.createConnection(system.virt_rx, copier, &virt_client_config.conn, &copier_config.rx, system.rx_buffers, false);
-            system.createConnection(copier, client, &copier_config.client, &client_config.rx, client_info.rx_buffers, false);
+            system.createConnection(system.virt_rx, copier, &virt_client_config.conn, &copier_config.rx, system.rx_buffers, false, false, null);
+            system.createConnection(copier, client, &copier_config.client, &client_config.rx, client_info.rx_buffers, false, optional, service);
 
             const rx_dma_copier_map = Map.create(rx_dma_mr, copier.getMapVaddr(&rx_dma_mr), .rw, .{});
             copier.addMap(rx_dma_copier_map);
@@ -414,21 +423,23 @@ pub const Net = struct {
             const client_data_mr = Mr.create(system.allocator, client_data_mr_name, client_data_mr_size, .{});
             system.sdf.addMemoryRegion(client_data_mr);
 
-            const client_data_client_map = Map.create(client_data_mr, client.getMapVaddr(&client_data_mr), .rw, .{});
+            const client_data_client_map = Map.create(client_data_mr, client.getMapVaddr(&client_data_mr), .rw, .{ .delegated = if (optional) true else null });
             client.addMap(client_data_client_map);
             client_config.rx_data = .createFromMap(client_data_client_map);
+            if (service) |svc| svc.addMap(client_data_client_map);
 
             const client_data_copier_map = Map.create(client_data_mr, copier.getMapVaddr(&client_data_mr), .rw, .{});
             copier.addMap(client_data_copier_map);
             copier_config.client_data = .createFromMap(client_data_copier_map);
         } else {
             // Communicate directly with rx virt if client has no copier
-            system.createConnection(system.virt_rx, client, &virt_client_config.conn, &client_config.rx, system.rx_buffers, false);
+            system.createConnection(system.virt_rx, client, &virt_client_config.conn, &client_config.rx, system.rx_buffers, false, optional, service);
 
             // Map in dma region directly into clients with no copier
-            const rx_dma_client_map = Map.create(rx_dma_mr, client.getMapVaddr(&rx_dma_mr), .rw, .{});
+            const rx_dma_client_map = Map.create(rx_dma_mr, client.getMapVaddr(&rx_dma_mr), .rw, .{ .delegated = if (optional) true else null });
             client.addMap(rx_dma_client_map);
             client_config.rx_data = .createFromMap(rx_dma_client_map);
+            if (service) |svc| svc.addMap(rx_dma_client_map);
         }
     }
 
@@ -438,7 +449,7 @@ pub const Net = struct {
         var client_config = &system.client_configs.items[client_id];
         const virt_client_config = &system.virt_tx_config.clients[system.virt_tx_config.num_clients];
 
-        system.createConnection(system.virt_tx, client, &virt_client_config.conn, &client_config.tx, client_info.tx_buffers, false);
+        system.createConnection(system.virt_tx, client, &virt_client_config.conn, &client_config.tx, client_info.tx_buffers, false, false, null);
 
         const data_mr_size = system.sdf.arch.roundUpToPage(client_info.tx_buffers * BUFFER_SIZE);
         const data_mr_name = fmt(system.allocator, "{s}/net/tx/data/client/{s}", .{ system.deviceName(), client.name });
@@ -456,7 +467,7 @@ pub const Net = struct {
         client_config.tx_data = .createFromMap(data_mr_client_map);
     }
 
-    pub fn clientRxVSwitchConnect(system: *Net, rx_dma_mr: Mr, client_idx: usize, num_vswitch_clients: usize) void {
+    pub fn clientRxVSwitchConnect(system: *Net, rx_dma_mr: Mr, client_idx: usize, num_vswitch_clients: usize, service: ?*OSService) void {
         const client_info = system.client_info.items[client_idx];
         const client = system.clients.items[client_idx];
         const copier = system.copiers.items[client_idx].?;
@@ -464,9 +475,10 @@ pub const Net = struct {
         var client_config = &system.client_configs.items[client_idx];
         var copier_config = &system.copy_configs.items[client_idx];
         var vswitch_config = &system.vswitch_config;
+        const optional = client_info.optional;
 
-        system.createConnection(vswitch, copier, &vswitch_config.ports[system.vswitch_config.num_ports].rx, &copier_config.rx, system.rx_buffers, false);
-        system.createConnection(copier, client, &copier_config.client, &client_config.rx, client_info.rx_buffers, false);
+        system.createConnection(vswitch, copier, &vswitch_config.ports[system.vswitch_config.num_ports].rx, &copier_config.rx, system.rx_buffers, false, false, null);
+        system.createConnection(copier, client, &copier_config.client, &client_config.rx, client_info.rx_buffers, false, optional, service);
 
         // Rx DMA region is the last data region
         const rx_dma_copier_map = Map.create(rx_dma_mr, copier.getMapVaddr(&rx_dma_mr), .rw, .{});
@@ -478,9 +490,10 @@ pub const Net = struct {
         const client_data_mr = Mr.create(system.allocator, client_data_mr_name, client_data_mr_size, .{});
         system.sdf.addMemoryRegion(client_data_mr);
 
-        const client_data_client_map = Map.create(client_data_mr, client.getMapVaddr(&client_data_mr), .rw, .{});
+        const client_data_client_map = Map.create(client_data_mr, client.getMapVaddr(&client_data_mr), .rw, .{ .delegated = if (optional) true else null });
         client.addMap(client_data_client_map);
         client_config.rx_data = .createFromMap(client_data_client_map);
+        if (service) |svc| svc.addMap(client_data_client_map);
 
         const client_data_copier_map = Map.create(client_data_mr, copier.getMapVaddr(&client_data_mr), .rw, .{});
         copier.addMap(client_data_copier_map);
@@ -494,7 +507,7 @@ pub const Net = struct {
         var client_config = &system.client_configs.items[client_id];
         var vswitch_config = &system.vswitch_config;
 
-        system.createConnection(vswitch, client, &vswitch_config.ports[system.vswitch_config.num_ports].tx, &client_config.tx, client_info.tx_buffers, true);
+        system.createConnection(vswitch, client, &vswitch_config.ports[system.vswitch_config.num_ports].tx, &client_config.tx, client_info.tx_buffers, true, false, null);
 
         const data_mr_size = system.sdf.arch.roundUpToPage(client_info.tx_buffers * BUFFER_SIZE);
         const data_mr_name = fmt(system.allocator, "{s}/net/tx/data/client/{s}", .{ system.deviceName(), client.name });
@@ -516,7 +529,7 @@ pub const Net = struct {
         var virt_client_config = &system.virt_rx_config.clients[system.virt_rx_config.num_clients];
 
         // virt_rx is connected to vswitch's tx port
-        system.createConnection(system.virt_rx, vswitch, &virt_client_config.conn, &vswitch_config.ports[system.vswitch_config.num_ports].tx, system.rx_buffers, false);
+        system.createConnection(system.virt_rx, vswitch, &virt_client_config.conn, &vswitch_config.ports[system.vswitch_config.num_ports].tx, system.rx_buffers, false, false, null);
 
         // Add vswitch client's MACs
         var vswitch_client_count: u8 = 0;
@@ -564,7 +577,7 @@ pub const Net = struct {
         var vswitch_config = &system.vswitch_config;
         var virt_client_config = &system.virt_tx_config.clients[system.virt_tx_config.num_clients];
 
-        system.createConnection(system.virt_tx, vswitch, &virt_client_config.conn, &vswitch_config.ports[system.vswitch_config.num_ports].rx, num_vswitch_client_tx_buffers, false);
+        system.createConnection(system.virt_tx, vswitch, &virt_client_config.conn, &vswitch_config.ports[system.vswitch_config.num_ports].rx, num_vswitch_client_tx_buffers, false, false, null);
 
         // Map the tx data region of each vswitch client into the tx virt
         var vswitch_client: u8 = 0;
@@ -638,19 +651,30 @@ pub const Net = struct {
             }
         }
 
-        for (system.clients.items, 0..) |_, i| {
+        for (system.clients.items, 0..) |client, i| {
+            const optional = system.client_info.items[i].optional;
+            var service: ?OSService = null;
+
+            if (optional and system.client_info.items[i].rx) {
+                const data_path = fmt(system.allocator, "net_client_{s}.data", .{client.name});
+                service = OSService.create(system.allocator, null, OSService.Type.network, data_path);
+                system.allocator.free(data_path);
+            }
+
+            const service_ptr: ?*OSService = if (service) |*svc| svc else null;
+
             // vswitch client
             if (system.client_info.items[i].vswitch) {
-                system.clientRxVSwitchConnect(rx_dma_mr, i, num_vswitch_clients);
+                system.clientRxVSwitchConnect(rx_dma_mr, i, num_vswitch_clients, service_ptr);
                 system.clientTxVSwitchConnect(i);
                 system.vswitch_config.num_ports += 1;
             } else {
                 // TODO: we have an assumption that all copiers are RX copiers
                 if (system.client_info.items[i].rx) {
-                    system.clientRxConnect(rx_dma_mr, i);
-                    const client = &system.virt_rx_config.clients[system.virt_rx_config.num_clients];
-                    std.mem.copyForwards(u8, client.mac_addrs[0..6], &system.client_info.items[i].mac_addr.?);
-                    client.num_macs = 1;
+                    system.clientRxConnect(rx_dma_mr, i, service_ptr);
+                    const virt_client = &system.virt_rx_config.clients[system.virt_rx_config.num_clients];
+                    std.mem.copyForwards(u8, virt_client.mac_addrs[0..6], &system.client_info.items[i].mac_addr.?);
+                    virt_client.num_macs = 1;
                     system.virt_rx_config.num_clients += 1;
                 }
                 if (system.client_info.items[i].tx) {
@@ -658,6 +682,7 @@ pub const Net = struct {
                     system.virt_tx_config.num_clients += 1;
                 }
             }
+            if (service) |svc| _ = client.addOSService(svc) catch @panic("failed to add network OS service");
             system.client_configs.items[i].mac_addr = system.client_info.items[i].mac_addr.?;
         }
 

@@ -948,7 +948,7 @@ export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyop
     return net;
 }
 
-export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, client: *align(8) anyopaque, copier: *align(8) anyopaque, mac_addr: [*c]u8, rx: bool, tx: bool, vswitch: bool) bindings.sdfgen_sddf_status_t {
+export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, client: *align(8) anyopaque, copier: ?*align(8) anyopaque, mac_addr: [*c]u8, rx: bool, tx: bool, vswitch: bool, optional: bool) bindings.sdfgen_sddf_status_t {
     const net: *sddf.Net = @ptrCast(system);
     var options: sddf.Net.ClientOptions = .{};
     if (mac_addr) |a| {
@@ -957,6 +957,7 @@ export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, cl
     options.rx = rx;
     options.tx = tx;
     options.vswitch = vswitch;
+    options.optional = optional;
     net.addClientWithCopier(@ptrCast(client), @ptrCast(copier), options) catch |e| {
         switch (e) {
             sddf.Net.Error.DuplicateClient => return 1,
