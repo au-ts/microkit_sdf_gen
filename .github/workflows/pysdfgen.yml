@@ -16,9 +16,16 @@ jobs:
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        # macos-15-intel is an intel runner, macos-14 is apple silicon
-        os: [ubuntu-latest, macos-15-intel, macos-14]
+        include:
+          - os: ubuntu-latest
+            archs: x86_64
+          - os: ubuntu-24.04-arm
+            archs: aarch64
+          # macos-15-intel is an intel runner, macos-14 is apple silicon
+          - os: macos-15-intel
+          - os: macos-14
 
     steps:
       - uses: actions/checkout@v4
@@ -28,13 +35,12 @@ jobs:
         uses: mlugg/setup-zig@v2.0.5
         with:
           version: ${{ env.ZIG_VERSION }}
-      - run: |
-          echo "ZIG_PATH=$(dirname $(which zig))" >> $GITHUB_ENV
+      - run: echo "ZIG_PATH=$(dirname $(which zig))" >> $GITHUB_ENV
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.3.0
         env:
           CIBW_BUILD: 'cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*'
-          CIBW_ARCHS_LINUX: 'x86_64 aarch64'
+          CIBW_ARCHS_LINUX: ${{ matrix.archs }}
           CIBW_ENVIRONMENT: 'PATH=$PATH:/host/${{ env.ZIG_PATH }}/'
           CIBW_REPAIR_WHEEL_COMMAND_MACOS: ""
         with:
