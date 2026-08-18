@@ -19,6 +19,7 @@ class ZigBuilder(build_ext):
             "zig",
             "build",
             "c",
+            "-Dcpu=baseline",
             f"-Doptimize={optimize}",
             # Python expects us to always provide a dynamic library
             "-Dc-linkage=dynamic",
