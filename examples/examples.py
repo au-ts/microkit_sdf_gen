@@ -45,7 +45,7 @@ def generate_sdf():
 
     net_node = dtb.node("virtio_mmio@a003e00")
     assert net_node is not None
-    net_system = Sddf.Net(sdf, net_node, net_driver, net_virt_rx, net_virt_tx)
+    net_system = Sddf.Net(sdf, net_node, net_driver, net_virt_tx, net_virt_rx)
     net_system.add_client_with_copier(micropython, net_mp_copier)
 
     # fs = LionsOS.FileSystem(sdf, fatfs, reactor_client)

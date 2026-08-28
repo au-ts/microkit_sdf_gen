@@ -223,7 +223,7 @@ libsdfgen.sdfgen_sddf_serial_serialise_config.restype = c_bool
 libsdfgen.sdfgen_sddf_serial_serialise_config.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_sddf_net.restype = c_void_p
-libsdfgen.sdfgen_sddf_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p]
 libsdfgen.sdfgen_sddf_net_destroy.restype = None
 libsdfgen.sdfgen_sddf_net_destroy.argtypes = [c_void_p]
 
@@ -1073,8 +1073,11 @@ class Sddf:
             virt_rx: SystemDescription.ProtectionDomain,
             *,
             vswitch: Optional[SystemDescription.ProtectionDomain] = None,
+            vswitch_orchestrator: Optional[SystemDescription.ProtectionDomain] = None,
             rx_dma_mr: Optional[SystemDescription.MemoryRegion] = None
         ) -> None:
+            if vswitch_orchestrator is not None and vswitch is None:
+                raise ValueError("vswitch_orchestrator requires vswitch")
             if device is None:
                 device_obj = None
             else:
@@ -1083,14 +1086,20 @@ class Sddf:
                 vswitch_obj = None
             else:
                 vswitch_obj = vswitch._obj
+            if vswitch_orchestrator is None:
+                vswitch_orchestrator_obj = None
+            else:
+                vswitch_orchestrator_obj = vswitch_orchestrator._obj
             if rx_dma_mr is None:
                 rx_dma_mr_obj = None
             else:
                 rx_dma_mr_obj = rx_dma_mr._obj
 
             self._obj = libsdfgen.sdfgen_sddf_net(
-                sdf._obj, device_obj, driver._obj, virt_tx._obj, virt_rx._obj, vswitch_obj, rx_dma_mr_obj
+                sdf._obj, device_obj, driver._obj, virt_rx._obj, virt_tx._obj, vswitch_obj, vswitch_orchestrator_obj, rx_dma_mr_obj
             )
+            if self._obj is None:
+                raise Exception("failed to create net system")
 
         def add_client_with_copier(
             self,

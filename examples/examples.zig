@@ -415,7 +415,7 @@ fn webserver(allocator: Allocator, sdf: *SystemDescription, blob: *dtb.Node) !vo
     // var eth_copy_nfs = Pd.create(sdf, "eth_copy_nfs", "copy.elf");
     // sdf.addProtectionDomain(&eth_copy_nfs);
 
-    var eth_system = sddf.Net.init(allocator, sdf, eth_node, &eth_driver, &eth_virt_tx, &eth_virt_rx, .{});
+    var eth_system = sddf.Net.init(allocator, sdf, eth_node, &eth_driver, &eth_virt_tx, &eth_virt_rx, null, null, .{});
     // eth_system.addClientWithCopier(&nfs, &eth_copy_nfs);
     try eth_system.addClientWithCopier(&micropython, &eth_copy_mp, .{});
 
@@ -521,7 +521,7 @@ fn echo_server(allocator: Allocator, sdf: *SystemDescription, blob: *dtb.Node) !
     var eth_virt_rx = Pd.create(allocator, "eth_virt_rx", "network_virt_rx.elf", .{});
     var eth_virt_tx = Pd.create(allocator, "eth_virt_tx", "network_virt_tx.elf", .{});
     var eth_copy_client0 = Pd.create(allocator, "eth_copy_client0", "copy.elf", .{});
-    var eth_system = sddf.Net.init(allocator, sdf, eth_node, &eth_driver, &eth_virt_tx, &eth_virt_rx, .{});
+    var eth_system = sddf.Net.init(allocator, sdf, eth_node, &eth_driver, &eth_virt_tx, &eth_virt_rx, null, null, .{});
 
     // Benchmark PDs
 
