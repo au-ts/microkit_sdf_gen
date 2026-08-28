@@ -146,7 +146,7 @@ sdfgen_sddf_status_t sdfgen_sddf_blk_add_client(void *system, void *client, uint
 bool sdfgen_sddf_blk_connect(void *system);
 bool sdfgen_sddf_blk_serialise_config(void *system, char *output_dir);
 
-void *sdfgen_sddf_net(void *sdf, void *device, void *driver, void *virt_rx, void *virt_tx, void *vswitch, void *rx_dma_mr);
+void *sdfgen_sddf_net(void *sdf, void *device, void *driver, void *virt_rx, void *virt_tx, void *vswitch, void *vswitch_orchestrator, void *rx_dma_mr);
 void sdfgen_sddf_net_destroy(void *system);
 sdfgen_sddf_status_t sdfgen_sddf_net_add_client_with_copier(void *system, void *client, void *copier, uint8_t mac_addr[6], bool rx, bool tx, bool vswitch);
 sdfgen_sddf_status_t sdfgen_sddf_net_add_acl_rule(void *system, void *client0, void *client1, bool zeroToOne, bool oneToZero);

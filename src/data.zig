@@ -297,6 +297,12 @@ pub const Resources = struct {
             ports: [MAX_NUM_CLIENTS]VSwitchPort,
             num_ports: u8,
             buffer_metadata: Region,
+            orchestrator_id: u8,
+        };
+
+        pub const VSwitchOrchestrator = extern struct {
+            magic: [5]u8 = MAGIC,
+            vswitch_id: u8,
         };
     };
 
