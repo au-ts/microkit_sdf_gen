@@ -352,7 +352,12 @@ pub const Net = struct {
             system.sdf.addChannel(channel);
             server_conn.id = channel.pd_a_id;
             client_conn.id = channel.pd_b_id;
-            if (service) |svc| svc.addChannelPpc(channel.pd_b_id);
+            if (service) |svc| {
+                // The vSwitch TX channel uses notifications to signal queued packets.
+                // The same channel uses PPCs for vSwitch control-plane operations.
+                svc.addChannelNotification(channel.pd_b_id);
+                svc.addChannelPpc(channel.pd_b_id);
+            }
         } else {
             const channel = Channel.create(server, client, .{ .pd_b_delegated = if (optional) true else null }) catch @panic("failed to create connection channel");
             system.sdf.addChannel(channel);
