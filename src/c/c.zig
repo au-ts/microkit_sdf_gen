@@ -897,6 +897,7 @@ export fn sdfgen_sddf_net_connect(system: *align(8) anyopaque) bindings.sdfgen_s
     net.connect() catch |e| {
         switch (e) {
             sddf.Net.Error.InvalidClientNumber => return 106,
+            sddf.Net.Error.InvalidChannelNumber => return 108,
             else => @panic("impossible error reached"),
         }
     };

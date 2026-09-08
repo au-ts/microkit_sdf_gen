@@ -21,6 +21,7 @@ const SystemError = sddf.SystemError;
 
 pub const Net = struct {
     const BUFFER_SIZE = 2048;
+    const MAX_CHANNELS = 62;
 
     pub const Error = SystemError || error{
         InvalidClient,
@@ -32,6 +33,7 @@ pub const Net = struct {
         InvalidVSwitchCopier,
         InvalidClientNumber,
         InvalidBufferNumber,
+        InvalidChannelNumber,
     };
 
     pub const Options = struct {
@@ -654,6 +656,25 @@ pub const Net = struct {
     pub fn connect(system: *Net) Error !void {
         if (system.clients.items.len == 0) {
             return Error.InvalidClientNumber;
+        }
+
+        if (system.maybe_vswitch) |vswitch| {
+            // Each data-plane port uses two channels, the virtualiser port uses
+            // two, and each ACL-only client uses one.
+            var required_channels: usize = 2;
+            for (system.client_info.items) |client_info| {
+                if (client_info.vswitch) {
+                    required_channels += 2;
+                }
+            }
+            for (system.acl_clients.items) |acl_client| {
+                if (!system.hasVSwitchPort(acl_client)) {
+                    required_channels += 1;
+                }
+            }
+            if (vswitch.channel_ids.count() + required_channels > MAX_CHANNELS) {
+                return Error.InvalidChannelNumber;
+            }
         }
 
         if (system.device) |dtb_node| {

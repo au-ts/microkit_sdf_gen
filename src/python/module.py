@@ -19,6 +19,7 @@ class SddfStatus(IntEnum):
     NET_INVALID_VSWITCH_COPIER = 105,
     NET_INVALID_CLIENT_NUMBER = 106,
     NET_INVALID_BUFFER_NUMBER = 107,
+    NET_INVALID_CHANNEL_NUMBER = 108,
     GPIO_INVALID_OPTIONS = 203,
 
 
@@ -1202,6 +1203,8 @@ class Sddf:
                 return True
             elif ret == SddfStatus.NET_INVALID_CLIENT_NUMBER:
                 raise Exception(f"can't connect net system with no clients!")
+            elif ret == SddfStatus.NET_INVALID_CHANNEL_NUMBER:
+                raise Exception("vSwitch requires more channel IDs than the PD supports")
 
         def serialise_config(self, output_dir: str) -> bool:
             c_output_dir = c_char_p(output_dir.encode("utf-8"))
