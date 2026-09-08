@@ -66,18 +66,18 @@ pub const Net = struct {
     virt_rx: *Pd,
     virt_tx: *Pd,
     maybe_vswitch: ?*Pd,
-    maybe_vswitch_orchestrator: ?*Pd,
     copiers: std.array_list.Managed(?*Pd),
     clients: std.array_list.Managed(*Pd),
+    acl_clients: std.array_list.Managed(*Pd),
 
     device_res: ConfigResources.Device,
     driver_config: ConfigResources.Net.Driver,
     virt_rx_config: ConfigResources.Net.VirtRx,
     virt_tx_config: ConfigResources.Net.VirtTx,
     vswitch_config: ConfigResources.Net.VSwitch,
-    vswitch_orchestrator_config: ConfigResources.Net.VSwitchOrchestrator,
     copy_configs: std.array_list.Managed(ConfigResources.Net.Copy),
     client_configs: std.array_list.Managed(ConfigResources.Net.Client),
+    acl_client_configs: std.array_list.Managed(ConfigResources.Net.Client),
 
     connected: bool = false,
     serialised: bool = false,
@@ -86,11 +86,7 @@ pub const Net = struct {
     maybe_rx_dma_mr: ?*Mr,
     client_info: std.array_list.Managed(ClientInfo),
 
-    pub fn init(allocator: Allocator, sdf: *SystemDescription, device: ?*dtb.Node, driver: *Pd, virt_tx: *Pd, virt_rx: *Pd, vswitch: ?*Pd, vswitch_orchestrator: ?*Pd, options: Options) Net {
-        if (vswitch_orchestrator != null and vswitch == null) {
-            @panic("vswitch orchestrator requires a vswitch");
-        }
-
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, device: ?*dtb.Node, driver: *Pd, virt_tx: *Pd, virt_rx: *Pd, vswitch: ?*Pd, options: Options) Net {
         if (options.rx_dma_mr) |exists_rx_dma| {
             if (exists_rx_dma.*.paddr == null) {
                 @panic("rx dma region must have a physical address");
@@ -109,6 +105,7 @@ pub const Net = struct {
             .allocator = allocator,
             .sdf = sdf,
             .clients = std.array_list.Managed(*Pd).init(allocator),
+            .acl_clients = std.array_list.Managed(*Pd).init(allocator),
             .copiers = std.array_list.Managed(?*Pd).init(allocator),
             .driver = driver,
             .device = device,
@@ -116,15 +113,14 @@ pub const Net = struct {
             .virt_rx = virt_rx,
             .virt_tx = virt_tx,
             .maybe_vswitch = vswitch,
-            .maybe_vswitch_orchestrator = vswitch_orchestrator,
 
             .driver_config = std.mem.zeroInit(ConfigResources.Net.Driver, .{}),
             .virt_rx_config = std.mem.zeroInit(ConfigResources.Net.VirtRx, .{}),
             .virt_tx_config = std.mem.zeroInit(ConfigResources.Net.VirtTx, .{}),
             .vswitch_config = std.mem.zeroInit(ConfigResources.Net.VSwitch, .{}),
-            .vswitch_orchestrator_config = std.mem.zeroInit(ConfigResources.Net.VSwitchOrchestrator, .{}),
             .copy_configs = std.array_list.Managed(ConfigResources.Net.Copy).init(allocator),
             .client_configs = std.array_list.Managed(ConfigResources.Net.Client).init(allocator),
+            .acl_client_configs = std.array_list.Managed(ConfigResources.Net.Client).init(allocator),
 
             .client_info = std.array_list.Managed(ClientInfo).init(allocator),
             .rx_buffers = options.rx_buffers,
@@ -135,8 +131,10 @@ pub const Net = struct {
     pub fn deinit(system: *Net) void {
         system.copiers.deinit();
         system.clients.deinit();
+        system.acl_clients.deinit();
         system.copy_configs.deinit();
         system.client_configs.deinit();
+        system.acl_client_configs.deinit();
         system.client_info.deinit();
     }
 
@@ -246,6 +244,43 @@ pub const Net = struct {
         system.client_info.items[client_idx].tx = options.tx;
         system.client_info.items[client_idx].tx_buffers = options.tx_buffers;
         system.client_info.items[client_idx].vswitch = options.vswitch;
+    }
+
+    pub fn addAclClient(system: *Net, client: *Pd) Error!void {
+        if (system.maybe_vswitch == null) {
+            return Error.InvalidVSwitch;
+        }
+        for (system.acl_clients.items) |existing_client| {
+            if (std.mem.eql(u8, existing_client.name, client.name)) {
+                return Error.DuplicateClient;
+            }
+        }
+        for (system.clients.items, 0..) |existing_client, i| {
+            if (std.mem.eql(u8, existing_client.name, client.name) and !system.client_info.items[i].vswitch) {
+                return Error.InvalidClient;
+            }
+        }
+
+        system.acl_clients.append(client) catch @panic("Could not add ACL client to Net");
+        system.acl_client_configs.append(std.mem.zeroInit(ConfigResources.Net.Client, .{})) catch @panic("Could not add ACL client to Net");
+    }
+
+    fn hasAclPermission(system: *Net, client: *Pd) bool {
+        for (system.acl_clients.items) |acl_client| {
+            if (std.mem.eql(u8, acl_client.name, client.name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    fn hasVSwitchPort(system: *Net, candidate: *Pd) bool {
+        for (system.clients.items, 0..) |client, i| {
+            if (system.client_info.items[i].vswitch and std.mem.eql(u8, client.name, candidate.name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     pub fn addAclRule(system: *Net, client0: *Pd, client1: *Pd, zeroToOne: bool, oneToZero: bool) Error!void {
@@ -495,6 +530,7 @@ pub const Net = struct {
         var vswitch_config = &system.vswitch_config;
 
         system.createConnection(vswitch, client, &vswitch_config.ports[system.vswitch_config.num_ports].tx, &client_config.tx, client_info.tx_buffers, true);
+        vswitch_config.ports[system.vswitch_config.num_ports].acl_set_permission = system.hasAclPermission(client);
 
         const data_mr_size = system.sdf.arch.roundUpToPage(client_info.tx_buffers * BUFFER_SIZE);
         const data_mr_name = fmt(system.allocator, "{s}/net/tx/data/client/{s}", .{ system.deviceName(), client.name });
@@ -661,16 +697,19 @@ pub const Net = struct {
             system.client_configs.items[i].mac_addr = system.client_info.items[i].mac_addr.?;
         }
 
+        for (system.acl_clients.items, 0..) |acl_client, i| {
+            if (!system.hasVSwitchPort(acl_client)) {
+                const channel = Channel.create(system.maybe_vswitch.?, acl_client, .{ .pp = .b }) catch @panic("failed to create vSwitch ACL client channel");
+                system.sdf.addChannel(channel);
+                system.vswitch_config.acl_client_ids[system.vswitch_config.num_acl_clients] = channel.pd_a_id;
+                system.vswitch_config.num_acl_clients += 1;
+                system.acl_client_configs.items[i].tx.id = channel.pd_b_id;
+            }
+        }
+
         if (system.maybe_vswitch != null) {
             system.vswitchRxConnect(rx_dma_mr, num_vswitch_client_buffers + system.rx_buffers);
             system.vswitchTxConnect(num_vswitch_client_buffers);
-
-            if (system.maybe_vswitch_orchestrator) |vswitch_orchestrator| {
-                const channel = Channel.create(system.maybe_vswitch.?, vswitch_orchestrator, .{ .pd_a_notify = false, .pd_b_notify = false, .pp = .b }) catch @panic("failed to create vswitch orchestrator channel");
-                system.sdf.addChannel(channel);
-                system.vswitch_config.orchestrator_id = channel.pd_a_id;
-                system.vswitch_orchestrator_config.vswitch_id = channel.pd_b_id;
-            }
 
             system.virt_rx_config.num_clients += 1;
             system.virt_tx_config.num_clients += 1;
@@ -692,8 +731,6 @@ pub const Net = struct {
         try data.serialize(allocator, system.virt_tx_config, prefix, "net_virt_tx");
         if (system.maybe_vswitch != null)
             try data.serialize(allocator, system.vswitch_config, prefix, "net_vswitch");
-        if (system.maybe_vswitch_orchestrator != null)
-            try data.serialize(allocator, system.vswitch_orchestrator_config, prefix, "net_vswitch_orchestrator");
 
         for (system.copiers.items, 0..) |maybe_copier, i| {
             if (maybe_copier) |copier| {
@@ -705,6 +742,13 @@ pub const Net = struct {
         for (system.clients.items, 0..) |client, i| {
             const data_name = fmt(allocator, "net_client_{s}", .{client.name});
             try data.serialize(allocator, system.client_configs.items[i], prefix, data_name);
+        }
+
+        for (system.acl_clients.items, 0..) |acl_client, i| {
+            if (!system.hasVSwitchPort(acl_client)) {
+                const data_name = fmt(allocator, "net_client_{s}", .{acl_client.name});
+                try data.serialize(allocator, system.acl_client_configs.items[i], prefix, data_name);
+            }
         }
 
         system.serialised = true;

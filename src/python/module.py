@@ -223,7 +223,7 @@ libsdfgen.sdfgen_sddf_serial_serialise_config.restype = c_bool
 libsdfgen.sdfgen_sddf_serial_serialise_config.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_sddf_net.restype = c_void_p
-libsdfgen.sdfgen_sddf_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p]
+libsdfgen.sdfgen_sddf_net.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_void_p]
 libsdfgen.sdfgen_sddf_net_destroy.restype = None
 libsdfgen.sdfgen_sddf_net_destroy.argtypes = [c_void_p]
 
@@ -237,6 +237,8 @@ libsdfgen.sdfgen_sddf_net_add_client_with_copier.argtypes = [
     c_bool,
     c_bool
 ]
+libsdfgen.sdfgen_sddf_net_add_acl_client.restype = c_uint8
+libsdfgen.sdfgen_sddf_net_add_acl_client.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_sddf_net_add_acl_rule.restype = c_uint8
 libsdfgen.sdfgen_sddf_net_add_acl_rule.argtypes = [c_void_p, c_void_p, c_void_p, c_bool, c_bool]
 
@@ -1073,11 +1075,8 @@ class Sddf:
             virt_rx: SystemDescription.ProtectionDomain,
             *,
             vswitch: Optional[SystemDescription.ProtectionDomain] = None,
-            vswitch_orchestrator: Optional[SystemDescription.ProtectionDomain] = None,
             rx_dma_mr: Optional[SystemDescription.MemoryRegion] = None
         ) -> None:
-            if vswitch_orchestrator is not None and vswitch is None:
-                raise ValueError("vswitch_orchestrator requires vswitch")
             if device is None:
                 device_obj = None
             else:
@@ -1086,17 +1085,13 @@ class Sddf:
                 vswitch_obj = None
             else:
                 vswitch_obj = vswitch._obj
-            if vswitch_orchestrator is None:
-                vswitch_orchestrator_obj = None
-            else:
-                vswitch_orchestrator_obj = vswitch_orchestrator._obj
             if rx_dma_mr is None:
                 rx_dma_mr_obj = None
             else:
                 rx_dma_mr_obj = rx_dma_mr._obj
 
             self._obj = libsdfgen.sdfgen_sddf_net(
-                sdf._obj, device_obj, driver._obj, virt_rx._obj, virt_tx._obj, vswitch_obj, vswitch_orchestrator_obj, rx_dma_mr_obj
+                sdf._obj, device_obj, driver._obj, virt_rx._obj, virt_tx._obj, vswitch_obj, rx_dma_mr_obj
             )
             if self._obj is None:
                 raise Exception("failed to create net system")
@@ -1162,6 +1157,23 @@ class Sddf:
                 raise Exception(f"vswitch clients require a copier")
             elif ret == SddfStatus.NET_INVALID_BUFFER_NUMBER:
                 raise Exception(f"clients may only have a power of two number of buffers")
+            else:
+                raise Exception(f"internal error: {ret}")
+
+        def add_acl_client(
+            self,
+            client: SystemDescription.ProtectionDomain
+        ) -> None:
+            """Add a client that can update vSwitch ACLs without a data-plane connection."""
+            ret = libsdfgen.sdfgen_sddf_net_add_acl_client(self._obj, client._obj)
+            if ret == SddfStatus.OK:
+                return
+            elif ret == SddfStatus.DUPLICATE_CLIENT:
+                raise Exception(f"duplicate ACL client given '{client}'")
+            elif ret == SddfStatus.INVALID_CLIENT:
+                raise Exception(f"client '{client}' already has a non-vSwitch network connection")
+            elif ret == SddfStatus.NET_INVALID_VSWITCH:
+                raise Exception("net system has no vswitch")
             else:
                 raise Exception(f"internal error: {ret}")
 
