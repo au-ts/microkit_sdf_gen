@@ -21,6 +21,8 @@ const SystemError = sddf.SystemError;
 
 // TODO: probably make all queue_capacity/num_buffers u32
 pub const Blk = struct {
+    /// Must match DRIVER_MAX_NUM_BUFFERS in sDDF's blk/components/virt.c.
+    pub const DRIVER_MAX_NUM_BUFFERS: u16 = 1024;
     allocator: Allocator,
     sdf: *SystemDescription,
     driver: *Pd,
@@ -51,6 +53,7 @@ pub const Blk = struct {
 
     pub const Error = SystemError || error{
         InvalidVirt,
+        DriverQueueCapacityExceeded,
     };
 
     pub const Options = struct {};
@@ -133,13 +136,20 @@ pub const Blk = struct {
         return @as(u32, driverQueueCapacity(system)) * @as(u32, 128);
     }
 
-    pub fn connectDriver(system: *Blk) void {
+    pub fn connectDriver(system: *Blk) Error!void {
         const sdf = system.sdf;
         const allocator = system.allocator;
         const driver = system.driver;
         const virt = system.virt;
         const queue_mr_size = driverQueueMrSize(system);
         const queue_capacity = driverQueueCapacity(system);
+        if (queue_capacity > DRIVER_MAX_NUM_BUFFERS) {
+            log.err("block driver queue capacity {} exceeds sDDF blk_virt limit {}", .{
+                queue_capacity,
+                DRIVER_MAX_NUM_BUFFERS,
+            });
+            return Error.DriverQueueCapacityExceeded;
+        }
 
         const mr_storage_info = Mr.create(allocator, "blk_driver_storage_info", STORAGE_INFO_REGION_SIZE, .{});
         const map_storage_info_driver = Map.create(mr_storage_info, system.driver.getMapVaddr(&mr_storage_info), .rw, .{});
@@ -267,7 +277,7 @@ pub const Blk = struct {
             try sddf.createDriver(sdf, system.driver, dtb_node, .blk, &system.device_res);
         }
         // 2. Connect the driver to the virtualiser
-        system.connectDriver();
+        try system.connectDriver();
         // 3. Connect each client to the virtualiser
         for (system.clients.items, 0..) |*client, i| {
             system.connectClient(client, i);

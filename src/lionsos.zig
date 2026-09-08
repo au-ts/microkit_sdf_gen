@@ -260,10 +260,12 @@ pub const FileSystem = struct {
         data: ConfigResources.Fs,
         blk: *Blk,
         partition: u32,
+        blk_queue_capacity: u16,
         optional: bool,
 
         pub const Options = struct {
             partition: u32,
+            blk_queue_capacity: u16 = 128,
             optional: bool = false,
         };
 
@@ -273,6 +275,7 @@ pub const FileSystem = struct {
                 .fs = try FileSystem.init(allocator, sdf, fs, client, .{}),
                 .blk = blk,
                 .partition = options.partition,
+                .blk_queue_capacity = options.blk_queue_capacity,
                 .optional = options.optional,
                 .data = std.mem.zeroInit(ConfigResources.Fs, .{}),
             };
@@ -285,6 +288,7 @@ pub const FileSystem = struct {
 
             try fat.blk.addClient(fs_pd, .{
                 .partition = fat.partition,
+                .queue_capacity = fat.blk_queue_capacity,
             });
             fat.fs.connect(.{ .optional = fat.optional });
             // Special things for FATFS

@@ -174,7 +174,7 @@ bool sdfgen_vmm_connect(void *vmm);
 
 /*** LionsOS ***/
 
-void *sdfgen_lionsos_fs_fat(void *sdf, void *fs, void *client, void *blk, uint32_t partition, bool optional);
+void *sdfgen_lionsos_fs_fat(void *sdf, void *fs, void *client, void *blk, uint32_t partition, uint16_t blk_queue_capacity, bool optional);
 bool sdfgen_lionsos_fs_fat_connect(void *system);
 bool sdfgen_lionsos_fs_fat_serialise_config(void *system, char *output_dir);
 
