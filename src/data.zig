@@ -286,19 +286,38 @@ pub const Resources = struct {
         };
 
         pub const VSwitch = extern struct {
+            const CONNECTION_VALUE_MASK: u8 = 0x3f;
+            const CONNECTION_CHANNEL: u8 = 0x00;
+            const CONNECTION_PORT: u8 = 0x40;
+
+            /// Encode a data-plane port reference as a vSwitch client connection.
+            pub fn connectionFromPort(port: u8) u8 {
+                std.debug.assert(port <= CONNECTION_VALUE_MASK);
+                return CONNECTION_PORT | port;
+            }
+
+            /// Encode a direct PPC channel as a vSwitch client connection.
+            pub fn connectionFromChannel(channel: u8) u8 {
+                std.debug.assert(channel <= CONNECTION_VALUE_MASK);
+                return CONNECTION_CHANNEL | channel;
+            }
+
             pub const VSwitchPort = extern struct {
                 rx: Connection,
                 tx: Connection,
                 tx_data: Region,
                 mac_addr: [6]u8,
-                acl: u64,
+                initial_acl: u64,
+            };
+            pub const VSwitchClient = extern struct {
+                connection: u8,
                 acl_set_permission: bool,
             };
             magic: [5]u8 = MAGIC,
             ports: [MAX_NUM_CLIENTS]VSwitchPort,
             num_ports: u8,
-            acl_client_ids: [MAX_NUM_CLIENTS]u8,
-            num_acl_clients: u8,
+            clients: [MAX_NUM_CLIENTS]VSwitchClient,
+            num_clients: u8,
             buffer_metadata: Region,
         };
     };

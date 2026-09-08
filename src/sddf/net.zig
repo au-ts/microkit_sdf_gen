@@ -331,18 +331,18 @@ pub const Net = struct {
 
         if (zeroToOne) {
             const bit: u6 = @intCast(client1Port.?);
-            system.vswitch_config.ports[client0Port.?].acl |= (@as(u64, 1) << bit);
+            system.vswitch_config.ports[client0Port.?].initial_acl |= (@as(u64, 1) << bit);
         } else {
             const bit: u6 = @intCast(client1Port.?);
-            system.vswitch_config.ports[client0Port.?].acl &= ~(@as(u64, 1) << bit);
+            system.vswitch_config.ports[client0Port.?].initial_acl &= ~(@as(u64, 1) << bit);
         }
 
         if (oneToZero) {
             const bit: u6 = @intCast(client0Port.?);
-            system.vswitch_config.ports[client1Port.?].acl |= (@as(u64, 1) << bit);
+            system.vswitch_config.ports[client1Port.?].initial_acl |= (@as(u64, 1) << bit);
         } else {
             const bit: u6 = @intCast(client0Port.?);
-            system.vswitch_config.ports[client1Port.?].acl &= ~(@as(u64, 1) << bit);
+            system.vswitch_config.ports[client1Port.?].initial_acl &= ~(@as(u64, 1) << bit);
         }
     }
 
@@ -532,7 +532,11 @@ pub const Net = struct {
         var vswitch_config = &system.vswitch_config;
 
         system.createConnection(vswitch, client, &vswitch_config.ports[system.vswitch_config.num_ports].tx, &client_config.tx, client_info.tx_buffers, true);
-        vswitch_config.ports[system.vswitch_config.num_ports].acl_set_permission = system.hasAclPermission(client);
+
+        var vswitch_client = &vswitch_config.clients[vswitch_config.num_clients];
+        vswitch_client.connection = ConfigResources.Net.VSwitch.connectionFromPort(vswitch_config.num_ports);
+        vswitch_client.acl_set_permission = system.hasAclPermission(client);
+        vswitch_config.num_clients += 1;
 
         const data_mr_size = system.sdf.arch.roundUpToPage(client_info.tx_buffers * BUFFER_SIZE);
         const data_mr_name = fmt(system.allocator, "{s}/net/tx/data/client/{s}", .{ system.deviceName(), client.name });
@@ -722,8 +726,10 @@ pub const Net = struct {
             if (!system.hasVSwitchPort(acl_client)) {
                 const channel = Channel.create(system.maybe_vswitch.?, acl_client, .{ .pp = .b }) catch @panic("failed to create vSwitch ACL client channel");
                 system.sdf.addChannel(channel);
-                system.vswitch_config.acl_client_ids[system.vswitch_config.num_acl_clients] = channel.pd_a_id;
-                system.vswitch_config.num_acl_clients += 1;
+                var vswitch_client = &system.vswitch_config.clients[system.vswitch_config.num_clients];
+                vswitch_client.connection = ConfigResources.Net.VSwitch.connectionFromChannel(channel.pd_a_id);
+                vswitch_client.acl_set_permission = true;
+                system.vswitch_config.num_clients += 1;
                 system.acl_client_configs.items[i].tx.id = channel.pd_b_id;
             }
         }
