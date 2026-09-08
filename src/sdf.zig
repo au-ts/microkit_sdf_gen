@@ -916,6 +916,7 @@ pub const SystemDescription = struct {
         data_path: ?[]const u8,
 
         pub const Type = struct {
+            pub const file_system: u8 = 0;
             pub const serial: u8 = 1;
             pub const network: u8 = 2;
             pub const timer: u8 = 3;

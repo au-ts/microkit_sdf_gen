@@ -1175,12 +1175,13 @@ export fn sdfgen_vmm_serialise_config(c_vmm: *align(8) anyopaque, output_dir: [*
     return true;
 }
 
-export fn sdfgen_lionsos_fs_fat(c_sdf: *align(8) anyopaque, c_fs: *align(8) anyopaque, c_client: *align(8) anyopaque, blk: *align(8) anyopaque, partition: u32) ?*anyopaque {
+export fn sdfgen_lionsos_fs_fat(c_sdf: *align(8) anyopaque, c_fs: *align(8) anyopaque, c_client: *align(8) anyopaque, blk: *align(8) anyopaque, partition: u32, optional: bool) ?*anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const fs_pd: *Pd = @ptrCast(c_fs);
     const fs = allocator.create(lionsos.FileSystem.Fat) catch @panic("OOM");
     fs.* = lionsos.FileSystem.Fat.init(allocator, sdf, fs_pd, @ptrCast(c_client), @ptrCast(blk), .{
         .partition = partition,
+        .optional = optional,
     }) catch |e| {
         log.err("failed to create FAT file system '{s}': {any}", .{ fs_pd.name, e });
         return null;

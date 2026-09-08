@@ -345,7 +345,7 @@ libsdfgen.sdfgen_vmm_serialise_config.restype = c_bool
 libsdfgen.sdfgen_vmm_serialise_config.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_lionsos_fs_fat.restype = c_void_p
-libsdfgen.sdfgen_lionsos_fs_fat.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_uint32]
+libsdfgen.sdfgen_lionsos_fs_fat.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_uint32, c_bool]
 libsdfgen.sdfgen_lionsos_fs_fat_connect.restype = c_bool
 libsdfgen.sdfgen_lionsos_fs_fat_connect.argtypes = [c_void_p]
 libsdfgen.sdfgen_lionsos_fs_fat_serialise_config.restype = c_bool
@@ -1620,6 +1620,7 @@ class LionsOs:
                 *,
                 blk: Sddf.Blk,
                 partition: int,
+                optional: bool = False,
             ):
                 if partition < 0:
                     raise Exception(
@@ -1627,7 +1628,9 @@ class LionsOs:
                     )
 
                 assert isinstance(blk, Sddf.Blk)
-                self._obj = libsdfgen.sdfgen_lionsos_fs_fat(sdf._obj, fs._obj, client._obj, blk._obj, partition)
+                self._obj = libsdfgen.sdfgen_lionsos_fs_fat(
+                    sdf._obj, fs._obj, client._obj, blk._obj, partition, optional
+                )
                 if self._obj is None:
                     raise Exception("failed to create FAT file system")
 

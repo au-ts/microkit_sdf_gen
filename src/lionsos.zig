@@ -91,6 +91,7 @@ pub const FileSystem = struct {
         command_vaddr: ?u64 = null,
         completion_vaddr: ?u64 = null,
         share_vaddr: ?u64 = null,
+        optional: bool = false,
     };
 
     pub fn connect(system: *FileSystem, options: ConnectOptions) void {
@@ -126,26 +127,60 @@ pub const FileSystem = struct {
         system.server_config.client.share = .createFromMap(server_share_map);
         createMapping(fs, server_share_map);
 
-        const client_command_map = Map.create(fs_command_queue, client.getMapVaddr(&fs_command_queue), .rw, .{ .cached = options.cached });
+        var service: ?SystemDescription.OSService = null;
+        if (options.optional) {
+            const data_path = fmt(allocator, "fs_client_{s}.data", .{client.name});
+            service = SystemDescription.OSService.create(
+                allocator,
+                null,
+                SystemDescription.OSService.Type.file_system,
+                data_path,
+            );
+            allocator.free(data_path);
+        }
+        const service_ptr: ?*SystemDescription.OSService = if (service) |*svc| svc else null;
+
+        const client_command_map = Map.create(fs_command_queue, client.getMapVaddr(&fs_command_queue), .rw, .{
+            .cached = options.cached,
+            .delegated = if (options.optional) true else null,
+        });
         system.client.addMap(client_command_map);
         system.client_config.server.command_queue = .createFromMap(client_command_map);
+        if (service_ptr) |svc| svc.addMap(client_command_map);
 
-        const client_completion_map = Map.create(fs_completion_queue, client.getMapVaddr(&fs_completion_queue), .rw, .{ .cached = options.cached });
+        const client_completion_map = Map.create(fs_completion_queue, client.getMapVaddr(&fs_completion_queue), .rw, .{
+            .cached = options.cached,
+            .delegated = if (options.optional) true else null,
+        });
 
         system.client.addMap(client_completion_map);
         system.client_config.server.completion_queue = .createFromMap(client_completion_map);
+        if (service_ptr) |svc| svc.addMap(client_completion_map);
 
-        const client_share_map = Map.create(fs_share, client.getMapVaddr(&fs_share), .rw, .{ .cached = options.cached });
+        const client_share_map = Map.create(fs_share, client.getMapVaddr(&fs_share), .rw, .{
+            .cached = options.cached,
+            .delegated = if (options.optional) true else null,
+        });
         system.client.addMap(client_share_map);
         system.client_config.server.share = .createFromMap(client_share_map);
+        if (service_ptr) |svc| svc.addMap(client_share_map);
 
         system.server_config.client.queue_len = 512;
         system.client_config.server.queue_len = 512;
 
-        const channel = Channel.create(system.fs, system.client, .{}) catch @panic("failed to create connection channel");
+        const channel = Channel.create(system.fs, system.client, .{
+            .pd_b_delegated = if (options.optional) true else null,
+        }) catch @panic("failed to create connection channel");
         system.sdf.addChannel(channel);
         system.server_config.client.id = channel.pd_a_id;
         system.client_config.server.id = channel.pd_b_id;
+        if (service) |*svc| {
+            // `svc` must remain a pointer here.  Capturing it by value copies
+            // ArrayList's length before addChannelNotification(), causing the
+            // generated optional-service descriptor to omit the notification.
+            svc.addChannelNotification(channel.pd_b_id);
+            _ = client.addOSService(svc.*) catch @panic("failed to add file system OS service");
+        }
     }
 
     pub fn serialiseConfig(system: *FileSystem, prefix: []const u8) !void {
@@ -225,9 +260,11 @@ pub const FileSystem = struct {
         data: ConfigResources.Fs,
         blk: *Blk,
         partition: u32,
+        optional: bool,
 
         pub const Options = struct {
             partition: u32,
+            optional: bool = false,
         };
 
         pub fn init(allocator: Allocator, sdf: *SystemDescription, fs: *Pd, client: *Pd, blk: *Blk, options: Fat.Options) Error!Fat {
@@ -236,6 +273,7 @@ pub const FileSystem = struct {
                 .fs = try FileSystem.init(allocator, sdf, fs, client, .{}),
                 .blk = blk,
                 .partition = options.partition,
+                .optional = options.optional,
                 .data = std.mem.zeroInit(ConfigResources.Fs, .{}),
             };
         }
@@ -248,7 +286,7 @@ pub const FileSystem = struct {
             try fat.blk.addClient(fs_pd, .{
                 .partition = fat.partition,
             });
-            fat.fs.connect(.{});
+            fat.fs.connect(.{ .optional = fat.optional });
             // Special things for FATFS
             const stack1 = Mr.create(allocator, fmt(allocator, "{s}_stack1", .{fs_pd.name}), 0x40_000, .{});
             const stack2 = Mr.create(allocator, fmt(allocator, "{s}_stack2", .{fs_pd.name}), 0x40_000, .{});
