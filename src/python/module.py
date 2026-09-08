@@ -19,6 +19,7 @@ class SddfStatus(IntEnum):
     NET_INVALID_VSWITCH_COPIER = 105,
     NET_INVALID_CLIENT_NUMBER = 106,
     NET_INVALID_BUFFER_NUMBER = 107,
+    NET_INVALID_CHANNEL_NUMBER = 108,
     GPIO_INVALID_OPTIONS = 203,
 
 
@@ -237,6 +238,8 @@ libsdfgen.sdfgen_sddf_net_add_client_with_copier.argtypes = [
     c_bool,
     c_bool
 ]
+libsdfgen.sdfgen_sddf_net_add_acl_client.restype = c_uint8
+libsdfgen.sdfgen_sddf_net_add_acl_client.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_sddf_net_add_acl_rule.restype = c_uint8
 libsdfgen.sdfgen_sddf_net_add_acl_rule.argtypes = [c_void_p, c_void_p, c_void_p, c_bool, c_bool]
 
@@ -1089,8 +1092,10 @@ class Sddf:
                 rx_dma_mr_obj = rx_dma_mr._obj
 
             self._obj = libsdfgen.sdfgen_sddf_net(
-                sdf._obj, device_obj, driver._obj, virt_tx._obj, virt_rx._obj, vswitch_obj, rx_dma_mr_obj
+                sdf._obj, device_obj, driver._obj, virt_rx._obj, virt_tx._obj, vswitch_obj, rx_dma_mr_obj
             )
+            if self._obj is None:
+                raise Exception("failed to create net system")
 
         def add_client_with_copier(
             self,
@@ -1156,6 +1161,23 @@ class Sddf:
             else:
                 raise Exception(f"internal error: {ret}")
 
+        def add_acl_client(
+            self,
+            client: SystemDescription.ProtectionDomain
+        ) -> None:
+            """Add a client that can update vSwitch ACLs without a data-plane connection."""
+            ret = libsdfgen.sdfgen_sddf_net_add_acl_client(self._obj, client._obj)
+            if ret == SddfStatus.OK:
+                return
+            elif ret == SddfStatus.DUPLICATE_CLIENT:
+                raise Exception(f"duplicate ACL client given '{client}'")
+            elif ret == SddfStatus.INVALID_CLIENT:
+                raise Exception(f"client '{client}' already has a non-vSwitch network connection")
+            elif ret == SddfStatus.NET_INVALID_VSWITCH:
+                raise Exception("net system has no vswitch")
+            else:
+                raise Exception(f"internal error: {ret}")
+
         def add_acl_rule(
                 self,
                 client0: SystemDescription.ProtectionDomain,
@@ -1181,6 +1203,8 @@ class Sddf:
                 return True
             elif ret == SddfStatus.NET_INVALID_CLIENT_NUMBER:
                 raise Exception(f"can't connect net system with no clients!")
+            elif ret == SddfStatus.NET_INVALID_CHANNEL_NUMBER:
+                raise Exception("vSwitch requires more channel IDs than the PD supports")
 
         def serialise_config(self, output_dir: str) -> bool:
             c_output_dir = c_char_p(output_dir.encode("utf-8"))
