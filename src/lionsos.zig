@@ -436,7 +436,7 @@ pub const FileSystem = struct {
                     const path = fmt(shared.allocator, "fs_client_{s}_{s}.data", .{ client.name, shared.fs.name });
                     defer shared.allocator.free(path);
                     var service = SystemDescription.OSService.create(shared.allocator, null,
-                        SystemDescription.OSService.Type.file_system, path);
+                        SystemDescription.OSService.Type.shared_file_system, path);
                     service.addResource(.map, conn.b.command_queue.vaddr);
                     service.addResource(.map, conn.b.completion_queue.vaddr);
                     service.addMap(client_share);

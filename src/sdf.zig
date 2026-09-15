@@ -920,6 +920,7 @@ pub const SystemDescription = struct {
             pub const serial: u8 = 1;
             pub const network: u8 = 2;
             pub const timer: u8 = 3;
+            pub const shared_file_system: u8 = 5;
         };
 
         pub const ResourceKind = enum(u8) {
