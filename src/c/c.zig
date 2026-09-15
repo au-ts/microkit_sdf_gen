@@ -1213,6 +1213,37 @@ export fn sdfgen_lionsos_fs_fat_serialise_config(system: *align(8) anyopaque, ou
     return true;
 }
 
+export fn sdfgen_lionsos_fs_shared_fat(c_sdf: *align(8) anyopaque, c_fs: *align(8) anyopaque, c_multiplexer: *align(8) anyopaque, blk: *align(8) anyopaque, partition: u32, blk_queue_capacity: u16, optional: bool) ?*anyopaque {
+    const shared = allocator.create(lionsos.FileSystem.SharedFat) catch @panic("OOM");
+    shared.* = lionsos.FileSystem.SharedFat.init(allocator, @ptrCast(c_sdf), @ptrCast(c_fs), @ptrCast(c_multiplexer), @ptrCast(blk), .{
+        .partition = partition,
+        .blk_queue_capacity = blk_queue_capacity,
+        .optional = optional,
+    }) catch return null;
+    return shared;
+}
+
+export fn sdfgen_lionsos_fs_shared_fat_add_client(system: *align(8) anyopaque, c_client: *align(8) anyopaque) bool {
+    const shared: *lionsos.FileSystem.SharedFat = @ptrCast(system);
+    shared.addClient(@ptrCast(c_client)) catch return false;
+    return true;
+}
+
+export fn sdfgen_lionsos_fs_shared_fat_connect(system: *align(8) anyopaque) bool {
+    const shared: *lionsos.FileSystem.SharedFat = @ptrCast(system);
+    shared.connect() catch |e| {
+        log.err("failed to connect shared FAT file system '{s}': {any}", .{ shared.fs.name, e });
+        return false;
+    };
+    return true;
+}
+
+export fn sdfgen_lionsos_fs_shared_fat_serialise_config(system: *align(8) anyopaque, output_dir: [*c]u8) bool {
+    const shared: *lionsos.FileSystem.SharedFat = @ptrCast(system);
+    shared.serialiseConfig(std.mem.span(output_dir)) catch return false;
+    return true;
+}
+
 export fn sdfgen_lionsos_fs_nfs(c_sdf: *align(8) anyopaque, c_fs: *align(8) anyopaque, c_client: *align(8) anyopaque, c_net: *align(8) anyopaque, c_net_copier: *align(8) anyopaque, mac_addr: [*c]u8, c_serial: *align(8) anyopaque, c_timer: *align(8) anyopaque, nfs_server: [*c]u8, nfs_export_path: [*c]u8) ?*anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const fs_pd: *Pd = @ptrCast(c_fs);

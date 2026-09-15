@@ -312,6 +312,161 @@ pub const FileSystem = struct {
         }
     };
 
+    /// A FAT server shared by several clients through a dedicated request
+    /// multiplexer. This is separate from Fat so the existing one-client API
+    /// and generated configuration remain unchanged.
+    pub const SharedFat = struct {
+        allocator: Allocator,
+        sdf: *SystemDescription,
+        fs: *Pd,
+        multiplexer: *Pd,
+        clients: std.array_list.Managed(*Pd),
+        blk: *Blk,
+        partition: u32,
+        blk_queue_capacity: u16,
+        optional: bool,
+        mux_config: ConfigResources.Fs.Multiplexer,
+        server_config: ConfigResources.Fs.SharedServer,
+        client_configs: std.array_list.Managed(ConfigResources.Fs.Client),
+
+        pub const Options = struct {
+            partition: u32,
+            blk_queue_capacity: u16 = 128,
+            optional: bool = false,
+        };
+
+        pub fn init(allocator: Allocator, sdf: *SystemDescription, fs: *Pd,
+                    multiplexer: *Pd, blk: *Blk, options: SharedFat.Options) FileSystem.Error!SharedFat {
+            if (std.mem.eql(u8, fs.name, multiplexer.name)) return Error.InvalidClient;
+            return .{
+                .allocator = allocator,
+                .sdf = sdf,
+                .fs = fs,
+                .multiplexer = multiplexer,
+                .clients = .init(allocator),
+                .blk = blk,
+                .partition = options.partition,
+                .blk_queue_capacity = options.blk_queue_capacity,
+                .optional = options.optional,
+                .mux_config = std.mem.zeroInit(ConfigResources.Fs.Multiplexer, .{}),
+                .server_config = std.mem.zeroInit(ConfigResources.Fs.SharedServer, .{}),
+                .client_configs = .init(allocator),
+            };
+        }
+
+        pub fn addClient(shared: *SharedFat, client: *Pd) !void {
+            if (shared.clients.items.len == ConfigResources.Fs.MAX_MULTIPLEXER_CLIENTS)
+                return error.TooManyClients;
+            if (std.mem.eql(u8, client.name, shared.fs.name) or
+                std.mem.eql(u8, client.name, shared.multiplexer.name))
+                return Error.InvalidClient;
+            for (shared.clients.items) |existing| {
+                if (std.mem.eql(u8, existing.name, client.name)) return error.DuplicateClient;
+            }
+            shared.clients.append(client) catch @panic("OOM");
+        }
+
+        fn addConnection(shared: *SharedFat, a: *Pd, b: *Pd, name: []const u8,
+                         tagged: bool) struct { a: ConfigResources.Fs.Connection, b: ConfigResources.Fs.Connection } {
+            const allocator = shared.allocator;
+            const queue_size: usize = if (tagged) 0x10_000 else 0x8000;
+            const commands = Mr.create(allocator, fmt(allocator, "fs_{s}_command_queue", .{name}), queue_size, .{});
+            const completions = Mr.create(allocator, fmt(allocator, "fs_{s}_completion_queue", .{name}), queue_size, .{});
+            shared.sdf.addMemoryRegion(commands);
+            shared.sdf.addMemoryRegion(completions);
+            const a_cmd = Map.create(commands, a.getMapVaddr(&commands), .rw, .{});
+            const delegated: ?bool = if (!tagged and shared.optional) true else null;
+            const b_cmd = Map.create(commands, b.getMapVaddr(&commands), .rw, .{ .delegated = delegated });
+            FileSystem.createMapping(a, a_cmd);
+            FileSystem.createMapping(b, b_cmd);
+            const a_cmpl = Map.create(completions, a.getMapVaddr(&completions), .rw, .{});
+            const b_cmpl = Map.create(completions, b.getMapVaddr(&completions), .rw, .{ .delegated = delegated });
+            FileSystem.createMapping(a, a_cmpl);
+            FileSystem.createMapping(b, b_cmpl);
+            const channel = Channel.create(a, b, .{ .pd_b_delegated = delegated }) catch @panic("failed to create FS multiplexer channel");
+            shared.sdf.addChannel(channel);
+            var a_conn = std.mem.zeroInit(ConfigResources.Fs.Connection, .{});
+            var b_conn = std.mem.zeroInit(ConfigResources.Fs.Connection, .{});
+            a_conn.command_queue = .createFromMap(a_cmd);
+            a_conn.completion_queue = .createFromMap(a_cmpl);
+            a_conn.queue_len = 512;
+            a_conn.id = channel.pd_a_id;
+            b_conn.command_queue = .createFromMap(b_cmd);
+            b_conn.completion_queue = .createFromMap(b_cmpl);
+            b_conn.queue_len = 512;
+            b_conn.id = channel.pd_b_id;
+            return .{ .a = a_conn, .b = b_conn };
+        }
+
+        pub fn connect(shared: *SharedFat) !void {
+            if (shared.clients.items.len == 0) return error.InvalidClient;
+            try shared.blk.addClient(shared.fs, .{
+                .partition = shared.partition,
+                .queue_capacity = shared.blk_queue_capacity,
+            });
+
+            const server_name = fmt(shared.allocator, "{s}_{s}", .{ shared.multiplexer.name, shared.fs.name });
+            const server_conn = shared.addConnection(shared.multiplexer, shared.fs, server_name, true);
+            shared.mux_config.server = server_conn.a;
+            shared.server_config.multiplexer = server_conn.b;
+
+            for (shared.clients.items, 0..) |client, i| {
+                const conn_name = fmt(shared.allocator, "{s}_{s}", .{ shared.multiplexer.name, client.name });
+                const conn = shared.addConnection(shared.multiplexer, client, conn_name, false);
+                const share_mr = Mr.create(shared.allocator,
+                    fmt(shared.allocator, "fs_{s}_{s}_share", .{ shared.fs.name, client.name }),
+                    64 * 1024 * 1024, .{});
+                shared.sdf.addMemoryRegion(share_mr);
+                const mux_share = Map.create(share_mr, shared.multiplexer.getMapVaddr(&share_mr), .rw, .{});
+                const fs_share = Map.create(share_mr, shared.fs.getMapVaddr(&share_mr), .rw, .{});
+                const client_share = Map.create(share_mr, client.getMapVaddr(&share_mr), .rw, .{
+                    .delegated = if (shared.optional) true else null,
+                });
+                FileSystem.createMapping(shared.multiplexer, mux_share);
+                FileSystem.createMapping(shared.fs, fs_share);
+                FileSystem.createMapping(client, client_share);
+                shared.mux_config.clients[i] = conn.a;
+                shared.mux_config.clients[i].share = .createFromMap(mux_share);
+                shared.server_config.client_shares[i] = .createFromMap(fs_share);
+                var client_config = std.mem.zeroInit(ConfigResources.Fs.Client, .{});
+                client_config.server = conn.b;
+                client_config.server.share = .createFromMap(client_share);
+                shared.client_configs.append(client_config) catch @panic("OOM");
+                if (shared.optional) {
+                    const path = fmt(shared.allocator, "fs_client_{s}_{s}.data", .{ client.name, shared.fs.name });
+                    defer shared.allocator.free(path);
+                    var service = SystemDescription.OSService.create(shared.allocator, null,
+                        SystemDescription.OSService.Type.file_system, path);
+                    service.addResource(.map, conn.b.command_queue.vaddr);
+                    service.addResource(.map, conn.b.completion_queue.vaddr);
+                    service.addMap(client_share);
+                    service.addChannelNotification(conn.b.id);
+                    _ = try client.addOSService(service);
+                }
+            }
+            shared.mux_config.num_clients = shared.clients.items.len;
+            shared.server_config.num_clients = shared.clients.items.len;
+
+            inline for (.{ .{ "stack1", 0xA0_000_000, "worker_thread_stack_one" }, .{ "stack2", 0xB0_000_000, "worker_thread_stack_two" },
+                           .{ "stack3", 0xC0_000_000, "worker_thread_stack_three" }, .{ "stack4", 0xD0_000_000, "worker_thread_stack_four" } }) |stack| {
+                const mr = Mr.create(shared.allocator, fmt(shared.allocator, "{s}_{s}", .{ shared.fs.name, stack[0] }), 0x40_000, .{});
+                shared.sdf.addMemoryRegion(mr);
+                shared.fs.addMap(.create(mr, stack[1], .rw, .{ .setvar_vaddr = stack[2] }));
+            }
+        }
+
+        pub fn serialiseConfig(shared: *SharedFat, prefix: []const u8) !void {
+            try data.serialize(shared.allocator, shared.mux_config, prefix,
+                               fmt(shared.allocator, "fs_multiplexer_{s}", .{shared.multiplexer.name}));
+            try data.serialize(shared.allocator, shared.server_config, prefix,
+                               fmt(shared.allocator, "fs_shared_server_{s}", .{shared.fs.name}));
+            for (shared.clients.items, shared.client_configs.items) |client, config| {
+                try data.serialize(shared.allocator, config, prefix,
+                                   fmt(shared.allocator, "fs_client_{s}_{s}", .{client.name, shared.fs.name}));
+            }
+        }
+    };
+
     pub const VmFs = struct {
         fs: FileSystem,
         data: ConfigResources.Fs,

@@ -350,6 +350,14 @@ libsdfgen.sdfgen_lionsos_fs_fat_connect.restype = c_bool
 libsdfgen.sdfgen_lionsos_fs_fat_connect.argtypes = [c_void_p]
 libsdfgen.sdfgen_lionsos_fs_fat_serialise_config.restype = c_bool
 libsdfgen.sdfgen_lionsos_fs_fat_serialise_config.argtypes = [c_void_p, c_char_p]
+libsdfgen.sdfgen_lionsos_fs_shared_fat.restype = c_void_p
+libsdfgen.sdfgen_lionsos_fs_shared_fat.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_uint32, c_uint16, c_bool]
+libsdfgen.sdfgen_lionsos_fs_shared_fat_add_client.restype = c_bool
+libsdfgen.sdfgen_lionsos_fs_shared_fat_add_client.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_lionsos_fs_shared_fat_connect.restype = c_bool
+libsdfgen.sdfgen_lionsos_fs_shared_fat_connect.argtypes = [c_void_p]
+libsdfgen.sdfgen_lionsos_fs_shared_fat_serialise_config.restype = c_bool
+libsdfgen.sdfgen_lionsos_fs_shared_fat_serialise_config.argtypes = [c_void_p, c_char_p]
 libsdfgen.sdfgen_lionsos_fs_nfs.restype = c_void_p
 libsdfgen.sdfgen_lionsos_fs_nfs.argtypes = [
     c_void_p,
@@ -1642,6 +1650,55 @@ class LionsOs:
             def serialise_config(self, output_dir: str) -> bool:
                 c_output_dir = c_char_p(output_dir.encode("utf-8"))
                 return libsdfgen.sdfgen_lionsos_fs_fat_serialise_config(self._obj, c_output_dir)
+
+        class SharedFat:
+            """A FAT file system shared by multiple clients via a multiplexer."""
+
+            _obj: c_void_p
+
+            def __init__(
+                self,
+                sdf: SystemDescription,
+                fs: SystemDescription.ProtectionDomain,
+                clients,
+                *,
+                multiplexer: SystemDescription.ProtectionDomain,
+                blk: Sddf.Blk,
+                partition: int,
+                blk_queue_capacity: int = 128,
+                optional: bool = False,
+            ):
+                if partition < 0:
+                    raise Exception(
+                        f"block partition cannot be negative, given partition '{partition}'"
+                    )
+                clients = list(clients)
+                if not clients:
+                    raise Exception("shared FAT file system requires at least one client")
+                if len(clients) > 64:
+                    raise Exception("shared FAT file system supports at most 64 clients")
+                self._obj = libsdfgen.sdfgen_lionsos_fs_shared_fat(
+                    sdf._obj, fs._obj, multiplexer._obj, blk._obj, partition,
+                    blk_queue_capacity, optional
+                )
+                if self._obj is None:
+                    raise Exception("failed to create shared FAT file system")
+                for client in clients:
+                    if not libsdfgen.sdfgen_lionsos_fs_shared_fat_add_client(
+                        self._obj, client._obj
+                    ):
+                        raise Exception(
+                            f"failed to add client '{client.name}' to shared FAT file system"
+                        )
+
+            def connect(self) -> bool:
+                return libsdfgen.sdfgen_lionsos_fs_shared_fat_connect(self._obj)
+
+            def serialise_config(self, output_dir: str) -> bool:
+                c_output_dir = c_char_p(output_dir.encode("utf-8"))
+                return libsdfgen.sdfgen_lionsos_fs_shared_fat_serialise_config(
+                    self._obj, c_output_dir
+                )
 
         class Nfs:
             _obj: c_void_p

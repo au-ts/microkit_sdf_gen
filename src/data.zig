@@ -381,6 +381,8 @@ pub const Resources = struct {
 
     pub const Fs = extern struct {
         const MAGIC: [8]u8 = LIONS_MAGIC_START ++ .{0x1};
+        const MULTIPLEXER_MAGIC: [8]u8 = .{ 'L', 'i', 'o', 'n', 's', 'M', 'u', 0x1 };
+        pub const MAX_MULTIPLEXER_CLIENTS = 64;
 
         pub const Connection = extern struct {
             command_queue: Region,
@@ -398,6 +400,20 @@ pub const Resources = struct {
         pub const Client = extern struct {
             magic: [8]u8 = MAGIC,
             server: Connection,
+        };
+
+        pub const Multiplexer = extern struct {
+            magic: [8]u8 = MULTIPLEXER_MAGIC,
+            server: Connection,
+            clients: [MAX_MULTIPLEXER_CLIENTS]Connection,
+            num_clients: u64,
+        };
+
+        pub const SharedServer = extern struct {
+            magic: [8]u8 = MULTIPLEXER_MAGIC,
+            multiplexer: Connection,
+            client_shares: [MAX_MULTIPLEXER_CLIENTS]Region,
+            num_clients: u64,
         };
     };
 
