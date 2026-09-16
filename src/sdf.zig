@@ -537,6 +537,14 @@ pub const SystemDescription = struct {
         /// Keeping track of what IDs are available for channels, IRQs, etc
         channel_ids: std.bit_set.StaticBitSet(MAX_IDS),
         child_ids: std.bit_set.StaticBitSet(MAX_IDS),
+        fault_ids: std.bit_set.StaticBitSet(MAX_IDS),
+
+        /// PD this PD's faults are delivered to, when it is not a child of one
+        fault_handler: ?[]const u8,
+        /// ID this PD is known by to its fault handler
+        fault_id: ?u8,
+        /// CNode this PD's fault clients' ELF frame caps are placed in
+        elf_caps_cnode: ?[]const u8,
 
         /// Whether or not ARM SMC is available
         arm_smc: ?bool,
@@ -585,6 +593,10 @@ pub const SystemDescription = struct {
                 .vm = null,
                 .channel_ids = std.bit_set.StaticBitSet(MAX_IDS).initEmpty(),
                 .child_ids = std.bit_set.StaticBitSet(MAX_IDS).initEmpty(),
+                .fault_ids = std.bit_set.StaticBitSet(MAX_IDS).initEmpty(),
+                .fault_handler = null,
+                .fault_id = null,
+                .elf_caps_cnode = null,
                 .setvars = ArrayList(SetVar).init(allocator),
                 .priority = options.priority,
                 .passive = options.passive,
@@ -602,6 +614,12 @@ pub const SystemDescription = struct {
             pd.allocator.free(pd.name);
             if (pd.program_image) |program_image| {
                 pd.allocator.free(program_image);
+            }
+            if (pd.fault_handler) |fault_handler| {
+                pd.allocator.free(fault_handler);
+            }
+            if (pd.elf_caps_cnode) |elf_caps_cnode| {
+                pd.allocator.free(elf_caps_cnode);
             }
             pd.boot_infos.deinit();
             pd.maps.deinit();
@@ -705,6 +723,21 @@ pub const SystemDescription = struct {
             return child.child_id.?;
         }
 
+        /// Have `client`'s faults delivered to this PD's fault() entry point, without
+        /// making it a child. Returns the ID the client is known by to this PD, which is
+        /// what fault() receives.
+        pub fn addFaultClient(pd: *ProtectionDomain, client: *ProtectionDomain, id: ?u8) !u8 {
+            if (client.fault_handler != null) {
+                log.err("failed to add fault client '{s}' to '{s}', it already has fault handler '{s}'", .{ client.name, pd.name, client.fault_handler.? });
+                return error.DuplicateFaultHandler;
+            }
+
+            client.fault_id = try allocateId(&pd.fault_ids, id);
+            client.fault_handler = pd.allocator.dupe(u8, pd.name) catch @panic("Could not dupe fault handler name");
+
+            return client.fault_id.?;
+        }
+
         // TODO: get rid of this extra arg?
         pub fn getMapVaddr(pd: *ProtectionDomain, mr: *const MemoryRegion) u64 {
             // TODO: should make sure we don't have a way of giving an invalid vaddr back (e.g on 32-bit systems this is more of a concern)
@@ -781,7 +814,18 @@ pub const SystemDescription = struct {
                 try std.fmt.format(writer, " cpu=\"{}\"", .{cpu});
             }
 
-            try std.fmt.format(writer, " backed=\"{}\"", .{pd.backed});
+            // Microkit defaults this to true, so only say so when it is not.
+            if (!pd.backed) {
+                try std.fmt.format(writer, " backed=\"false\"", .{});
+            }
+
+            if (pd.fault_handler) |fault_handler| {
+                try std.fmt.format(writer, " fault_handler=\"{s}\" fault_id=\"{}\"", .{ fault_handler, pd.fault_id.? });
+            }
+
+            if (pd.elf_caps_cnode) |elf_caps_cnode| {
+                try std.fmt.format(writer, " elf_caps_cnode=\"{s}\"", .{elf_caps_cnode});
+            }
 
             _ = try writer.write(">\n");
 

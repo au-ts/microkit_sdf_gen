@@ -1260,3 +1260,53 @@ export fn sdfgen_sddf_lwip_serialise_config(c_lib: *align(8) anyopaque, output_d
 
     return true;
 }
+
+export fn sdfgen_lionsos_pager(c_sdf: *align(8) anyopaque, c_pager: *align(8) anyopaque) ?*anyopaque {
+    const sdf: *SystemDescription = @ptrCast(c_sdf);
+    const pager_pd: *Pd = @ptrCast(c_pager);
+    const pager = allocator.create(lionsos.Pager) catch @panic("OOM");
+    pager.* = lionsos.Pager.init(allocator, sdf, pager_pd, .{});
+
+    return pager;
+}
+
+export fn sdfgen_lionsos_pager_destroy(system: *align(8) anyopaque) void {
+    const pager: *lionsos.Pager = @ptrCast(system);
+    pager.deinit();
+    allocator.destroy(pager);
+}
+
+export fn sdfgen_lionsos_pager_add_client(system: *align(8) anyopaque, client: *align(8) anyopaque) bindings.sdfgen_sddf_status_t {
+    const pager: *lionsos.Pager = @ptrCast(system);
+    pager.addClient(@ptrCast(client)) catch |e| {
+        switch (e) {
+            error.DuplicateClient => return 1,
+            error.InvalidClient => return 2,
+            error.TooManyClients => return 3,
+            // Should never happen when adding a client
+            error.NotConnected => @panic("internal error"),
+        }
+    };
+
+    return 0;
+}
+
+export fn sdfgen_lionsos_pager_connect(system: *align(8) anyopaque) bool {
+    const pager: *lionsos.Pager = @ptrCast(system);
+    pager.connect() catch |e| {
+        log.err("failed to connect pager '{s}': {any}", .{ pager.pager.name, e });
+        return false;
+    };
+
+    return true;
+}
+
+export fn sdfgen_lionsos_pager_serialise_config(system: *align(8) anyopaque, output_dir: [*c]u8) bool {
+    const pager: *lionsos.Pager = @ptrCast(system);
+    pager.serialiseConfig(std.mem.span(output_dir)) catch |e| {
+        log.err("failed to serialise pager '{s}': {any}", .{ pager.pager.name, e });
+        return false;
+    };
+
+    return true;
+}

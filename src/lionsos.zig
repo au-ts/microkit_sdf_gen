@@ -382,3 +382,171 @@ pub const FileSystem = struct {
         }
     };
 };
+
+pub const Pager = struct {
+    allocator: Allocator,
+    sdf: *SystemDescription,
+    pager: *Pd,
+    clients: std.array_list.Managed(*Pd),
+    memory_size: usize,
+    bootinfo_size: usize,
+    mmap_base: u64,
+    brk_base: u64,
+    connected: bool = false,
+    serialised: bool = false,
+
+    server_config: ConfigResources.Pager.Server,
+    client_configs: std.array_list.Managed(ConfigResources.Pager.Client),
+
+    const Error = sddf.SystemError || error{TooManyClients};
+
+    /// The CNodes the pager receives the caps it creates at runtime into, as
+    /// (name, root CSpace slot, size_bits, post_capdl_untypeds). Slot 0 is reserved for
+    /// the Microkit CNode, so these start at 1.
+    const CNodes = struct {
+        name: []const u8,
+        slot: u8,
+        size_bits: u8,
+        post_capdl_untypeds: bool,
+    };
+    const cnodes = [_]CNodes{
+        // All untyped memory left after initialisation.
+        .{ .name = "untypeds", .slot = 1, .size_bits = 9, .post_capdl_untypeds = true },
+        // Frames the pager retypes to satisfy faults.
+        .{ .name = "frames", .slot = 2, .size_bits = 20, .post_capdl_untypeds = false },
+        // Intermediate paging structures (PUD/PD/PT).
+        .{ .name = "paging_structures", .slot = 3, .size_bits = 20, .post_capdl_untypeds = false },
+        // Copies of the global zero page cap, one per read-only mapping.
+        .{ .name = "zero_page_copies", .slot = 4, .size_bits = 20, .post_capdl_untypeds = false },
+        // Per-process CSpaces created by fork().
+        .{ .name = "process_cspaces", .slot = 5, .size_bits = 5, .post_capdl_untypeds = false },
+        // The clients' ELF frames, populated by the Microkit tool.
+        .{ .name = "elf_caps", .slot = 6, .size_bits = 12, .post_capdl_untypeds = false },
+        // Copies of frame caps. A frame cap carries its own mapping, so a folio mapped
+        // into more than one VSpace needs a cap per mapping.
+        .{ .name = "frame_copies", .slot = 7, .size_bits = 20, .post_capdl_untypeds = false },
+    };
+
+    pub const Options = struct {
+        /// Scratch memory for folio metadata and the shadow page tables
+        memory_size: usize = 0x2000000,
+        bootinfo_size: usize = 0x2000,
+        /// Where in each client's address space its mmap arena and heap begin
+        mmap_base: u64 = 0x8000000000,
+        brk_base: u64 = 0x7000000000,
+    };
+
+    pub fn init(allocator: Allocator, sdf: *SystemDescription, pager: *Pd, options: Options) Pager {
+        return .{
+            .allocator = allocator,
+            .sdf = sdf,
+            .pager = pager,
+            .clients = std.array_list.Managed(*Pd).init(allocator),
+            .memory_size = options.memory_size,
+            .bootinfo_size = options.bootinfo_size,
+            .mmap_base = options.mmap_base,
+            .brk_base = options.brk_base,
+            .server_config = std.mem.zeroInit(ConfigResources.Pager.Server, .{}),
+            .client_configs = std.array_list.Managed(ConfigResources.Pager.Client).init(allocator),
+        };
+    }
+
+    pub fn deinit(system: *Pager) void {
+        system.clients.deinit();
+        system.client_configs.deinit();
+    }
+
+    pub fn addClient(system: *Pager, client: *Pd) Error!void {
+        if (std.mem.eql(u8, client.name, system.pager.name)) {
+            log.err("invalid pager client, same name as pager PD '{s}'", .{client.name});
+            return Error.InvalidClient;
+        }
+        for (system.clients.items) |existing_client| {
+            if (std.mem.eql(u8, existing_client.name, client.name)) {
+                return Error.DuplicateClient;
+            }
+        }
+        if (system.clients.items.len == ConfigResources.Pager.MaxClients) {
+            log.err("failed to add client '{s}' to pager '{s}', maximum clients reached", .{ client.name, system.pager.name });
+            return Error.TooManyClients;
+        }
+
+        // The client's stack pages are left unmapped at boot so that they fault in
+        // through the pager -- that is the whole point of being paged.
+        client.backed = false;
+
+        system.clients.append(client) catch @panic("Could not add client to Pager");
+        system.client_configs.append(std.mem.zeroInit(ConfigResources.Pager.Client, .{})) catch @panic("Could not add client config to Pager");
+    }
+
+    pub fn connect(system: *Pager) !void {
+        const allocator = system.allocator;
+        const pager = system.pager;
+
+        const memory = Mr.create(allocator, fmt(allocator, "{s}_memory", .{pager.name}), system.memory_size, .{});
+        system.sdf.addMemoryRegion(memory);
+        const memory_map = Map.create(memory, pager.getMapVaddr(&memory), .rw, .{});
+        pager.addMap(memory_map);
+        system.server_config.memory = .createFromMap(memory_map);
+
+        // The Microkit tool fills this with a capDLBootInfo_t describing the untypeds
+        // that survived system initialisation.
+        const bootinfo = Mr.create(allocator, fmt(allocator, "{s}_bootinfo", .{pager.name}), system.bootinfo_size, .{
+            .prefill_bootinfo = "post_capdl_untypeds",
+        });
+        system.sdf.addMemoryRegion(bootinfo);
+        const bootinfo_map = Map.create(bootinfo, pager.getMapVaddr(&bootinfo), .rw, .{});
+        pager.addMap(bootinfo_map);
+        system.server_config.bootinfo = .createFromMap(bootinfo_map);
+
+        inline for (cnodes) |spec| {
+            const cnode = SystemDescription.CNode.create(allocator, spec.name, spec.post_capdl_untypeds, spec.size_bits);
+            system.sdf.addCNode(cnode);
+            // pd=null because these CNodes are the pager's alone, not shared.
+            pager.addCapMap(SystemDescription.CapMap.create(allocator, "cnode", spec.name, null, spec.slot));
+            @field(system.server_config, spec.name) = .{ .slot = spec.slot, .size_bits = spec.size_bits };
+        }
+        pager.elf_caps_cnode = allocator.dupe(u8, "elf_caps") catch @panic("Could not dupe CNode name");
+
+        for (system.clients.items, 0..) |client, i| {
+            // The client needs to be able to PPC into the pager for brk/mmap/munmap/fork.
+            const ch = Channel.create(pager, client, .{ .pp = .b }) catch unreachable;
+            system.sdf.addChannel(ch);
+
+            // Allocate the fault id to match the client's index here, so that the pager
+            // can use what fault() hands it to index its per-client state directly.
+            const fault_id = try pager.addFaultClient(client, @intCast(i));
+
+            system.server_config.clients[i] = .{
+                .id = ch.pd_a_id,
+                .fault_id = fault_id,
+                .mmap_base = system.mmap_base,
+                .brk_base = system.brk_base,
+            };
+            system.client_configs.items[i] = .{
+                .id = ch.pd_b_id,
+                .mmap_base = system.mmap_base,
+                .brk_base = system.brk_base,
+            };
+        }
+        system.server_config.num_clients = @intCast(system.clients.items.len);
+
+        system.connected = true;
+    }
+
+    pub fn serialiseConfig(system: *Pager, prefix: []const u8) !void {
+        if (!system.connected) return Error.NotConnected;
+
+        const allocator = system.allocator;
+
+        const server_config = fmt(allocator, "pager_server_{s}", .{system.pager.name});
+        try data.serialize(allocator, system.server_config, prefix, server_config);
+
+        for (system.clients.items, 0..) |client, i| {
+            const client_config = fmt(allocator, "pager_client_{s}", .{client.name});
+            try data.serialize(allocator, system.client_configs.items[i], prefix, client_config);
+        }
+
+        system.serialised = true;
+    }
+};

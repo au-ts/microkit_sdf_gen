@@ -395,6 +395,53 @@ pub const Resources = struct {
         };
     };
 
+    pub const Pager = extern struct {
+        const MAGIC: [8]u8 = LIONS_MAGIC_START ++ .{0x3};
+        /// Must match PAGER_MAX_CLIENTS in lions/pager/config.h, and MAX_FAULT_CLIENTS
+        /// in the Microkit tool's capdl builder, which sizes the `vspaces` symbol.
+        pub const MaxClients = 10;
+
+        /// A CNode the pager was given a cap to, in a slot of its root CSpace.
+        pub const CNode = extern struct {
+            slot: u8,
+            size_bits: u8,
+        };
+
+        pub const ClientConnection = extern struct {
+            /// PPC channel, pager end
+            id: u8,
+            /// What the pager's fault() entry point receives for this client
+            fault_id: u8,
+            mmap_base: u64,
+            brk_base: u64,
+        };
+
+        pub const Server = extern struct {
+            magic: [8]u8 = MAGIC,
+            /// Scratch memory the pager carves folio metadata and shadow page tables from
+            memory: Region,
+            /// capDL bootinfo describing the untypeds left after system initialisation
+            bootinfo: Region,
+            untypeds: CNode,
+            frames: CNode,
+            paging_structures: CNode,
+            zero_page_copies: CNode,
+            process_cspaces: CNode,
+            elf_caps: CNode,
+            frame_copies: CNode,
+            num_clients: u8,
+            clients: [MaxClients]ClientConnection,
+        };
+
+        pub const Client = extern struct {
+            magic: [8]u8 = MAGIC,
+            /// PPC channel to the pager
+            id: u8,
+            mmap_base: u64,
+            brk_base: u64,
+        };
+    };
+
     pub const Nfs = extern struct {
         const MAGIC: [8]u8 = LIONS_MAGIC_START ++ .{0x2};
         pub const MaxServerUrlLen = 4096;

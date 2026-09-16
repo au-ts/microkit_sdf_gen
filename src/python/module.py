@@ -20,6 +20,7 @@ class SddfStatus(IntEnum):
     NET_INVALID_CLIENT_NUMBER = 106,
     NET_INVALID_BUFFER_NUMBER = 107,
     GPIO_INVALID_OPTIONS = 203,
+    PAGER_TOO_MANY_CLIENTS = 3,
 
 
 # TOOD: double check
@@ -322,6 +323,17 @@ libsdfgen.sdfgen_vmm_connect.restype = c_bool
 libsdfgen.sdfgen_vmm_connect.argtypes = [c_void_p]
 libsdfgen.sdfgen_vmm_serialise_config.restype = c_bool
 libsdfgen.sdfgen_vmm_serialise_config.argtypes = [c_void_p, c_char_p]
+
+libsdfgen.sdfgen_lionsos_pager.restype = c_void_p
+libsdfgen.sdfgen_lionsos_pager.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_lionsos_pager_destroy.restype = None
+libsdfgen.sdfgen_lionsos_pager_destroy.argtypes = [c_void_p]
+libsdfgen.sdfgen_lionsos_pager_add_client.restype = c_uint32
+libsdfgen.sdfgen_lionsos_pager_add_client.argtypes = [c_void_p, c_void_p]
+libsdfgen.sdfgen_lionsos_pager_connect.restype = c_bool
+libsdfgen.sdfgen_lionsos_pager_connect.argtypes = [c_void_p]
+libsdfgen.sdfgen_lionsos_pager_serialise_config.restype = c_bool
+libsdfgen.sdfgen_lionsos_pager_serialise_config.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_lionsos_fs_fat.restype = c_void_p
 libsdfgen.sdfgen_lionsos_fs_fat.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_uint32]
@@ -1551,6 +1563,41 @@ class Vmm:
 
 
 class LionsOs:
+    class Pager:
+        _obj: c_void_p
+
+        def __init__(
+            self,
+            sdf: SystemDescription,
+            pager: SystemDescription.ProtectionDomain,
+        ):
+            self._obj = libsdfgen.sdfgen_lionsos_pager(sdf._obj, pager._obj)
+            if self._obj is None:
+                raise Exception("failed to create pager")
+
+        def add_client(self, client: SystemDescription.ProtectionDomain):
+            ret = libsdfgen.sdfgen_lionsos_pager_add_client(self._obj, client._obj)
+            if ret == SddfStatus.OK:
+                return
+            elif ret == SddfStatus.DUPLICATE_CLIENT:
+                raise Exception(f"duplicate client given '{client}'")
+            elif ret == SddfStatus.INVALID_CLIENT:
+                raise Exception(f"invalid client given '{client}'")
+            elif ret == SddfStatus.PAGER_TOO_MANY_CLIENTS:
+                raise Exception(f"too many pager clients, cannot add '{client}'")
+            else:
+                raise Exception(f"internal error: {ret}")
+
+        def connect(self) -> bool:
+            return libsdfgen.sdfgen_lionsos_pager_connect(self._obj)
+
+        def serialise_config(self, output_dir: str) -> bool:
+            c_output_dir = c_char_p(output_dir.encode("utf-8"))
+            return libsdfgen.sdfgen_lionsos_pager_serialise_config(self._obj, c_output_dir)
+
+        def __del__(self):
+            libsdfgen.sdfgen_lionsos_pager_destroy(self._obj)
+
     class FileSystem:
         class Fat:
             _obj: c_void_p
