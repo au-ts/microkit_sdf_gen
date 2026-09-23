@@ -412,7 +412,8 @@ pub const Resources = struct {
         pub const SharedServer = extern struct {
             magic: [8]u8 = MULTIPLEXER_MAGIC,
             multiplexer: Connection,
-            client_shares: [MAX_MULTIPLEXER_CLIENTS]Region,
+            // One server virtual-address word for each client's data region.
+            client_shares: [MAX_MULTIPLEXER_CLIENTS]u64,
             num_clients: u64,
         };
     };

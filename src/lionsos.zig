@@ -417,17 +417,14 @@ pub const FileSystem = struct {
                     fmt(shared.allocator, "fs_{s}_{s}_share", .{ shared.fs.name, client.name }),
                     64 * 1024 * 1024, .{});
                 shared.sdf.addMemoryRegion(share_mr);
-                const mux_share = Map.create(share_mr, shared.multiplexer.getMapVaddr(&share_mr), .rw, .{});
                 const fs_share = Map.create(share_mr, shared.fs.getMapVaddr(&share_mr), .rw, .{});
                 const client_share = Map.create(share_mr, client.getMapVaddr(&share_mr), .rw, .{
                     .delegated = if (shared.optional) true else null,
                 });
-                FileSystem.createMapping(shared.multiplexer, mux_share);
                 FileSystem.createMapping(shared.fs, fs_share);
                 FileSystem.createMapping(client, client_share);
                 shared.mux_config.clients[i] = conn.a;
-                shared.mux_config.clients[i].share = .createFromMap(mux_share);
-                shared.server_config.client_shares[i] = .createFromMap(fs_share);
+                shared.server_config.client_shares[i] = fs_share.vaddr;
                 var client_config = std.mem.zeroInit(ConfigResources.Fs.Client, .{});
                 client_config.server = conn.b;
                 client_config.server.share = .createFromMap(client_share);
