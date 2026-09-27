@@ -301,7 +301,9 @@ libsdfgen.sdfgen_vmm_serialise_config.restype = c_bool
 libsdfgen.sdfgen_vmm_serialise_config.argtypes = [c_void_p, c_char_p]
 
 libsdfgen.sdfgen_lionsos_fs_fat.restype = c_void_p
-libsdfgen.sdfgen_lionsos_fs_fat.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_uint32]
+libsdfgen.sdfgen_lionsos_fs_fat.argtypes = [c_void_p, c_void_p, c_void_p, c_void_p, c_void_p, c_uint32]
+libsdfgen.sdfgen_lionsos_fs_fat_add_client.restype = c_bool
+libsdfgen.sdfgen_lionsos_fs_fat_add_client.argtypes = [c_void_p, c_void_p]
 libsdfgen.sdfgen_lionsos_fs_fat_connect.restype = c_bool
 libsdfgen.sdfgen_lionsos_fs_fat_connect.argtypes = [c_void_p]
 libsdfgen.sdfgen_lionsos_fs_fat_serialise_config.restype = c_bool
@@ -1450,10 +1452,11 @@ class LionsOs:
                 self,
                 sdf: SystemDescription,
                 fs: SystemDescription.ProtectionDomain,
-                client: SystemDescription.ProtectionDomain,
+                client,
                 *,
                 blk: Sddf.Blk,
                 partition: int,
+                multiplexer: Optional[SystemDescription.ProtectionDomain] = None,
             ):
                 if partition < 0:
                     raise Exception(
@@ -1461,9 +1464,27 @@ class LionsOs:
                     )
 
                 assert isinstance(blk, Sddf.Blk)
-                self._obj = libsdfgen.sdfgen_lionsos_fs_fat(sdf._obj, fs._obj, client._obj, blk._obj, partition)
+                if isinstance(client, SystemDescription.ProtectionDomain):
+                    clients = [client]
+                else:
+                    clients = list(client)
+                if not clients:
+                    raise Exception("FAT file system requires at least one client")
+                if multiplexer is None and len(clients) != 1:
+                    raise Exception("multiple FAT clients require a multiplexer")
+                if len(clients) > 64:
+                    raise Exception("multiplexed FAT supports at most 64 clients")
+                for item in clients:
+                    assert isinstance(item, SystemDescription.ProtectionDomain)
+                mux_obj = None if multiplexer is None else multiplexer._obj
+                self._obj = libsdfgen.sdfgen_lionsos_fs_fat(
+                    sdf._obj, fs._obj, clients[0]._obj, mux_obj, blk._obj, partition
+                )
                 if self._obj is None:
                     raise Exception("failed to create FAT file system")
+                for item in clients[1:]:
+                    if not libsdfgen.sdfgen_lionsos_fs_fat_add_client(self._obj, item._obj):
+                        raise Exception(f"failed to add client '{item.name}' to FAT file system")
 
             def connect(self) -> bool:
                 return libsdfgen.sdfgen_lionsos_fs_fat_connect(self._obj)
