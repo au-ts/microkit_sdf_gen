@@ -1060,11 +1060,12 @@ export fn sdfgen_vmm_serialise_config(c_vmm: *align(8) anyopaque, output_dir: [*
     return true;
 }
 
-export fn sdfgen_lionsos_fs_fat(c_sdf: *align(8) anyopaque, c_fs: *align(8) anyopaque, c_client: *align(8) anyopaque, blk: *align(8) anyopaque, partition: u32) ?*anyopaque {
+export fn sdfgen_lionsos_fs_fat(c_sdf: *align(8) anyopaque, c_fs: *align(8) anyopaque, c_client: *align(8) anyopaque, c_multiplexer: ?*align(8) anyopaque, blk: *align(8) anyopaque, partition: u32) ?*anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const fs_pd: *Pd = @ptrCast(c_fs);
     const fs = allocator.create(lionsos.FileSystem.Fat) catch @panic("OOM");
-    fs.* = lionsos.FileSystem.Fat.init(allocator, sdf, fs_pd, @ptrCast(c_client), @ptrCast(blk), .{
+    const multiplexer: ?*Pd = if (c_multiplexer) |mux| @ptrCast(mux) else null;
+    fs.* = lionsos.FileSystem.Fat.init(allocator, sdf, fs_pd, @ptrCast(c_client), multiplexer, @ptrCast(blk), .{
         .partition = partition,
     }) catch |e| {
         log.err("failed to create FAT file system '{s}': {any}", .{ fs_pd.name, e });
@@ -1072,6 +1073,15 @@ export fn sdfgen_lionsos_fs_fat(c_sdf: *align(8) anyopaque, c_fs: *align(8) anyo
     };
 
     return fs;
+}
+
+export fn sdfgen_lionsos_fs_fat_add_client(system: *align(8) anyopaque, c_client: *align(8) anyopaque) bool {
+    const fat: *lionsos.FileSystem.Fat = @ptrCast(system);
+    fat.addClient(@ptrCast(c_client)) catch |e| {
+        log.err("failed to add FAT client: {any}", .{e});
+        return false;
+    };
+    return true;
 }
 
 export fn sdfgen_lionsos_fs_fat_connect(system: *align(8) anyopaque) bool {
