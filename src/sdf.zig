@@ -481,14 +481,14 @@ pub const SystemDescription = struct {
     pub const CNode = struct {
         allocator: Allocator,
         name: []const u8,
-        post_capdl_untypeds: bool,
+        receive_initialiser_caps: bool,
         size_bits: u8,
 
-        pub fn create(allocator: Allocator, name: []const u8, post_capdl_untypeds: bool, size_bits: u8) CNode {
+        pub fn create(allocator: Allocator, name: []const u8, receive_initialiser_caps: bool, size_bits: u8) CNode {
             return CNode {
                 .allocator = allocator,
                 .name = allocator.dupe(u8, name) catch @panic("Could not dupe CNode name"),
-                .post_capdl_untypeds = post_capdl_untypeds,
+                .receive_initialiser_caps = receive_initialiser_caps,
                 .size_bits = size_bits,
             };
         }
@@ -500,8 +500,8 @@ pub const SystemDescription = struct {
         pub fn render(cnode: *const CNode, writer: ArrayList(u8).Writer, separator: []const u8) !void {
             try std.fmt.format(writer, "{s}<cnode name=\"{s}\" size_bits=\"{}\"", .{ separator, cnode.name, cnode.size_bits });
 
-            if (cnode.post_capdl_untypeds) {
-                try std.fmt.format(writer, " post_capdl_untypeds=\"true\"", .{});
+            if (cnode.receive_initialiser_caps) {
+                try std.fmt.format(writer, " receive_initialiser_caps=\"true\"", .{});
             }
 
             _ = try writer.write(" />\n");

@@ -746,12 +746,12 @@ class SystemDescription:
         def __init__(
                 self,
                 name: str,
-                post_capdl_untypeds: bool,
+                receive_initialiser_caps: bool,
                 size_bits: int,
         ) -> None:
             self._name = name
             c_name = c_char_p(name.encode("utf-8"))
-            self._obj = libsdfgen.sdfgen_cnode_create(c_name, post_capdl_untypeds, size_bits)
+            self._obj = libsdfgen.sdfgen_cnode_create(c_name, receive_initialiser_caps, size_bits)
 
         def __del__(self):
             if hasattr(self, "_obj"):

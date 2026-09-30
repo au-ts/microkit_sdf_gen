@@ -459,9 +459,9 @@ export fn sdfgen_mr_create(name: [*c]u8, size: u64, prefill_bootinfo: [*c]u8) *a
     return mr;
 }
 
-export fn sdfgen_cnode_create(name: [*c]u8, post_capdl_untypeds: bool, size_bits: u8) *anyopaque {
+export fn sdfgen_cnode_create(name: [*c]u8, receive_initialiser_caps: bool, size_bits: u8) *anyopaque {
     const cnode = allocator.create(CNode) catch @panic("OOM");
-    cnode.* = CNode.create(allocator, std.mem.span(name), post_capdl_untypeds, size_bits);
+    cnode.* = CNode.create(allocator, std.mem.span(name), receive_initialiser_caps, size_bits);
 
     return cnode;
 }
