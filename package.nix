@@ -34,6 +34,7 @@ in
       version = builtins.readFile ./VERSION;
       src = nix-gitignore.gitignoreSource [] ./.;
 
+      pyproject = true;
       build-system = [ setuptools ];
 
       pythonImportsCheck = [ "sdfgen" ];
