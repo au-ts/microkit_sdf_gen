@@ -821,7 +821,7 @@ export fn sdfgen_sddf_blk_serialise_config(system: *align(8) anyopaque, output_d
     return true;
 }
 
-export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt_tx: *align(8) anyopaque, virt_rx: *align(8) anyopaque, c_vswitch: ?*align(8) anyopaque, c_rx_dma_mr: ?*align(8) anyopaque) *anyopaque {
+export fn sdfgen_sddf_net(c_sdf: *align(8) anyopaque, c_device: ?*align(8) anyopaque, driver: *align(8) anyopaque, virt_rx: *align(8) anyopaque, virt_tx: *align(8) anyopaque, c_vswitch: ?*align(8) anyopaque, c_rx_dma_mr: ?*align(8) anyopaque) ?*anyopaque {
     const sdf: *SystemDescription = @ptrCast(c_sdf);
     const net = allocator.create(sddf.Net) catch @panic("OOM");
     const vswitch: ?*Pd = if (c_vswitch) |p| @ptrCast(p) else null;
@@ -862,6 +862,19 @@ export fn sdfgen_sddf_net_add_client_with_copier(system: *align(8) anyopaque, cl
     return 0;
 }
 
+export fn sdfgen_sddf_net_add_acl_client(system: *align(8) anyopaque, client: *align(8) anyopaque) bindings.sdfgen_sddf_status_t {
+    const net: *sddf.Net = @ptrCast(system);
+    net.addAclClient(@ptrCast(client)) catch |e| {
+        return switch (e) {
+            sddf.Net.Error.DuplicateClient => 1,
+            sddf.Net.Error.InvalidClient => 2,
+            sddf.Net.Error.InvalidVSwitch => 104,
+            else => @panic("internal error"),
+        };
+    };
+    return 0;
+}
+
 export fn sdfgen_sddf_net_add_acl_rule(system: *align(8) anyopaque, client0: *align(8) anyopaque, client1: *align(8) anyopaque, zeroToOne: bool, oneToZero: bool) bindings.sdfgen_sddf_status_t {
     const net: *sddf.Net = @ptrCast(system);
 
@@ -884,6 +897,7 @@ export fn sdfgen_sddf_net_connect(system: *align(8) anyopaque) bindings.sdfgen_s
     net.connect() catch |e| {
         switch (e) {
             sddf.Net.Error.InvalidClientNumber => return 106,
+            sddf.Net.Error.InvalidChannelNumber => return 108,
             else => @panic("impossible error reached"),
         }
     };
