@@ -225,19 +225,75 @@ pub const FileSystem = struct {
         data: ConfigResources.Fs,
         blk: *Blk,
         partition: u32,
+        multiplexer: ?*Pd,
+        clients: std.array_list.Managed(*Pd),
+        mux_config: ConfigResources.Fs.Multiplexer,
+        mux_server_config: ConfigResources.Fs.MuxServer,
+        client_configs: std.array_list.Managed(ConfigResources.Fs.Client),
 
         pub const Options = struct {
             partition: u32,
         };
 
-        pub fn init(allocator: Allocator, sdf: *SystemDescription, fs: *Pd, client: *Pd, blk: *Blk, options: Fat.Options) Error!Fat {
-            return .{
+        pub fn init(allocator: Allocator, sdf: *SystemDescription, fs: *Pd, client: *Pd, multiplexer: ?*Pd, blk: *Blk, options: Fat.Options) Error!Fat {
+            if (multiplexer) |mux| {
+                if (std.mem.eql(u8, fs.name, mux.name) or std.mem.eql(u8, client.name, mux.name)) {
+                    return Error.InvalidClient;
+                }
+            }
+            var fat: Fat = .{
                 .allocator = allocator,
                 .fs = try FileSystem.init(allocator, sdf, fs, client, .{}),
                 .blk = blk,
                 .partition = options.partition,
                 .data = std.mem.zeroInit(ConfigResources.Fs, .{}),
+                .multiplexer = multiplexer,
+                .clients = .init(allocator),
+                .mux_config = std.mem.zeroInit(ConfigResources.Fs.Multiplexer, .{}),
+                .mux_server_config = std.mem.zeroInit(ConfigResources.Fs.MuxServer, .{}),
+                .client_configs = .init(allocator),
             };
+            fat.clients.append(client) catch @panic("OOM");
+            return fat;
+        }
+
+        pub fn addClient(fat: *Fat, client: *Pd) !void {
+            const mux = fat.multiplexer orelse return error.MultiplexerRequired;
+            if (fat.clients.items.len == ConfigResources.Fs.MAX_MULTIPLEXER_CLIENTS) return error.TooManyClients;
+            if (std.mem.eql(u8, client.name, fat.fs.fs.name) or std.mem.eql(u8, client.name, mux.name)) return Error.InvalidClient;
+            for (fat.clients.items) |existing| {
+                if (std.mem.eql(u8, existing.name, client.name)) return error.DuplicateClient;
+            }
+            fat.clients.append(client) catch @panic("OOM");
+        }
+
+        fn addConnection(fat: *Fat, a: *Pd, b: *Pd, name: []const u8) struct { a: ConfigResources.Fs.Connection, b: ConfigResources.Fs.Connection } {
+            const queue_size: usize = 0x8000;
+            const commands = Mr.create(fat.allocator, fmt(fat.allocator, "fs_{s}_command_queue", .{name}), queue_size, .{});
+            const completions = Mr.create(fat.allocator, fmt(fat.allocator, "fs_{s}_completion_queue", .{name}), queue_size, .{});
+            fat.fs.sdf.addMemoryRegion(commands);
+            fat.fs.sdf.addMemoryRegion(completions);
+            const a_cmd = Map.create(commands, a.getMapVaddr(&commands), .rw, .{});
+            const b_cmd = Map.create(commands, b.getMapVaddr(&commands), .rw, .{});
+            FileSystem.createMapping(a, a_cmd);
+            FileSystem.createMapping(b, b_cmd);
+            const a_cmpl = Map.create(completions, a.getMapVaddr(&completions), .rw, .{});
+            const b_cmpl = Map.create(completions, b.getMapVaddr(&completions), .rw, .{});
+            FileSystem.createMapping(a, a_cmpl);
+            FileSystem.createMapping(b, b_cmpl);
+            const channel = Channel.create(a, b, .{}) catch @panic("failed to create FS multiplexer channel");
+            fat.fs.sdf.addChannel(channel);
+            var a_conn = std.mem.zeroInit(ConfigResources.Fs.Connection, .{});
+            var b_conn = std.mem.zeroInit(ConfigResources.Fs.Connection, .{});
+            a_conn.command_queue = .createFromMap(a_cmd);
+            a_conn.completion_queue = .createFromMap(a_cmpl);
+            a_conn.queue_len = 512;
+            a_conn.id = channel.pd_a_id;
+            b_conn.command_queue = .createFromMap(b_cmd);
+            b_conn.completion_queue = .createFromMap(b_cmpl);
+            b_conn.queue_len = 512;
+            b_conn.id = channel.pd_b_id;
+            return .{ .a = a_conn, .b = b_conn };
         }
 
         pub fn connect(fat: *Fat) !void {
@@ -248,7 +304,33 @@ pub const FileSystem = struct {
             try fat.blk.addClient(fs_pd, .{
                 .partition = fat.partition,
             });
-            fat.fs.connect(.{});
+            if (fat.multiplexer) |mux| {
+                const server_name = fmt(allocator, "{s}_{s}", .{ mux.name, fs_pd.name });
+                const server_conn = fat.addConnection(mux, fs_pd, server_name);
+                fat.mux_config.server = server_conn.a;
+                fat.mux_server_config.multiplexer = server_conn.b;
+
+                for (fat.clients.items, 0..) |client, i| {
+                    const conn_name = fmt(allocator, "{s}_{s}", .{ mux.name, client.name });
+                    const conn = fat.addConnection(mux, client, conn_name);
+                    const share_mr = Mr.create(allocator, fmt(allocator, "fs_{s}_{s}_share", .{ fs_pd.name, client.name }), 64 * 1024 * 1024, .{});
+                    sdf.addMemoryRegion(share_mr);
+                    const fs_share = Map.create(share_mr, fs_pd.getMapVaddr(&share_mr), .rw, .{});
+                    const client_share = Map.create(share_mr, client.getMapVaddr(&share_mr), .rw, .{});
+                    FileSystem.createMapping(fs_pd, fs_share);
+                    FileSystem.createMapping(client, client_share);
+                    fat.mux_config.clients[i] = conn.a;
+                    fat.mux_server_config.client_shares[i] = fs_share.vaddr;
+                    var client_config = std.mem.zeroInit(ConfigResources.Fs.Client, .{});
+                    client_config.server = conn.b;
+                    client_config.server.share = .createFromMap(client_share);
+                    fat.client_configs.append(client_config) catch @panic("OOM");
+                }
+                fat.mux_config.num_clients = fat.clients.items.len;
+                fat.mux_server_config.num_clients = fat.clients.items.len;
+            } else {
+                fat.fs.connect(.{});
+            }
             // Special things for FATFS
             const stack1 = Mr.create(allocator, fmt(allocator, "{s}_stack1", .{fs_pd.name}), 0x40_000, .{});
             const stack2 = Mr.create(allocator, fmt(allocator, "{s}_stack2", .{fs_pd.name}), 0x40_000, .{});
@@ -266,7 +348,15 @@ pub const FileSystem = struct {
 
         pub fn serialiseConfig(fat: *Fat, prefix: []const u8) !void {
             try data.serialize(fat.allocator, fat.data, prefix, "fat_config");
-            try fat.fs.serialiseConfig(prefix);
+            if (fat.multiplexer) |mux| {
+                try data.serialize(fat.allocator, fat.mux_config, prefix, fmt(fat.allocator, "fs_multiplexer_{s}", .{mux.name}));
+                try data.serialize(fat.allocator, fat.mux_server_config, prefix, fmt(fat.allocator, "fs_server_{s}", .{fat.fs.fs.name}));
+                for (fat.clients.items, fat.client_configs.items) |client, config| {
+                    try data.serialize(fat.allocator, config, prefix, fmt(fat.allocator, "fs_client_{s}_{s}", .{ client.name, fat.fs.fs.name }));
+                }
+            } else {
+                try fat.fs.serialiseConfig(prefix);
+            }
         }
     };
 
