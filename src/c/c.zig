@@ -446,11 +446,14 @@ export fn sdfgen_ioport_destroy(c_ioport: *align(8) anyopaque) void {
     allocator.destroy(ioport);
 }
 
-export fn sdfgen_mr_create(name: [*c]u8, size: u64, prefill_bootinfo: [*c]u8) *anyopaque {
+export fn sdfgen_mr_create(name: [*c]u8, size: u64, prefill_bootinfo: [*c]u8, prefill_path: [*c]u8) *anyopaque {
     const mr = allocator.create(Mr) catch @panic("OOM");
     var options: Mr.Options = .{};
     if (prefill_bootinfo != null) {
         options.prefill_bootinfo = allocator.dupe(u8, std.mem.span(prefill_bootinfo)) catch @panic("OOM");
+    }
+    if (prefill_path != null) {
+        options.prefill_path = allocator.dupe(u8, std.mem.span(prefill_path)) catch @panic("OOM");
     }
     mr.* = Mr.create(allocator, std.mem.span(name), size, options);
 
@@ -499,7 +502,7 @@ export fn sdfgen_cnode_destroy(c_cnode: *align(8) anyopaque) void {
     allocator.destroy(cnode);
 }
 
-export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bindings.sdfgen_map_perms_t, cached: bool, c_setvar_vaddr: [*c]u8, c_setvar_size: [*c]u8) ?*anyopaque {
+export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bindings.sdfgen_map_perms_t, cached: bool, c_setvar_vaddr: [*c]u8, c_setvar_size: [*c]u8, c_setvar_prefill_size: [*c]u8) ?*anyopaque {
     const mr: *Mr = @ptrCast(c_mr);
 
     var perms: Map.Perms = .{};
@@ -519,6 +522,9 @@ export fn sdfgen_map_create(c_mr: *align(8) anyopaque, vaddr: u64, c_perms: bind
     }
     if (c_setvar_size != null) {
         options.setvar_size = allocator.dupe(u8, std.mem.span(c_setvar_size)) catch @panic("OOM");
+    }
+    if (c_setvar_prefill_size != null) {
+        options.setvar_prefill_size = allocator.dupe(u8, std.mem.span(c_setvar_prefill_size)) catch @panic("OOM");
     }
 
     const map = allocator.create(Map) catch @panic("OOM");
@@ -540,6 +546,9 @@ export fn sdfgen_map_destroy(c_map: *align(8) anyopaque) void {
         allocator.free(s);
     }
     if (map.setvar_size) |s| {
+        allocator.free(s);
+    }
+    if (map.setvar_prefill_size) |s| {
         allocator.free(s);
     }
     allocator.destroy(map);
