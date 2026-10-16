@@ -88,6 +88,27 @@ test "PD + MR + mappings + channel" {
     try std.testing.expectEqualStrings(expected, output);
 }
 
+test "MR prefill_path" {
+    var sdf = SystemDescription.create(allocator, .aarch64, 0x100_000_000);
+    defer sdf.destroy();
+
+    const mr = MemoryRegion.create(allocator, "disk", 0x4000000, .{ .prefill_path = "disk.cpio" });
+    defer mr.destroy();
+    sdf.addMemoryRegion(mr);
+
+    var pd = ProtectionDomain.create(allocator, "hello", "hello.elf", .{});
+    defer pd.destroy();
+    pd.addMap(.create(mr, 0x20000000, .rw, .{ .setvar_vaddr = "disk_start_addr", .setvar_size = "disk_size" }));
+
+    sdf.addProtectionDomain(&pd);
+
+    const expected = try readTestFile("mr_prefill.system");
+    const output = try sdf.render();
+    defer allocator.free(expected);
+
+    try std.testing.expectEqualStrings(expected, output);
+}
+
 test "fixed channel" {
     var sdf = SystemDescription.create(allocator, .aarch64, 0x100_000_000);
     defer sdf.destroy();

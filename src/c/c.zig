@@ -446,11 +446,14 @@ export fn sdfgen_ioport_destroy(c_ioport: *align(8) anyopaque) void {
     allocator.destroy(ioport);
 }
 
-export fn sdfgen_mr_create(name: [*c]u8, size: u64, prefill_bootinfo: [*c]u8) *anyopaque {
+export fn sdfgen_mr_create(name: [*c]u8, size: u64, prefill_bootinfo: [*c]u8, prefill_path: [*c]u8) *anyopaque {
     const mr = allocator.create(Mr) catch @panic("OOM");
     var options: Mr.Options = .{};
     if (prefill_bootinfo != null) {
         options.prefill_bootinfo = allocator.dupe(u8, std.mem.span(prefill_bootinfo)) catch @panic("OOM");
+    }
+    if (prefill_path != null) {
+        options.prefill_path = allocator.dupe(u8, std.mem.span(prefill_path)) catch @panic("OOM");
     }
     mr.* = Mr.create(allocator, std.mem.span(name), size, options);
 

@@ -93,10 +93,12 @@ pub const SystemDescription = struct {
         paddr: ?u64,
         page_size: ?PageSize,
         prefill_bootinfo: ?[]const u8,
+        prefill_path: ?[]const u8,
 
         pub const Options = struct {
             page_size: ?PageSize = null,
             prefill_bootinfo: ?[]const u8 = null,
+            prefill_path: ?[]const u8 = null,
         };
 
         pub const OptionsPhysical = struct {
@@ -114,6 +116,7 @@ pub const SystemDescription = struct {
                 .size = size,
                 .page_size = options.page_size,
                 .prefill_bootinfo = options.prefill_bootinfo,
+                .prefill_path = options.prefill_path,
                 .paddr = null,
             };
         }
@@ -132,6 +135,7 @@ pub const SystemDescription = struct {
                 .paddr = paddr,
                 .page_size = options.page_size,
                 .prefill_bootinfo = null,
+                .prefill_path = null,
             };
         }
 
@@ -152,6 +156,10 @@ pub const SystemDescription = struct {
 
             if (mr.prefill_bootinfo) |prefill_bootinfo| {
                 try std.fmt.format(writer, " prefill_bootinfo=\"{s}\"", .{prefill_bootinfo});
+            }
+
+            if (mr.prefill_path) |prefill_path| {
+                try std.fmt.format(writer, " prefill_path=\"{s}\"", .{prefill_path});
             }
 
             _ = try writer.write(" />\n");
