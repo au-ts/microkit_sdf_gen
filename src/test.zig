@@ -88,17 +88,21 @@ test "PD + MR + mappings + channel" {
     try std.testing.expectEqualStrings(expected, output);
 }
 
-test "MR prefill_path" {
+test "MR prefill + setvar_prefill_size" {
     var sdf = SystemDescription.create(allocator, .aarch64, 0x100_000_000);
     defer sdf.destroy();
 
-    const mr = MemoryRegion.create(allocator, "disk", 0x4000000, .{ .prefill_path = "disk.cpio" });
+    const mr = MemoryRegion.create(allocator, "ramfs", 0x100000, .{ .prefill_path = "root.cpio" });
     defer mr.destroy();
     sdf.addMemoryRegion(mr);
 
-    var pd = ProtectionDomain.create(allocator, "hello", "hello.elf", .{});
+    var pd = ProtectionDomain.create(allocator, "client", "client.elf", .{});
     defer pd.destroy();
-    pd.addMap(.create(mr, 0x20000000, .rw, .{ .setvar_vaddr = "disk_start_addr", .setvar_size = "disk_size" }));
+    pd.addMap(.create(mr, 0x20000000, .rw, .{
+        .setvar_vaddr = "ramfs_vaddr",
+        .setvar_size = "ramfs_size",
+        .setvar_prefill_size = "ramfs_cpio_size",
+    }));
 
     sdf.addProtectionDomain(&pd);
 

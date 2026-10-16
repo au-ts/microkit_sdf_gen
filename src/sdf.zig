@@ -222,11 +222,13 @@ pub const SystemDescription = struct {
         cached: ?bool,
         setvar_vaddr: ?[]const u8,
         setvar_size: ?[]const u8,
+        setvar_prefill_size: ?[]const u8,
 
         pub const Options = struct {
             cached: ?bool = null,
             setvar_vaddr: ?[]const u8 = null,
             setvar_size: ?[]const u8 = null,
+            setvar_prefill_size: ?[]const u8 = null,
         };
 
         pub const Perms = packed struct {
@@ -309,6 +311,7 @@ pub const SystemDescription = struct {
                 .cached = options.cached,
                 .setvar_vaddr = options.setvar_vaddr,
                 .setvar_size = options.setvar_size,
+                .setvar_prefill_size = options.setvar_prefill_size,
             };
         }
 
@@ -323,6 +326,10 @@ pub const SystemDescription = struct {
 
             if (map.setvar_size) |setvar_size| {
                 try std.fmt.format(writer, " setvar_size=\"{s}\"", .{setvar_size});
+            }
+
+            if (map.setvar_prefill_size) |setvar_prefill_size| {
+                try std.fmt.format(writer, " setvar_prefill_size=\"{s}\"", .{setvar_prefill_size});
             }
 
             if (map.cached) |cached| {
