@@ -92,7 +92,7 @@ libsdfgen.sdfgen_map_destroy.restype = None
 libsdfgen.sdfgen_map_destroy.argtypes = [c_void_p]
 
 libsdfgen.sdfgen_mr_create.restype = c_void_p
-libsdfgen.sdfgen_mr_create.argtypes = [c_char_p, c_uint64]
+libsdfgen.sdfgen_mr_create.argtypes = [c_char_p, c_uint64, c_char_p]
 libsdfgen.sdfgen_mr_create_physical.restype = c_void_p
 libsdfgen.sdfgen_mr_create_physical.argtypes = [c_void_p, c_char_p, c_uint64, POINTER(c_uint64)]
 libsdfgen.sdfgen_mr_get_size.restype = c_uint64
@@ -665,15 +665,19 @@ class SystemDescription:
             size: int,
             *,
             physical: Optional[bool] = None,
-            paddr: Optional[int] = None
+            paddr: Optional[int] = None,
+            prefill_path: Optional[str] = None,
         ) -> None:
             c_name = c_char_p(name.encode("utf-8"))
+            c_prefill_path = c_char_p(0)
+            if prefill_path is not None:
+                c_prefill_path = c_char_p(prefill_path.encode("utf-8"))
             if paddr is not None:
                 physical = True
             if physical:
                 self._obj = libsdfgen.sdfgen_mr_create_physical(sdf._obj, c_name, size, ffi_uint64_ptr(paddr))
             else:
-                self._obj = libsdfgen.sdfgen_mr_create(c_name, size)
+                self._obj = libsdfgen.sdfgen_mr_create(c_name, size, c_prefill_path)
             self._size = size
 
         @property
