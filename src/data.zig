@@ -412,6 +412,9 @@ pub const Resources = struct {
             id: u8,
             /// What the pager's fault() entry point receives for this client
             fault_id: u8,
+            /// PPC channel, client end. A process forked from this client runs the same
+            /// ELF, so this is the slot of its own CSpace its libc PPCs the pager on.
+            client_id: u8,
             mmap_base: u64,
             brk_base: u64,
         };
@@ -429,6 +432,7 @@ pub const Resources = struct {
             process_cspaces: CNode,
             elf_caps: CNode,
             frame_copies: CNode,
+            pager_caps: CNode,
             num_clients: u8,
             clients: [MaxClients]ClientConnection,
         };

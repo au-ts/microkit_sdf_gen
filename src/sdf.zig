@@ -560,6 +560,7 @@ pub const SystemDescription = struct {
         fault_id: ?u8,
         /// CNode this PD's fault clients' ELF frame caps are placed in
         elf_caps_cnode: ?[]const u8,
+        self_ep_cnode: ?[]const u8,
 
         /// Whether or not ARM SMC is available
         arm_smc: ?bool,
@@ -612,6 +613,7 @@ pub const SystemDescription = struct {
                 .fault_handler = null,
                 .fault_id = null,
                 .elf_caps_cnode = null,
+                .self_ep_cnode = null,
                 .setvars = ArrayList(SetVar).init(allocator),
                 .priority = options.priority,
                 .passive = options.passive,
@@ -632,6 +634,9 @@ pub const SystemDescription = struct {
             }
             if (pd.fault_handler) |fault_handler| {
                 pd.allocator.free(fault_handler);
+            }
+            if (pd.self_ep_cnode) |self_ep_cnode| {
+                pd.allocator.free(self_ep_cnode);
             }
             if (pd.elf_caps_cnode) |elf_caps_cnode| {
                 pd.allocator.free(elf_caps_cnode);
@@ -838,6 +843,9 @@ pub const SystemDescription = struct {
                 try std.fmt.format(writer, " fault_handler=\"{s}\" fault_id=\"{}\"", .{ fault_handler, pd.fault_id.? });
             }
 
+            if (pd.self_ep_cnode) |self_ep_cnode| {
+                try std.fmt.format(writer, " self_ep_cnode=\"{s}\"", .{self_ep_cnode});
+            }
             if (pd.elf_caps_cnode) |elf_caps_cnode| {
                 try std.fmt.format(writer, " elf_caps_cnode=\"{s}\"", .{elf_caps_cnode});
             }

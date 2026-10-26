@@ -425,6 +425,10 @@ pub const Pager = struct {
         // Copies of frame caps. A frame cap carries its own mapping, so a folio mapped
         // into more than one VSpace needs a cap per mapping.
         .{ .name = "frame_copies", .slot = 7, .size_bits = 20, .post_capdl_untypeds = false },
+        // Caps the Microkit tool hands the pager for the processes it creates at runtime,
+        // starting with a copy of its own endpoint at PAGER_SELF_EP_SLOT. Slot 0 of every
+        // CNode here is its self-reference.
+        .{ .name = "pager_caps", .slot = 8, .size_bits = 5, .post_capdl_untypeds = false },
     };
 
     pub const Options = struct {
@@ -507,6 +511,8 @@ pub const Pager = struct {
             @field(system.server_config, spec.name) = .{ .slot = spec.slot, .size_bits = spec.size_bits };
         }
         pager.elf_caps_cnode = allocator.dupe(u8, "elf_caps") catch @panic("Could not dupe CNode name");
+        // So that fork() can mint the endpoint caps a new process needs.
+        pager.self_ep_cnode = allocator.dupe(u8, "pager_caps") catch @panic("Could not dupe CNode name");
 
         for (system.clients.items, 0..) |client, i| {
             // The client needs to be able to PPC into the pager for brk/mmap/munmap/fork.
@@ -520,6 +526,7 @@ pub const Pager = struct {
             system.server_config.clients[i] = .{
                 .id = ch.pd_a_id,
                 .fault_id = fault_id,
+                .client_id = ch.pd_b_id,
                 .mmap_base = system.mmap_base,
                 .brk_base = system.brk_base,
             };
