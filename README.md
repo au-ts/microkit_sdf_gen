@@ -3,12 +3,13 @@
 This repository currently holds libraries to make it easier to develop seL4
 Microkit-based systems.
 
-> [!IMPORTANT]
-> This project is experimental, we are using it internally to get it into a
-> usable state for the public. For development this work exists in a separate
-> repository, but that may change once it has matured (e.g by the Microkit part
-> of the tooling part of the official Microkit repository, the sDDF part being
-> in the sDDF repository, etc).
+> [!WARNING]
+> 
+> sdf_gen is now deprecated and will be replaced with 
+> [Microkit Acacia](https://github.com/au-ts/microkit_acacia).
+>
+> Future releases will only be made to support LionsOS and other
+> projects during the transition to Acacia.
 
 ## Use
 
@@ -123,4 +124,3 @@ are correct.
 The `sdfgen` tooling is available and being used by sDDF and LionsOS, although
 still experimental. The GUI for the tooling is still very much a
 work-in-progress and not ready for use.
-
