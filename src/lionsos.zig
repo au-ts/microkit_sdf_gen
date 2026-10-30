@@ -392,6 +392,7 @@ pub const Pager = struct {
     bootinfo_size: usize,
     mmap_base: u64,
     brk_base: u64,
+    sched_control_core: ?u8,
     connected: bool = false,
     serialised: bool = false,
 
@@ -431,6 +432,8 @@ pub const Pager = struct {
         .{ .name = "pager_caps", .slot = 8, .size_bits = 5, .post_capdl_untypeds = false },
     };
 
+    const sched_control_slot = 9;
+
     pub const Options = struct {
         /// Scratch memory for folio metadata and the shadow page tables
         memory_size: usize = 0x2000000,
@@ -438,6 +441,7 @@ pub const Pager = struct {
         /// Where in each client's address space its mmap arena and heap begin
         mmap_base: u64 = 0x8000000000,
         brk_base: u64 = 0x7000000000,
+        sched_control_core: ?u8 = 0,
     };
 
     pub fn init(allocator: Allocator, sdf: *SystemDescription, pager: *Pd, options: Options) Pager {
@@ -450,6 +454,7 @@ pub const Pager = struct {
             .bootinfo_size = options.bootinfo_size,
             .mmap_base = options.mmap_base,
             .brk_base = options.brk_base,
+            .sched_control_core = options.sched_control_core,
             .server_config = std.mem.zeroInit(ConfigResources.Pager.Server, .{}),
             .client_configs = std.array_list.Managed(ConfigResources.Pager.Client).init(allocator),
         };
@@ -510,6 +515,12 @@ pub const Pager = struct {
             pager.addCapMap(SystemDescription.CapMap.create(allocator, "cnode", spec.name, null, spec.slot));
             @field(system.server_config, spec.name) = .{ .slot = spec.slot, .size_bits = spec.size_bits };
         }
+
+        if (system.sched_control_core) |core| {
+            pager.addCapMap(SystemDescription.CapMap.createSchedControl(allocator, core, sched_control_slot));
+            system.server_config.sched_control = sched_control_slot;
+        }
+
         pager.elf_caps_cnode = allocator.dupe(u8, "elf_caps") catch @panic("Could not dupe CNode name");
         // So that fork() can mint the endpoint caps a new process needs.
         pager.self_ep_cnode = allocator.dupe(u8, "pager_caps") catch @panic("Could not dupe CNode name");

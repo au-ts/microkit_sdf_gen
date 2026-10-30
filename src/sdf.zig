@@ -432,6 +432,7 @@ pub const SystemDescription = struct {
         cap_type: []const u8,
         cnode_name: ?[]const u8,
         pd: ?[]const u8,
+        core: ?u8,
         dest_cspace_slot: u64,
 
         pub fn create(allocator: Allocator, cap_type: []const u8, cnode_name: ?[]const u8, pd: ?[]const u8, dest_cspace_slot: u64) CapMap {
@@ -449,6 +450,18 @@ pub const SystemDescription = struct {
                 .cap_type = allocator.dupe(u8, cap_type) catch @panic("Could not dupe cap type"),
                 .cnode_name = dupe_cnode_name,
                 .pd = dupe_pd_name,
+                .core = null,
+                .dest_cspace_slot = dest_cspace_slot,
+            };
+        }
+
+        pub fn createSchedControl(allocator: Allocator, core: u8, dest_cspace_slot: u64) CapMap {
+            return CapMap{
+                .allocator = allocator,
+                .cap_type = allocator.dupe(u8, "sched_control") catch @panic("Could not dupe cap type"),
+                .cnode_name = null,
+                .pd = null,
+                .core = core,
                 .dest_cspace_slot = dest_cspace_slot,
             };
         }
@@ -467,6 +480,10 @@ pub const SystemDescription = struct {
 
             if (cap_map.cnode_name) |cnode_name| {
                 try std.fmt.format(writer, " cnode_name=\"{s}\"", .{cnode_name});
+            }
+
+            if (cap_map.core) |core| {
+                try std.fmt.format(writer, " core=\"{}\"", .{core});
             }
 
             _ = try writer.write(" />\n");

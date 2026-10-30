@@ -433,6 +433,7 @@ pub const Resources = struct {
             elf_caps: CNode,
             frame_copies: CNode,
             pager_caps: CNode,
+            sched_control: u8,
             num_clients: u8,
             clients: [MaxClients]ClientConnection,
         };
