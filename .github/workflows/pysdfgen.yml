@@ -48,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/p/microkit_sdfgen
+      url: https://pypi.org/project/sdfgen/
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
     steps:
